@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { API, authHeaders } from '../lib/api';
+import { useTranslation } from '../i18n/I18nContext';
 
 const STATUS_STYLES = {
   ok: 'bg-emerald-500/15 text-emerald-200 border border-emerald-500/30',
@@ -134,6 +135,7 @@ function IntegrityPanel({ reports, summary, onRefresh, loading }) {
 }
 
 export default function MonitoringPage() {
+  const { t } = useTranslation();
   const [health, setHealth] = useState(null);
   const [servers, setServers] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -270,9 +272,9 @@ export default function MonitoringPage() {
     <div className="p-6 animate-fade-in">
       <div className="max-w-6xl mx-auto space-y-6">
         <div>
-          <div className="text-sm uppercase tracking-wide text-white/50">Server Status</div>
-          <h1 className="text-3xl font-bold mt-1"><span className="gradient-text-brand">Monitoring</span></h1>
-          <p className="text-white/70 mt-2">Live health, alerts, integrity checks, and logs preview.</p>
+          <div className="text-sm uppercase tracking-wide text-white/50">{t('monitoring.title')}</div>
+          <h1 className="text-3xl font-bold mt-1"><span className="gradient-text-brand">{t('monitoring.monitoring')}</span></h1>
+          <p className="text-white/70 mt-2">{t('monitoring.description')}</p>
         </div>
 
         {error && (
@@ -283,13 +285,13 @@ export default function MonitoringPage() {
 
         <div className="flex flex-col lg:flex-row items-start justify-between gap-6">
           <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
-            <SmallStat label="Total Servers" value={totalServersDisplay} loading={loading} />
-            <SmallStat label="Running" value={runningServersDisplay} loading={loading} />
-            <SmallStat label="Average CPU %" value={cpuDisplay} loading={loading} />
+            <SmallStat label={t('monitoring.totalServers')} value={totalServersDisplay} loading={loading} />
+            <SmallStat label={t('monitoring.running')} value={runningServersDisplay} loading={loading} />
+            <SmallStat label={t('monitoring.averageCpu')} value={cpuDisplay} loading={loading} />
           </div>
           <div className="w-full lg:w-80">
             <div className="rounded-lg bg-white/5 border border-white/10 p-4">
-              <div className="text-sm text-white/70">Recent Alerts</div>
+              <div className="text-sm text-white/70">{t('monitoring.recentAlerts')}</div>
               <div className="mt-2 space-y-2">
                 {alerts.length ? alerts.slice(0, 6).map((a) => (
                   <div key={a.id} className="p-2 rounded border border-white/10 bg-black/20">

@@ -60,6 +60,167 @@ Minecraft-Controller/
 
 ## Quick Start (Docker Compose)
 
+### One-Line Installation (Recommended)
+
+**macOS / Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.ps1 | iex
+```
+
+### Platform-Specific Instructions
+
+#### 🍎 macOS (Docker Desktop)
+
+**Prerequisites:**
+1. Install [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
+   - Apple Silicon (M1/M2/M3): Download the Apple chip version
+   - Intel Mac: Download the Intel chip version
+2. Start Docker Desktop and wait for it to fully initialize (whale icon stops animating)
+3. Allocate at least 4GB RAM in Docker Desktop → Settings → Resources
+
+**Install Lynx:**
+```bash
+# Quick install (latest release)
+curl -fsSL https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.sh | bash
+
+# Or with specific version
+curl -fsSL https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.sh | bash -s -- -v v0.1.1
+
+# Or manual install
+mkdir lynx && cd lynx
+curl -fsSL https://raw.githubusercontent.com/moresonsunn/Lynx/main/docker-compose.yml -o docker-compose.yml
+docker compose pull
+docker compose up -d
+```
+
+**macOS Notes:**
+- Data is stored in Docker volumes, viewable in Docker Desktop → Volumes
+- Apple Silicon Macs use ARM64 images (automatically selected)
+- If you see "protocol not available", restart Docker Desktop
+
+---
+
+#### 🪟 Windows (Docker Desktop)
+
+**Prerequisites:**
+1. Install [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
+   - Windows 10/11 Home: Requires WSL2 backend
+   - Windows 10/11 Pro/Enterprise: Can use Hyper-V or WSL2
+2. If using WSL2, ensure it's installed: `wsl --install` in Admin PowerShell
+3. Start Docker Desktop and wait for it to fully initialize
+4. Allocate at least 4GB RAM in Docker Desktop → Settings → Resources → WSL Integration
+
+**Install Lynx (PowerShell):**
+```powershell
+# Quick install (latest release)
+irm https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.ps1 | iex
+
+# Or with specific version
+$env:Version='v0.1.1'; irm https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.ps1 | iex
+
+# Or manual install
+mkdir lynx; cd lynx
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/moresonsunn/Lynx/main/docker-compose.yml -OutFile docker-compose.yml
+docker compose pull
+docker compose up -d
+```
+
+**Windows Notes:**
+- Use PowerShell 5.1+ or PowerShell Core 7+
+- Data is stored in Docker volumes (WSL2 filesystem for best performance)
+- If you see permission errors, run PowerShell as Administrator
+- WSL2 backend recommended for better performance
+
+---
+
+#### 🐧 Linux (Docker Engine)
+
+**Prerequisites:**
+```bash
+# Install Docker (if not already installed)
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# Log out and back in for group changes to take effect
+
+# Verify installation
+docker --version
+docker compose version
+```
+
+**Install Lynx:**
+```bash
+# Quick install (latest release)
+curl -fsSL https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.sh | bash
+
+# Or with specific version
+curl -fsSL https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.sh | bash -s -- -v v0.1.1
+
+# Or manual install
+mkdir lynx && cd lynx
+curl -fsSL https://raw.githubusercontent.com/moresonsunn/Lynx/main/docker-compose.yml -o docker-compose.yml
+docker compose pull
+docker compose up -d
+```
+
+**Linux Notes:**
+- Supports both amd64 and arm64 architectures
+- Raspberry Pi 4+ (64-bit OS) is supported
+- Rootless Docker is supported but may require additional configuration
+
+---
+
+### After Installation
+
+1. **Access Lynx:** Open http://localhost:8000 in your browser
+2. **Default Login:** admin / admin123 (change immediately!)
+3. **Create your first server:** Click "New Server" and select a type
+
+### Useful Commands
+
+```bash
+# View logs
+docker compose logs -f
+
+# Stop Lynx
+docker compose down
+
+# Update to latest version
+docker compose pull
+docker compose up -d
+
+# Full cleanup (removes data!)
+docker compose down -v
+```
+
+### Docker Hub Images
+
+Lynx images are published to Docker Hub under `moresonsun/lynx`:
+
+| Tag | Description |
+|-----|-------------|
+| `moresonsun/lynx:latest` | Latest stable release |
+| `moresonsun/lynx:v0.1.1` | Specific version |
+| `moresonsun/lynx:edge` | Development builds |
+
+Multi-arch support: `linux/amd64` and `linux/arm64`
+
+```bash
+# Pull specific version
+docker pull moresonsun/lynx:v0.1.1
+
+# Pull for specific platform
+docker pull --platform linux/arm64 moresonsun/lynx:latest
+```
+
+---
+
+### Legacy Method
+
 1. Clone repo (optional if just using images):
 ```
 git clone https://github.com/moresonsunn/Lynx.git

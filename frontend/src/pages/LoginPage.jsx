@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { FaServer } from 'react-icons/fa';
+import { useTranslation, LanguageSwitcher } from '../i18n';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/ap77trGq8r';
 
@@ -28,10 +29,20 @@ export default function LoginPage({
   error,
   loading,
 }) {
+  const { t } = useTranslation();
   const sideOffset = useMemo(() => ({ '--ad-offset': 'clamp(240px, 30vw, 420px)' }), []);
 
   return (
     <div className="min-h-screen bg-ink bg-hero-gradient flex w-full relative overflow-hidden">
+      {/* Language Switcher - Top Right */}
+      <div className="absolute top-4 right-4 z-20">
+        <LanguageSwitcher 
+          variant="dropdown" 
+          showLabel={false}
+          dropdownPosition="bottom-right"
+        />
+      </div>
+
       {/* Side promos (kept away from the form; hidden on small screens) */}
       <div className="pointer-events-none absolute inset-0 z-0 hidden md:block">
         <div
@@ -41,14 +52,14 @@ export default function LoginPage({
           <div className="pointer-events-none" style={{ transform: 'rotate(-6deg)' }}>
             <div className="pointer-events-auto animate-float">
               <OrbitLink>
-                Join our Discord
+                {t('discord.joinDiscord')}
               </OrbitLink>
             </div>
           </div>
           <div className="mt-4 pointer-events-none" style={{ transform: 'rotate(4deg)' }}>
             <div className="pointer-events-auto animate-bounce-subtle">
               <OrbitLink>
-                Support • Updates
+                {t('discord.support')} • {t('discord.updates')}
               </OrbitLink>
             </div>
           </div>
@@ -61,14 +72,14 @@ export default function LoginPage({
           <div className="pointer-events-none" style={{ transform: 'rotate(7deg)' }}>
             <div className="pointer-events-auto animate-float">
               <OrbitLink>
-                Events • Giveaways
+                {t('discord.events')} • {t('discord.giveaways')}
               </OrbitLink>
             </div>
           </div>
           <div className="mt-4 pointer-events-none" style={{ transform: 'rotate(-3deg)' }}>
             <div className="pointer-events-auto animate-bounce-subtle">
               <OrbitLink>
-                Get help fast
+                {t('discord.getHelp')}
               </OrbitLink>
             </div>
           </div>
@@ -83,7 +94,7 @@ export default function LoginPage({
                   <FaServer className="text-2xl text-white" />
                 </div>
                 <h1 className="text-2xl font-bold text-white">{appName}</h1>
-                <p className="text-white/70 mt-2">Please sign in to continue</p>
+                <p className="text-white/70 mt-2">{t('auth.signInToContinue')}</p>
               </div>
 
               {error && (
@@ -94,11 +105,11 @@ export default function LoginPage({
 
               <form onSubmit={onSubmit} className="space-y-4 animate-slide-up-delayed">
                 <div>
-                  <label className="block text-sm font-medium text-white/70 mb-2">Username</label>
+                  <label className="block text-sm font-medium text-white/70 mb-2">{t('auth.username')}</label>
                   <input
                     type="text"
                     className="w-full rounded-md bg-white/5 border border-white/10 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500 text-white placeholder-white/50"
-                    placeholder="Enter your username"
+                    placeholder={t('auth.enterUsername')}
                     value={username}
                     onChange={(e) => onUsernameChange(e.target.value)}
                     required
@@ -107,11 +118,11 @@ export default function LoginPage({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-white/70 mb-2">Password</label>
+                  <label className="block text-sm font-medium text-white/70 mb-2">{t('auth.password')}</label>
                   <input
                     type="password"
                     className="w-full rounded-md bg-white/5 border border-white/10 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500 text-white placeholder-white/50"
-                    placeholder="Enter your password"
+                    placeholder={t('auth.enterPassword')}
                     value={password}
                     onChange={(e) => onPasswordChange(e.target.value)}
                     required
@@ -124,7 +135,7 @@ export default function LoginPage({
                   disabled={loading}
                   className="w-full py-3 rounded-md bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white font-medium transition-colors hover-lift"
                 >
-                  {loading ? 'Signing in...' : 'Sign In'}
+                  {loading ? t('auth.signingIn') : t('auth.login')}
                 </button>
 
                 <div className="text-center text-xs text-white/50 pt-2">
@@ -134,7 +145,7 @@ export default function LoginPage({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Join our Discord
+                    {t('discord.joinDiscord')}
                   </a>
                 </div>
               </form>

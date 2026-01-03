@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { FaLayerGroup, FaPlusCircle } from 'react-icons/fa';
 import { normalizeRamInput } from '../utils/ram';
+import { useTranslation } from '../i18n/I18nContext';
 
 const SERVER_TYPES_WITH_LOADER = ['fabric', 'forge', 'neoforge'];
 
@@ -44,6 +45,7 @@ export default function TemplatesPage({
   installerVersion: createInstallerVersion,
   setInstallerVersion: setCreateInstallerVersion,
 }) {
+  const { t } = useTranslation();
   const safeAuthHeaders = useMemo(() => (typeof authHeaders === 'function' ? authHeaders : () => ({})), [authHeaders]);
 
   const [serverName, setServerName] = useState('mp-' + Math.random().toString(36).slice(2, 6));
@@ -388,9 +390,9 @@ export default function TemplatesPage({
     <div className="p-6 space-y-6 animate-fade-in">
       <div>
         <h1 className="text-3xl font-bold flex items-center gap-3">
-          <FaLayerGroup className="text-brand-500" /> <span className="gradient-text-brand">Templates & Modpacks</span>
+          <FaLayerGroup className="text-brand-500" /> <span className="gradient-text-brand">{t('templates.title')}</span>
         </h1>
-        <p className="text-white/70 mt-2">Import modpack server packs or search and install from providers</p>
+        <p className="text-white/70 mt-2">{t('templates.description')}</p>
       </div>
 
       {/* Tab switcher: Minecraft vs Steam (other games) */}
@@ -402,7 +404,7 @@ export default function TemplatesPage({
         <button
           onClick={() => setTemplatesTab('steam')}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${templatesTab === 'steam' ? 'bg-brand-500 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}`}
-        >Steam (Other Games)</button>
+        >{t('templates.steamGames')}</button>
       </div>
 
       {templatesTab === 'minecraft' ? (
@@ -411,21 +413,21 @@ export default function TemplatesPage({
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
               <div>
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <FaPlusCircle /> Create New Server
+                  <FaPlusCircle /> {t('templates.createNewServer')}
                 </h3>
-                <p className="text-sm text-white/60">Provision a fresh server without attaching a modpack.</p>
+                <p className="text-sm text-white/60">{t('templates.createServerDescription')}</p>
               </div>
             </div>
             <form onSubmit={(e) => { if (onCreateServer) { onCreateServer(e); } else { e.preventDefault(); } }} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-white/70 mb-2">Server Name</label>
+                  <label className="block text-sm font-medium text-white/70 mb-2">{t('servers.serverName')}</label>
                   <input
                     type="text"
                     value={createName}
                     onChange={(e) => setCreateName(e.target.value)}
                     className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded text-white placeholder-white/50"
-                    placeholder="Enter server name"
+                    placeholder={t('templates.enterServerName')}
                     required
                   />
                 </div>

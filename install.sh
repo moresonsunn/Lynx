@@ -38,6 +38,33 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Detect platform
+PLATFORM="$(uname -s)"
+ARCH="$(uname -m)"
+echo "Detected platform: $PLATFORM ($ARCH)"
+
+# Check Docker availability
+if ! command -v docker &> /dev/null; then
+  echo "Error: Docker is not installed or not in PATH."
+  if [[ "$PLATFORM" == "Darwin" ]]; then
+    echo "Install Docker Desktop for macOS: https://docs.docker.com/desktop/install/mac-install/"
+  elif [[ "$PLATFORM" == "Linux" ]]; then
+    echo "Install Docker: curl -fsSL https://get.docker.com | sh"
+  fi
+  exit 1
+fi
+
+# Verify Docker is running
+if ! docker info &> /dev/null 2>&1; then
+  echo "Error: Docker daemon is not running."
+  if [[ "$PLATFORM" == "Darwin" ]]; then
+    echo "Please start Docker Desktop and try again."
+  else
+    echo "Run: sudo systemctl start docker"
+  fi
+  exit 1
+fi
+
 run() { echo "+ $*"; [[ "$DRY" == "true" ]] || eval "$*"; }
 
 if [[ -z "$VERSION" && "$EDGE" != "true" ]]; then
@@ -63,11 +90,14 @@ run curl -fsSL "$COMPOSE_URL" -o docker-compose.yml
 
 if [[ "$EDGE" == "false" && -n "$VERSION" ]]; then
   echo "Pinning images to $VERSION"
-  # Replace :latest with :$VERSION
-  run sed -i.bak "s#${NAMESPACE}/lynx:latest#${NAMESPACE}/lynx:${VERSION}#" docker-compose.yml || true
-  # Single-image deployment: controller and runtime use the same image.
-  # Replace APP_VERSION env if present
-  run sed -i.bak "s#APP_VERSION=v[^\n]*#APP_VERSION=${VERSION}#" docker-compose.yml || true
+  # Replace :latest with :$VERSION (macOS-compatible sed)
+  if [[ "$(uname)" == "Darwin" ]]; then
+    run sed -i '' "s#${NAMESPACE}/lynx:latest#${NAMESPACE}/lynx:${VERSION}#" docker-compose.yml || true
+    run sed -i '' "s#APP_VERSION=v[^\"]*#APP_VERSION=${VERSION}#" docker-compose.yml || true
+  else
+    run sed -i "s#${NAMESPACE}/lynx:latest#${NAMESPACE}/lynx:${VERSION}#" docker-compose.yml || true
+    run sed -i "s#APP_VERSION=v[^\"]*#APP_VERSION=${VERSION}#" docker-compose.yml || true
+  fi
 fi
 
 # Data directory ownership (Linux)
@@ -91,5 +121,20 @@ fi
 run docker compose pull
 run docker compose up -d
 
-echo "\nLynx is starting. Access it at: http://localhost:8000"
-[[ "$EDGE" == "true" ]] && echo "(Edge build: using :latest images)" || echo "(Pinned release: ${VERSION})"
+echo ""
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║  Lynx is starting! Access it at: http://localhost:8000      ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo ""
+[[ "$EDGE" == "true" ]] && echo "Build: Edge (:latest images)" || echo "Build: Release ${VERSION}"
+echo "Platform: $PLATFORM ($ARCH)"
+echo ""
+echo "Useful commands:"
+echo "  docker compose logs -f     # View logs"
+echo "  docker compose down        # Stop Lynx"
+echo "  docker compose pull        # Update to latest"
+if [[ "$PLATFORM" == "Darwin" ]]; then
+  echo ""
+  echo "macOS Note: Data is stored in Docker volumes."
+  echo "  View in Docker Desktop → Volumes → servers_data"
+fi

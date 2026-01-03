@@ -84,6 +84,7 @@ function RenameServerButton({ currentName, onRenamed }) {
 import React, { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } from 'react';
 import { normalizeRamInput } from './utils/ram';
 import { APP_NAME, applyDocumentBranding } from './branding';
+import { I18nProvider, useTranslation, LanguageSwitcherCompact } from './i18n';
 import {
   FaServer,
   FaPlay,
@@ -276,6 +277,7 @@ export function GlobalDataProvider({ children }) {
     settings: {},
     serverTypes: [],
     serverVersions: {},
+    featuredModpacks: [], // Preloaded featured modpacks for Dashboard
     isInitialized: false
   });
 
@@ -347,6 +349,8 @@ export function GlobalDataProvider({ children }) {
       refreshDataInBackground('users', `${API}/users`, (d) => d.users || []);
       refreshDataInBackground('roles', `${API}/users/roles`, (d) => d.roles || []);
       refreshDataInBackground('auditLogs', `${API}/users/audit-logs?page=1&page_size=50`, (d) => d.logs || []);
+      // Preload featured modpacks for Dashboard
+      refreshDataInBackground('featuredModpacks', `${API}/catalog/search?provider=all&page_size=6`, (d) => Array.isArray(d?.results) ? d.results : []);
     }, 1500);
     refreshIntervals.current.deferredPreloads = t;
 
@@ -728,6 +732,7 @@ function ServerDetailsPage({
   configFocus = '',
   onConfigFocusConsumed,
 }) {
+  const { t } = useTranslation();
   const globalData = useGlobalData();
   const [activeTab, setActiveTab] = useState('overview');
   const [filesEditing, setFilesEditing] = useState(false);
@@ -825,20 +830,20 @@ function ServerDetailsPage({
 
   const tabs = useMemo(() => {
     const base = [
-      { id: 'overview', label: 'Overview', icon: FaServer },
-      { id: 'files', label: 'Files', icon: FaFolder },
-      { id: 'config', label: 'Config', icon: FaCog },
-      { id: 'players', label: 'Players', icon: FaUsers },
-      { id: 'worlds', label: 'Worlds', icon: FaFolder },
-      { id: 'backup', label: 'Backup', icon: FaDownload },
-      { id: 'schedule', label: 'Schedule', icon: FaClock },
+      { id: 'overview', label: t('tabs.overview'), icon: FaServer },
+      { id: 'files', label: t('tabs.files'), icon: FaFolder },
+      { id: 'config', label: t('tabs.config'), icon: FaCog },
+      { id: 'players', label: t('tabs.players'), icon: FaUsers },
+      { id: 'worlds', label: t('tabs.worlds'), icon: FaFolder },
+      { id: 'backup', label: t('tabs.backup'), icon: FaDownload },
+      { id: 'schedule', label: t('tabs.schedule'), icon: FaClock },
     ];
     if (!isSteam) {
       return base;
     }
     const allowed = new Set(['overview', 'files', 'backup', 'schedule']);
     return base.filter(tab => allowed.has(tab.id));
-  }, [isSteam]);
+  }, [isSteam, t]);
 
   const displayType = useMemo(() => {
     if (isSteam) {
@@ -1760,6 +1765,7 @@ function AdvancedUserManagementPageImpl() {
 
 // System Settings Page - renamed to avoid conflicts
 function SettingsPageImpl() {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1880,30 +1886,30 @@ function SettingsPageImpl() {
     }
   }
 
-  if (loading) return <div className="p-6"><div className="text-white/70">Loading settings...</div></div>;
+  if (loading) return <div className="p-6"><div className="text-white/70">{t('common.loading')}</div></div>;
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
-            <FaCog className="text-brand-500" /> <span className="gradient-text-brand">System Settings</span>
+            <FaCog className="text-brand-500" /> <span className="gradient-text-brand">{t('settings.title')}</span>
           </h1>
-          <p className="text-white/70 mt-2">Configure system preferences and integrations</p>
+          <p className="text-white/70 mt-2">{t('settings.description')}</p>
         </div>
         <button
           onClick={saveSettings}
           disabled={saving}
           className="bg-brand-500 hover:bg-brand-600 disabled:opacity-50 px-4 py-2 rounded-lg flex items-center gap-2"
         >
-          <FaSave /> {saving ? 'Saving...' : 'Save Settings'}
+          <FaSave /> {saving ? t('common.saving') : t('settings.saveSettings')}
         </button>
       </div>
 
       {/* Backup Settings */}
       <div className="bg-white/5 border border-white/10 rounded-lg p-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <FaDatabase /> Backup Settings
+          <FaDatabase /> {t('settings.backupSettings')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4">
@@ -1915,10 +1921,10 @@ function SettingsPageImpl() {
                 onChange={(e) => setBackupSettings({...backupSettings, auto_backup: e.target.checked})}
                 className="w-4 h-4 text-brand-500 bg-white/10 border-white/20 rounded focus:ring-brand-500"
               />
-              <label htmlFor="auto_backup" className="text-white/80">Enable automatic backups</label>
+              <label htmlFor="auto_backup" className="text-white/80">{t('settings.enableAutoBackup')}</label>
             </div>
             <div>
-              <label className="block text-sm font-medium text-white/70 mb-2">Backup Interval (hours)</label>
+              <label className="block text-sm font-medium text-white/70 mb-2">{t('settings.backupInterval')}</label>
               <input
                 type="number"
                 value={backupSettings.backup_interval}
@@ -2119,10 +2125,35 @@ function SettingsPageImpl() {
   );
 }
 
+// Skeleton loading component for consistent loading states
+const SkeletonCard = ({ className = '' }) => (
+  <div className={`glassmorphism rounded-xl p-4 animate-pulse ${className}`}>
+    <div className="flex items-center gap-3 mb-2">
+      <div className="w-8 h-8 bg-white/10 rounded" />
+      <div className="flex-1">
+        <div className="h-4 bg-white/10 rounded w-3/4 mb-1" />
+        <div className="h-3 bg-white/10 rounded w-1/2" />
+      </div>
+    </div>
+    <div className="space-y-2">
+      <div className="h-3 bg-white/10 rounded w-full" />
+      <div className="h-3 bg-white/10 rounded w-2/3" />
+    </div>
+  </div>
+);
+
+const SkeletonStat = () => (
+  <div className="glassmorphism rounded-xl p-4 sm:p-5 animate-pulse">
+    <div className="h-3 bg-white/10 rounded w-16 mb-2" />
+    <div className="h-6 bg-white/10 rounded w-12" />
+  </div>
+);
+
 // Modern Dashboard Page - ZERO LOADING with preloaded global data
 const DashboardPage = React.memo(function DashboardPage({ onNavigate }) {
   // Get all data instantly from global store - NO LOADING!
   const globalData = useGlobalData();
+  const { t } = useTranslation();
   const gd = globalData;
   const { 
     servers, 
@@ -2130,14 +2161,14 @@ const DashboardPage = React.memo(function DashboardPage({ onNavigate }) {
     dashboardData, 
     systemHealth, 
     alerts, 
+    featuredModpacks,
     isInitialized 
   } = globalData;
 
-  // No loading states needed - data is always available!
-
-  // Featured Modpacks (search)
-  const [featured, setFeatured] = useState([]);
+  // Use preloaded featured modpacks, fallback to local fetch if needed
+  const [localFeatured, setLocalFeatured] = useState([]);
   const [featuredError, setFeaturedError] = useState('');
+  const featured = featuredModpacks?.length > 0 ? featuredModpacks : localFeatured;
 
   // Lightweight install modal state (replaces removed Templates page flow)
   const [installOpen, setInstallOpen] = useState(false);
@@ -2151,18 +2182,20 @@ const DashboardPage = React.memo(function DashboardPage({ onNavigate }) {
   const [hostPort, setHostPort] = useState('');
   const [minRam, setMinRam] = useState('2048M');
   const [maxRam, setMaxRam] = useState('4096M');
+  
+  // Only fetch if preloaded data not available after a delay
   useEffect(() => {
+    if (featuredModpacks?.length > 0) return; // Already have preloaded data
     let cancelled = false;
-    async function loadFeatured(){
+    const timer = setTimeout(async () => {
       try {
-  const r = await fetch(`${API}/catalog/search?provider=all&page_size=6`);
+        const r = await fetch(`${API}/catalog/search?provider=all&page_size=6`);
         const d = await r.json();
-        if (!cancelled) setFeatured(Array.isArray(d?.results) ? d.results : []);
+        if (!cancelled) setLocalFeatured(Array.isArray(d?.results) ? d.results : []);
       } catch(e){ if (!cancelled) setFeaturedError(String(e.message||e)); }
-    }
-    loadFeatured();
-    return () => { cancelled = true; };
-  }, []);
+    }, 500); // Small delay to allow preloaded data to arrive
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [featuredModpacks]);
 
   async function openInstallFromFeatured(pack) {
     setInstallPack(pack);
@@ -2314,8 +2347,8 @@ const DashboardPage = React.memo(function DashboardPage({ onNavigate }) {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold gradient-text-brand mb-1">Overview</h1>
-              <p className="text-sm text-white/60">Monitor your Minecraft infrastructure</p>
+              <h1 className="text-2xl font-semibold gradient-text-brand mb-1">{t('dashboard.overview')}</h1>
+              <p className="text-sm text-white/60">{t('dashboard.monitorInfrastructure')}</p>
             </div>
             
             {(criticalAlerts > 0 || warningAlerts > 0) && (
@@ -2343,7 +2376,7 @@ const DashboardPage = React.memo(function DashboardPage({ onNavigate }) {
         {/* Simplified Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6">
           <div className="glassmorphism rounded-xl p-4 sm:p-5">
-            <div className="text-sm text-white/60 mb-1">Servers</div>
+            <div className="text-sm text-white/60 mb-1">{t('dashboard.totalServers')}</div>
             <div className="flex items-baseline gap-2">
               <div className="text-xl sm:text-2xl font-medium text-white">
                 {runningServers}
@@ -2353,50 +2386,58 @@ const DashboardPage = React.memo(function DashboardPage({ onNavigate }) {
           </div>
           
           <div className="glassmorphism rounded-xl p-4 sm:p-5">
-            <div className="text-sm text-white/60 mb-1">CPU</div>
+            <div className="text-sm text-white/60 mb-1">{t('dashboard.cpuUsage')}</div>
             <div className="text-xl sm:text-2xl font-medium text-white">
               {`${avgCpuPercent.toFixed(0)}%`}
             </div>
           </div>
           
           <div className="glassmorphism rounded-xl p-4 sm:p-5">
-            <div className="text-sm text-white/60 mb-1">Memory</div>
+            <div className="text-sm text-white/60 mb-1">{t('dashboard.memoryUsage')}</div>
             <div className="text-xl sm:text-2xl font-medium text-white">
               {`${(totalMemoryMB / 1024).toFixed(1)}GB`}
             </div>
           </div>
           
           <div className="glassmorphism rounded-xl p-4 sm:p-5">
-            <div className="text-sm text-white/60 mb-1">Issues</div>
+            <div className="text-sm text-white/60 mb-1">{t('dashboard.issues')}</div>
             <div className="text-xl sm:text-2xl font-medium text-white">
               {criticalAlerts + warningAlerts}
             </div>
           </div>
         </div>
 
-        {/* Featured Modpacks */}
+        {/* Featured Modpacks with skeleton loading */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium text-white">Featured Modpacks</h2>
+            <h2 className="text-lg font-medium text-white">{t('dashboard.featuredModpacks')}</h2>
             {featuredError && <div className="text-sm text-red-400">{featuredError}</div>}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-4">
-            {featured.map((p, idx) => (
-              <div key={p.id || p.slug || idx} className="glassmorphism rounded-xl p-4 hover:bg-white/10 transition-colors">
-                <div className="flex items-center gap-3 mb-2">
-                  {p.icon_url ? <img src={p.icon_url} alt="" className="w-8 h-8 rounded"/> : <div className="w-8 h-8 bg-white/10 rounded"/>}
-                  <div>
-                    <div className="text-white font-medium truncate max-w-[200px] sm:max-w-[220px]" title={p.name}>{p.name}</div>
-                    <div className="text-xs text-white/60">Modrinth • {typeof p.downloads==='number'?`⬇ ${Intl.NumberFormat().format(p.downloads)}`:''}</div>
+            {featured.length === 0 && !featuredError ? (
+              // Show skeleton cards while loading
+              <>
+                <SkeletonCard />
+                <SkeletonCard className="hidden md:block" />
+                <SkeletonCard className="hidden lg:block" />
+              </>
+            ) : featured.length > 0 ? (
+              featured.map((p, idx) => (
+                <div key={p.id || p.slug || idx} className="glassmorphism rounded-xl p-4 hover:bg-white/10 transition-colors">
+                  <div className="flex items-center gap-3 mb-2">
+                    {p.icon_url ? <img src={p.icon_url} alt="" className="w-8 h-8 rounded" loading="lazy" /> : <div className="w-8 h-8 bg-white/10 rounded"/>}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-white font-medium truncate" title={p.name}>{p.name}</div>
+                      <div className="text-xs text-white/60">{p.provider || 'Modrinth'} • {typeof p.downloads==='number'?`⬇ ${Intl.NumberFormat().format(p.downloads)}`:''}</div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-white/60 line-clamp-2 min-h-[38px]">{p.description}</div>
+                  <div className="mt-3">
+                    <button onClick={()=> openInstallFromFeatured(p)} className="text-sm text-brand-400 hover:text-brand-300">Install</button>
                   </div>
                 </div>
-                <div className="text-sm text-white/60 line-clamp-2 min-h-[38px]">{p.description}</div>
-                <div className="mt-3">
-                  <button onClick={()=> openInstallFromFeatured(p)} className="text-sm text-brand-400 hover:text-brand-300">Install</button>
-                </div>
-              </div>
-            ))}
-            {featured.length === 0 && (
+              ))
+            ) : (
               <div className="text-white/60">No featured packs available.</div>
             )}
           </div>
@@ -2606,6 +2647,7 @@ function ServersPage({
   onSelectServer,
   onNavigate,
 }) {
+  const { t } = useTranslation();
   const normalizedServers = useMemo(
     () => (Array.isArray(servers) ? servers : []),
     [servers]
@@ -2747,10 +2789,10 @@ function ServersPage({
           onClick={() => onNavigate && onNavigate('dashboard')}
           className="inline-flex items-center gap-1 hover:text-white transition-colors"
         >
-          <FaHome className="text-sm" /> Dashboard
+          <FaHome className="text-sm" /> {t('nav.dashboard')}
         </button>
         <FaChevronRight className="text-white/40 text-[10px]" />
-        <span className="text-white/80">Servers</span>
+        <span className="text-white/80">{t('servers.title')}</span>
         {hasFilters ? (
           <span className="ml-2 text-white/50">{filteredServers.length} / {totalServers}</span>
         ) : null}
@@ -2759,16 +2801,16 @@ function ServersPage({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-3">
-            <FaServer className="text-brand-500" /> <span className="gradient-text-brand">Server Management</span>
+            <FaServer className="text-brand-500" /> <span className="gradient-text-brand">{t('servers.serverManagement')}</span>
           </h1>
-          <p className="text-white/70 mt-2">Create and manage your Minecraft servers</p>
+          <p className="text-white/70 mt-2">{t('servers.manageDescription')}</p>
         </div>
       </div>
 
       {/* Servers List */}
       <div className="bg-white/5 border border-white/10 rounded-lg p-4 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">Your Servers</h3>
+          <h3 className="text-lg font-semibold">{t('servers.yourServers')}</h3>
           <div className="flex items-center gap-3 text-xs text-white/60">
             <span>{filteredServers.length} / {totalServers}</span>
             {hasFilters ? (
@@ -2777,7 +2819,7 @@ function ServersPage({
                 onClick={clearFilters}
                 className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-xs text-white"
               >
-                Clear filters
+                {t('common.clearFilters')}
               </button>
             ) : null}
           </div>
@@ -2950,6 +2992,9 @@ function SecurityPage() {
 }
 
 function App() {
+  // i18n hook for translations
+  const { t } = useTranslation();
+  
   // Auth state
   const [authToken, setAuthToken] = useState(getStoredToken());
   const isAuthenticated = !!authToken;
@@ -3370,12 +3415,12 @@ function App() {
 
   // Navigation with advanced user management like Crafty Controller
   const sidebarItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: FaHome },
-    { id: 'servers', label: 'My Servers', icon: FaServer },
-    { id: 'templates', label: 'Templates', icon: FaLayerGroup },
-    { id: 'monitoring', label: 'Server Status', icon: FaChartLine },
-    { id: 'users', label: 'User Management', icon: FaUsers, adminOnly: true },
-    { id: 'settings', label: 'Settings', icon: FaCog },
+    { id: 'dashboard', label: t('nav.dashboard'), icon: FaHome },
+    { id: 'servers', label: t('nav.servers'), icon: FaServer },
+    { id: 'templates', label: t('nav.templates'), icon: FaLayerGroup },
+    { id: 'monitoring', label: t('nav.monitoring'), icon: FaChartLine },
+    { id: 'users', label: t('nav.users'), icon: FaUsers, adminOnly: true },
+    { id: 'settings', label: t('nav.settings'), icon: FaCog },
   ];
 
   function renderCurrentPage() {
@@ -3546,14 +3591,15 @@ function App() {
                         currentPage === item.id
                           ? 'bg-brand-500 text-white'
                           : 'text-white/70 hover:text-white hover:bg-white/10'
-                      }`}
+                      } ${(!isMobile && !sidebarOpen) ? 'justify-center' : ''}`}
+                      title={(!isMobile && !sidebarOpen) ? item.label : undefined}
                     >
-                      <item.icon className={`${(!isMobile && sidebarOpen) ? 'text-lg' : 'text-xl'}`} />
+                      <item.icon className="text-lg flex-shrink-0" />
                       {(!isMobile && sidebarOpen) && (
-                        <div className="flex items-center justify-between w-full">
-                          <span>{item.label}</span>
+                        <div className="flex items-center justify-between w-full min-w-0">
+                          <span className="truncate">{item.label}</span>
                           {item.id === 'monitoring' && gd?.alerts && gd.alerts.length > 0 && (
-                            <span className="ml-2 inline-flex items-center justify-center rounded-full bg-red-600 px-2 py-0.5 text-xs font-medium text-white">{gd.alerts.length}</span>
+                            <span className="ml-2 inline-flex items-center justify-center rounded-full bg-red-600 px-2 py-0.5 text-xs font-medium text-white flex-shrink-0">{gd.alerts.length}</span>
                           )}
                         </div>
                       )}
@@ -3563,21 +3609,25 @@ function App() {
               </nav>
             </div>
             <div className="p-4 border-t border-white/10 bg-black/30 backdrop-blur supports-[backdrop-filter]:bg-black/20">
+              {/* Language Switcher */}
+              <div className={`mb-3 ${(!isMobile && !sidebarOpen) ? 'flex justify-center' : ''}`}>
+                <LanguageSwitcherCompact />
+              </div>
               <div
-                className="flex items-center gap-3 mb-3 cursor-pointer hover:bg-white/10 rounded-lg p-2"
+                className={`flex items-center gap-3 mb-3 cursor-pointer hover:bg-white/10 rounded-lg p-2 ${(!isMobile && !sidebarOpen) ? 'justify-center' : ''}`}
                 onClick={() => { setCurrentPage('settings'); if (isMobile) setSidebarOpen(false); }}
                 role="button"
                 tabIndex={0}
               >
                 {currentUser && (
                   <>
-                    <div className="w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center">
+                    <div className="w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center flex-shrink-0">
                       <FaUsers className="text-sm text-white" />
                     </div>
                     {(!isMobile && sidebarOpen) && (
-                      <div className="text-sm">
-                        <div className="text-white font-medium">{currentUser.username}</div>
-                        <div className="text-white/60">{currentUser.role}</div>
+                      <div className="text-sm min-w-0">
+                        <div className="text-white font-medium truncate">{currentUser.username}</div>
+                        <div className="text-white/60 truncate">{currentUser.role}</div>
                       </div>
                     )}
                   </>
@@ -3585,9 +3635,10 @@ function App() {
               </div>
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors ${(!isMobile && !sidebarOpen) ? 'justify-center' : ''}`}
+                title={(!isMobile && !sidebarOpen) ? 'Logout' : undefined}
               >
-                <FaArrowLeft />
+                <FaArrowLeft className="flex-shrink-0" />
                 {(!isMobile && sidebarOpen) && <span>Logout</span>}
               </button>
             </div>
@@ -4265,4 +4316,14 @@ function RoleDetailsModal({ role, onClose }) {
     </div>
   );
 }
-export default App;
+
+// Wrap App with I18nProvider for internationalization support
+function AppWithI18n() {
+  return (
+    <I18nProvider>
+      <App />
+    </I18nProvider>
+  );
+}
+
+export default AppWithI18n;

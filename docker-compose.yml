@@ -25,7 +25,7 @@ services:
       - ENVIRONMENT=production
       - SECRET_KEY=${SECRET_KEY:-change-me-single-container-secret}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - ADMIN_PASSWORD=YourNewStrongPass123!
+      - ADMIN_PASSWORD=admin123
       - ALLOWED_ORIGIN_REGEX=.*
       - ENABLE_DEBUG_ENDPOINTS=1
       - CASAOS_APP_ID=lynx
