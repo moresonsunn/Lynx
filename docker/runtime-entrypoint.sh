@@ -57,9 +57,58 @@ select_java_version() {
     echo "$java_version"
 }
 
+# Function to detect Minecraft version from server files
+detect_mc_version() {
+    local version=""
+    
+    # Try version.json (Fabric/Paper/Purpur often have this)
+    if [ -f "version.json" ] && command -v grep >/dev/null 2>&1; then
+        version=$(grep -oP '"id"\s*:\s*"\K[^"]+' version.json 2>/dev/null | head -1)
+        [ -n "$version" ] && echo "$version" && return
+    fi
+    
+    # Try .fabric/server/version.json
+    if [ -f ".fabric/server/version.json" ]; then
+        version=$(grep -oP '"id"\s*:\s*"\K[^"]+' .fabric/server/version.json 2>/dev/null | head -1)
+        [ -n "$version" ] && echo "$version" && return
+    fi
+    
+    # Try server_meta.json 
+    if [ -f "server_meta.json" ]; then
+        version=$(grep -oP '"detected_version"\s*:\s*"\K[^"]+' server_meta.json 2>/dev/null | head -1)
+        [ -n "$version" ] && echo "$version" && return
+        version=$(grep -oP '"server_version"\s*:\s*"\K[^"]+' server_meta.json 2>/dev/null | head -1)
+        [ -n "$version" ] && echo "$version" && return
+        version=$(grep -oP '"version"\s*:\s*"\K[^"]+' server_meta.json 2>/dev/null | head -1)
+        [ -n "$version" ] && echo "$version" && return
+    fi
+    
+    # Try to extract version from jar filename
+    for jar in paper-*.jar purpur-*.jar; do
+        if [ -f "$jar" ]; then
+            version=$(echo "$jar" | grep -oP '(1\.\d+(\.\d+)?)' | head -1)
+            [ -n "$version" ] && echo "$version" && return
+        fi
+    done
+    
+    echo ""
+}
+
 # Get server type and version from environment or labels
 SERVER_TYPE="${SERVER_TYPE:-}"
 SERVER_VERSION="${SERVER_VERSION:-}"
+
+# If SERVER_VERSION is empty, try to detect it
+if [ -z "$SERVER_VERSION" ]; then
+    echo "DEBUG: SERVER_VERSION not set; attempting auto-detection..."
+    detected_ver=$(detect_mc_version)
+    if [ -n "$detected_ver" ]; then
+        SERVER_VERSION="$detected_ver"
+        echo "DEBUG: Auto-detected Minecraft version: $SERVER_VERSION"
+    else
+        echo "DEBUG: Could not auto-detect version; will use Java 21 as default"
+    fi
+fi
 
 # Get Java version override and JAVA_BIN override from environment
 JAVA_VERSION_OVERRIDE="${JAVA_VERSION_OVERRIDE:-}"
@@ -75,6 +124,38 @@ if [ -n "$JAVA_VERSION_OVERRIDE" ]; then
 fi
 export JAVA_VERSION
 
+# Function to find any working Java binary
+find_any_java() {
+  local candidates=(
+    "/usr/local/bin/java${JAVA_VERSION}"
+    "/opt/java/openjdk/bin/java"
+    "/usr/lib/jvm/java-${JAVA_VERSION}-openjdk-amd64/bin/java"
+    "/usr/lib/jvm/java-${JAVA_VERSION}-openjdk/bin/java"
+    "/usr/lib/jvm/temurin-${JAVA_VERSION}-jdk/bin/java"
+    "/usr/lib/jvm/adoptopenjdk-${JAVA_VERSION}-hotspot/bin/java"
+    "/opt/jdk8u392-b08/bin/java"
+    "/opt/jdk-11.0.21+9/bin/java"
+    "/opt/jdk-17.0.9+9/bin/java"
+    "/usr/local/bin/java21"
+    "/usr/local/bin/java17"
+    "/usr/local/bin/java11"
+    "/usr/local/bin/java8"
+    "/usr/bin/java"
+  )
+  for candidate in "${candidates[@]}"; do
+    if [ -x "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  # Try command -v as last resort
+  if command -v java >/dev/null 2>&1; then
+    command -v java
+    return 0
+  fi
+  return 1
+}
+
 # Set Java binary path: prefer explicit override, else pick by JAVA_VERSION
 if [ -n "$JAVA_BIN_OVERRIDE" ]; then
   JAVA_BIN="$JAVA_BIN_OVERRIDE"
@@ -84,15 +165,45 @@ fi
 
 # Fallback if the desired JAVA_BIN doesn't exist or isn't executable
 if [ ! -x "$JAVA_BIN" ]; then
+  echo "DEBUG: Primary Java path $JAVA_BIN not executable; searching for alternatives..."
+  
+  # Try the explicit version symlink via command -v
   if command -v "java${JAVA_VERSION}" >/dev/null 2>&1; then
     JAVA_BIN="$(command -v "java${JAVA_VERSION}")"
     echo "DEBUG: Falling back to discovered java${JAVA_VERSION} at: $JAVA_BIN"
-  elif command -v java >/dev/null 2>&1; then
-    JAVA_BIN="$(command -v java)"
-    echo "DEBUG: Falling back to system java at: $JAVA_BIN"
+  # Try /opt/java/openjdk (Temurin base image default for Java 21)
+  elif [ -x "/opt/java/openjdk/bin/java" ]; then
+    JAVA_BIN="/opt/java/openjdk/bin/java"
+    echo "DEBUG: Falling back to Temurin default Java at: $JAVA_BIN"
+  # Try common alternative paths for Debian/Ubuntu
+  elif [ -x "/usr/lib/jvm/java-${JAVA_VERSION}-openjdk-amd64/bin/java" ]; then
+    JAVA_BIN="/usr/lib/jvm/java-${JAVA_VERSION}-openjdk-amd64/bin/java"
+    echo "DEBUG: Falling back to OpenJDK amd64 at: $JAVA_BIN"
+  elif [ -x "/usr/lib/jvm/java-${JAVA_VERSION}-openjdk/bin/java" ]; then
+    JAVA_BIN="/usr/lib/jvm/java-${JAVA_VERSION}-openjdk/bin/java"
+    echo "DEBUG: Falling back to OpenJDK at: $JAVA_BIN"
+  elif [ -x "/usr/lib/jvm/temurin-${JAVA_VERSION}-jdk/bin/java" ]; then
+    JAVA_BIN="/usr/lib/jvm/temurin-${JAVA_VERSION}-jdk/bin/java"
+    echo "DEBUG: Falling back to Temurin JDK at: $JAVA_BIN"
+  # Try to find ANY working Java
   else
-    echo "ERROR: No suitable Java found for version ${JAVA_VERSION}" >&2
-    exit 1
+    echo "DEBUG: Searching for any available Java installation..."
+    FOUND_JAVA=$(find_any_java)
+    if [ -n "$FOUND_JAVA" ] && [ -x "$FOUND_JAVA" ]; then
+      JAVA_BIN="$FOUND_JAVA"
+      echo "DEBUG: Found working Java at: $JAVA_BIN"
+    else
+      echo "ERROR: No suitable Java found for version ${JAVA_VERSION}" >&2
+      echo "DEBUG: Listing available Java installations..."
+      ls -la /usr/local/bin/java* 2>/dev/null || echo "  No /usr/local/bin/java* found"
+      ls -la /opt/java/openjdk/bin/java 2>/dev/null || echo "  No /opt/java/openjdk/bin/java found"
+      ls -la /opt/jdk*/bin/java 2>/dev/null || echo "  No /opt/jdk*/bin/java found"
+      ls -la /usr/lib/jvm/*/bin/java 2>/dev/null || echo "  No /usr/lib/jvm/*/bin/java found"
+      ls -la /usr/bin/java 2>/dev/null || echo "  No /usr/bin/java found"
+      echo "DEBUG: PATH=$PATH"
+      echo "DEBUG: which java: $(which java 2>/dev/null || echo 'not found')"
+      exit 1
+    fi
   fi
 fi
 

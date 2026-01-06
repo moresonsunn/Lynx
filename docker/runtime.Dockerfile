@@ -42,7 +42,18 @@ RUN wget -qO- https://github.com/adoptium/temurin17-binaries/releases/download/j
     ln -sf /opt/jdk-17.0.9+9/bin/java /usr/local/bin/java17
 
 # Create symlink for Java 21 from base Temurin image
-RUN ln -sf /opt/java/openjdk/bin/java /usr/local/bin/java21
+RUN ln -sf /opt/java/openjdk/bin/java /usr/local/bin/java21 && \
+    # Verify the symlink was created correctly
+    ls -la /usr/local/bin/java21 && \
+    /usr/local/bin/java21 -version
+
+# Verify all Java versions are accessible
+RUN echo "=== Java installations ===" && \
+    ls -la /usr/local/bin/java* && \
+    echo "Java 8:" && /usr/local/bin/java8 -version 2>&1 | head -1 && \
+    echo "Java 11:" && /usr/local/bin/java11 -version 2>&1 | head -1 && \
+    echo "Java 17:" && /usr/local/bin/java17 -version 2>&1 | head -1 && \
+    echo "Java 21:" && /usr/local/bin/java21 -version 2>&1 | head -1
 
 # Set default Java version
 ENV JAVA_BIN=/usr/local/bin/java21
