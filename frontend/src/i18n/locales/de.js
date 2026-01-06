@@ -59,7 +59,15 @@ export default {
     confirmPassword: 'Passwort bestätigen',
     passwordChanged: 'Passwort erfolgreich geändert',
     passwordMismatch: 'Passwörter stimmen nicht überein',
-    mustChangePassword: 'Sie müssen Ihr Passwort ändern, bevor Sie fortfahren können',
+    mustChangePassword: 'Aus Sicherheitsgründen müssen Sie ein neues Passwort festlegen, bevor Sie fortfahren können.',
+    passwordChangeRequired: 'Passwortänderung erforderlich',
+    updatePassword: 'Passwort aktualisieren',
+    updatingPassword: 'Aktualisiere...',
+    passwordChangeFailed: 'Passwortänderung fehlgeschlagen',
+    passwordMinLength: 'Das Passwort muss mindestens 8 Zeichen lang sein.',
+    passwordUppercase: 'Das Passwort muss mindestens einen Großbuchstaben enthalten.',
+    passwordLowercase: 'Das Passwort muss mindestens einen Kleinbuchstaben enthalten.',
+    passwordDigit: 'Das Passwort muss mindestens eine Ziffer enthalten.',
   },
 
   // Navigation

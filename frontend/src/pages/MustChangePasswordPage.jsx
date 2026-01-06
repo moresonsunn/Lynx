@@ -1,34 +1,36 @@
 import React, { useMemo, useState } from 'react';
 import { FaLock } from 'react-icons/fa';
+import { useTranslation } from '../i18n/I18nContext';
 
-function validateNewPassword(password) {
-  if (!password || password.length < 8) return 'Password must be at least 8 characters long.';
-  if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
-  if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter.';
-  if (!/[0-9]/.test(password)) return 'Password must contain at least one digit.';
+function validateNewPassword(password, t) {
+  if (!password || password.length < 8) return t('auth.passwordMinLength');
+  if (!/[A-Z]/.test(password)) return t('auth.passwordUppercase');
+  if (!/[a-z]/.test(password)) return t('auth.passwordLowercase');
+  if (!/[0-9]/.test(password)) return t('auth.passwordDigit');
   return '';
 }
 
 export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete, onLogout }) {
+  const { t } = useTranslation();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const passwordHint = useMemo(() => validateNewPassword(newPassword), [newPassword]);
+  const passwordHint = useMemo(() => validateNewPassword(newPassword, t), [newPassword, t]);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
 
-    const strengthError = validateNewPassword(newPassword);
+    const strengthError = validateNewPassword(newPassword, t);
     if (strengthError) {
       setError(strengthError);
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError('New password and confirmation do not match.');
+      setError(t('auth.passwordMismatch'));
       return;
     }
 
@@ -45,7 +47,7 @@ export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete
       }
       onComplete();
     } catch (err) {
-      setError(err.message || 'Password change failed');
+      setError(err.message || t('auth.passwordChangeFailed'));
     } finally {
       setLoading(false);
     }
@@ -61,9 +63,9 @@ export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete
                 <FaLock className="text-2xl text-white" />
               </div>
               <h1 className="text-2xl font-bold text-white">{appName}</h1>
-              <p className="text-white/70 mt-2">Password change required</p>
+              <p className="text-white/70 mt-2">{t('auth.passwordChangeRequired')}</p>
               <p className="text-xs text-white/50 mt-1">
-                For security, you must set a new password before continuing.
+                {t('auth.mustChangePassword')}
               </p>
             </div>
 
@@ -75,7 +77,7 @@ export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete
 
             <form onSubmit={handleSubmit} className="space-y-4 animate-slide-up-delayed">
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">Current password</label>
+                <label className="block text-sm font-medium text-white/70 mb-2">{t('auth.currentPassword')}</label>
                 <input
                   type="password"
                   className="w-full rounded-md bg-white/5 border border-white/10 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500 text-white placeholder-white/50"
@@ -87,7 +89,7 @@ export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">New password</label>
+                <label className="block text-sm font-medium text-white/70 mb-2">{t('auth.newPassword')}</label>
                 <input
                   type="password"
                   className="w-full rounded-md bg-white/5 border border-white/10 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500 text-white placeholder-white/50"
@@ -102,7 +104,7 @@ export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">Confirm new password</label>
+                <label className="block text-sm font-medium text-white/70 mb-2">{t('auth.confirmPassword')}</label>
                 <input
                   type="password"
                   className="w-full rounded-md bg-white/5 border border-white/10 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500 text-white placeholder-white/50"
@@ -118,7 +120,7 @@ export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete
                 disabled={loading}
                 className="w-full py-3 rounded-md bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white font-medium transition-colors hover-lift"
               >
-                {loading ? 'Updating...' : 'Update Password'}
+                {loading ? t('auth.updatingPassword') : t('auth.updatePassword')}
               </button>
 
               <button
@@ -126,7 +128,7 @@ export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete
                 onClick={onLogout}
                 className="w-full py-2 rounded-md bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
               >
-                Sign out
+                {t('auth.logout')}
               </button>
             </form>
           </div>

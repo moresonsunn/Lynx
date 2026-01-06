@@ -59,7 +59,15 @@ export default {
     confirmPassword: 'Confirm Password',
     passwordChanged: 'Password changed successfully',
     passwordMismatch: 'Passwords do not match',
-    mustChangePassword: 'You must change your password before continuing',
+    mustChangePassword: 'For security, you must set a new password before continuing.',
+    passwordChangeRequired: 'Password change required',
+    updatePassword: 'Update Password',
+    updatingPassword: 'Updating...',
+    passwordChangeFailed: 'Password change failed',
+    passwordMinLength: 'Password must be at least 8 characters long.',
+    passwordUppercase: 'Password must contain at least one uppercase letter.',
+    passwordLowercase: 'Password must contain at least one lowercase letter.',
+    passwordDigit: 'Password must contain at least one digit.',
   },
 
   // Navigation

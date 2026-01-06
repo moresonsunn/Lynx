@@ -3450,15 +3450,20 @@ function App() {
   const serverListForDetails = (gd?.servers && gd.servers.length) ? gd.servers : servers;
   const selectedServerObj = selectedServer && serverListForDetails.find((s) => s.id === selectedServer);
 
+  // Check if current user is admin
+  const isAdmin = currentUser?.is_admin || currentUser?.role === 'admin' || currentUser?.roles?.includes('admin');
+
   // Navigation with advanced user management like Crafty Controller
-  const sidebarItems = [
+  const sidebarItemsAll = [
     { id: 'dashboard', label: t('nav.dashboard'), icon: FaHome },
     { id: 'servers', label: t('nav.servers'), icon: FaServer },
     { id: 'templates', label: t('nav.templates'), icon: FaLayerGroup },
-    { id: 'monitoring', label: t('nav.monitoring'), icon: FaChartLine },
     { id: 'users', label: t('nav.users'), icon: FaUsers, adminOnly: true },
     { id: 'settings', label: t('nav.settings'), icon: FaCog },
   ];
+  
+  // Filter sidebar items based on admin status
+  const sidebarItems = sidebarItemsAll.filter(item => !item.adminOnly || isAdmin);
 
   function renderCurrentPage() {
     switch (currentPage) {
@@ -3503,12 +3508,6 @@ function App() {
               }
             }}
           />
-        );
-      case 'monitoring':
-        return (
-          <React.Suspense fallback={<div className="p-6">Loading monitoring…</div>}>
-            <MonitoringPageLazy />
-          </React.Suspense>
         );
       case 'templates':
         return (
@@ -3635,9 +3634,6 @@ function App() {
                       {(!isMobile && sidebarOpen) && (
                         <div className="flex items-center justify-between w-full min-w-0">
                           <span className="truncate">{item.label}</span>
-                          {item.id === 'monitoring' && gd?.alerts && gd.alerts.length > 0 && (
-                            <span className="ml-2 inline-flex items-center justify-center rounded-full bg-red-600 px-2 py-0.5 text-xs font-medium text-white flex-shrink-0">{gd.alerts.length}</span>
-                          )}
                         </div>
                       )}
                     </button>
