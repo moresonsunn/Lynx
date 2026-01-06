@@ -48,6 +48,10 @@ COPY backend ./
 # Copy built frontend
 COPY --from=ui /ui/build ./static
 
+# Copy runtime entrypoint script for server launching
+COPY docker/runtime-entrypoint.sh /usr/local/bin/runtime-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/runtime-entrypoint.sh && chmod +x /usr/local/bin/runtime-entrypoint.sh
+
 # Create data directory
 RUN mkdir -p /data/servers
 

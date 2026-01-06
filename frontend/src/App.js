@@ -1032,9 +1032,9 @@ function ServerDetailsPage({
         );
       default:
         return (
-          <div className="p-4 bg-black/20 rounded-lg">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm text-white/70">Server Information</div>
+          <div className="p-6 bg-black/20 rounded-lg w-full">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-lg font-semibold text-white">Server Information</div>
               {infoError ? (
                 <div className="text-xs text-red-400">Details unavailable: {String(infoError)}</div>
               ) : null}
@@ -1045,47 +1045,47 @@ function ServerDetailsPage({
                 setLogReset(Date.now());
               }} />
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 text-base">
               <div>
-                <div className="text-white/50">Status</div>
+                <div className="text-white/50 text-sm">Status</div>
                 <div
-                  className={
+                  className={`text-lg font-medium ${
                     server.status === 'running'
                       ? 'text-green-400'
                       : 'text-yellow-400'
-                  }
+                  }`}
                 >
                   {server.status}
                 </div>
               </div>
               <div>
-                <div className="text-white/50">Port</div>
-                <div>{primaryPort}</div>
+                <div className="text-white/50 text-sm">Port</div>
+                <div className="text-lg font-medium">{primaryPort}</div>
               </div>
               <div>
-                <div className="text-white/50">Type</div>
-                <div>
+                <div className="text-white/50 text-sm">Type</div>
+                <div className="text-lg font-medium">
                   {displayType || <span className="text-white/40">Unknown</span>}
                 </div>
               </div>
               <div>
-                <div className="text-white/50">Version</div>
-                <div>
+                <div className="text-white/50 text-sm">Version</div>
+                <div className="text-lg font-medium">
                   {displayVersion || <span className="text-white/40">Unknown</span>}
                 </div>
               </div>
               <div>
-                <div className="text-white/50">Created</div>
-                <div>{createdDisplay}</div>
+                <div className="text-white/50 text-sm">Created</div>
+                <div className="text-lg font-medium">{createdDisplay}</div>
               </div>
               <div>
-                <div className="text-white/50">ID</div>
-                <div>{server.id}</div>
+                <div className="text-white/50 text-sm">ID</div>
+                <div className="text-base font-mono text-white/80">{server.id.slice(0, 12)}</div>
               </div>
               {isSteam ? (
-                <div>
-                  <div className="text-white/50">Steam Ports</div>
-                  <div>
+                <div className="col-span-2">
+                  <div className="text-white/50 text-sm">Steam Ports</div>
+                  <div className="text-lg font-medium">
                     {steamPorts.length
                       ? steamPorts
                           .map(p => `${p.host_port ?? 'auto'} → ${p.container_port}${p.protocol ? `/${p.protocol}` : ''}`)
@@ -1095,7 +1095,7 @@ function ServerDetailsPage({
                 </div>
               ) : null}
             </div>
-            <div className="mt-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
               <Stat
                 label="Uptime"
                 value={formatUptime(stats?.uptime_seconds)}
