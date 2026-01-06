@@ -10,6 +10,7 @@ from server_providers.providers import get_provider_names, get_provider
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse
 import os
+import docker
 from docker.errors import NotFound as DockerNotFound
 from file_manager import (
     list_dir as fm_list_dir,
@@ -769,7 +770,14 @@ def get_server_resources(container_id: str, current_user: User = Depends(require
 @app.delete("/api/servers/{container_id}")
 def delete_server(container_id: str, current_user: User = Depends(require_moderator)):
     try:
-        return get_docker_manager().delete_server(container_id)
+        result = get_docker_manager().delete_server(container_id)
+        if result.get("error") and not result.get("deleted"):
+            raise HTTPException(status_code=500, detail=f"Failed to delete server: {result.get('error')}")
+        return result
+    except HTTPException:
+        raise
+    except docker.errors.APIError as e:
+        raise HTTPException(status_code=500, detail=f"Docker API error: {e}")
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 

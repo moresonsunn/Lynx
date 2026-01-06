@@ -3424,9 +3424,26 @@ function App() {
   
   // Delete server handler - optimized
   const del = useCallback(async function del(id) {
-    await fetch(`${API}/servers/${id}`, { method: 'DELETE' });
-    if (selectedServer === id) setSelectedServer(null);
-    gd.__refreshServers && gd.__refreshServers();
+    try {
+      const response = await fetch(`${API}/servers/${id}`, { method: 'DELETE' });
+      const result = await response.json().catch(() => ({}));
+      
+      if (!response.ok) {
+        console.error('Delete server failed:', result);
+        alert(`Failed to delete server: ${result.detail || 'Unknown error'}`);
+        return;
+      }
+      
+      if (result.error) {
+        console.warn('Delete server warning:', result.error);
+      }
+      
+      if (selectedServer === id) setSelectedServer(null);
+      gd.__refreshServers && gd.__refreshServers();
+    } catch (err) {
+      console.error('Delete server error:', err);
+      alert(`Failed to delete server: ${err.message}`);
+    }
   }, [gd, selectedServer]);
 
   // Restart server handler - optimized

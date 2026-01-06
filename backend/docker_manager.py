@@ -2342,6 +2342,9 @@ class DockerManager:
         container_id may be a container ID or the server name. We'll prefer container.name when found.
         """
         name_hint = str(container_id)
+        container_removed = False
+        remove_error = None
+        
         # Remove container first
         try:
             container = self._get_container_any(container_id)
@@ -2350,11 +2353,28 @@ class DockerManager:
             except Exception:
                 pass
             try:
+                # Stop the container first if it's running
+                try:
+                    if container.status in ('running', 'restarting'):
+                        container.stop(timeout=10)
+                except Exception as stop_err:
+                    logger.warning(f"Failed to stop container {container_id} before removal: {stop_err}")
                 container.remove(force=True)
-            except Exception:
-                pass
-        except Exception:
-            container = None
+                container_removed = True
+            except Exception as rm_err:
+                remove_error = str(rm_err)
+                logger.error(f"Failed to remove container {container_id}: {rm_err}")
+        except docker.errors.NotFound:
+            # Container doesn't exist, that's okay - just remove directory
+            container_removed = True
+            logger.info(f"Container {container_id} not found, will just remove directory")
+        except Exception as e:
+            remove_error = str(e)
+            logger.error(f"Error finding container {container_id}: {e}")
+            
+        # Invalidate the list cache immediately
+        self._list_cache = None
+        
         # Remove directory (prefer using name)
         removed_dir = False
         try:
@@ -2397,7 +2417,17 @@ class DockerManager:
             removed_dir = target_removed
         except Exception as e:
             logger.warning(f"Failed to remove server directory for {container_id}: {e}")
-        return {"id": container_id, "deleted": True, "dir_removed": removed_dir}
+        
+        result = {
+            "id": container_id,
+            "name": name_hint,
+            "deleted": container_removed,
+            "dir_removed": removed_dir,
+        }
+        if remove_error and not container_removed:
+            result["error"] = remove_error
+        logger.info(f"Delete server result: {result}")
+        return result
 
     def recreate_server_with_env(self, container_id: str, env_overrides: dict | None = None) -> dict:
         """Stop and remove the existing container, then recreate it from its server directory
