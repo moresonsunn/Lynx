@@ -477,6 +477,26 @@ The CasaOS appstore manifest for the unified app includes an example `steam_engi
 | SERVERS_VOLUME_NAME | Docker volume name for servers data |
 | SERVERS_CONTAINER_ROOT | In-container path for servers (default `/data/servers`) |
 
+### Steam Server Data & Mods
+
+⚠️ **Known Limitation**: Steam game server data is stored in `/data/servers/<server-name>/` and mapped to the container's data directory. However, some community Docker images may store additional data in paths **not covered by the volume mapping**, making it difficult to add mods or access certain files.
+
+**Affected games may include:**
+- Games where the Docker image uses internal volumes
+- Games that store mods/configs in non-standard locations
+- Games where the image author didn't expose all data directories
+
+**Workarounds:**
+1. **Check the Docker image documentation** for the correct data paths
+2. **Use `docker exec`** to explore where files are actually stored
+3. **Report issues** so we can update the volume mapping in the game catalog
+
+**Games with full mod support** (data properly mapped to `/data/servers/<name>/`):
+- Terraria (tModLoader) – mods in `/config/ModSources`
+- Valheim – mods via BepInEx
+- Factorio – mods in `/factorio/mods`
+- Project Zomboid – mods in `/home/steam/Zomboid/mods`
+
 ### Troubleshooting on CasaOS
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|

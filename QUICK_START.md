@@ -290,6 +290,17 @@ Auf CasaOS können Steam-Server als native v2-Apps installiert werden:
 2. Steam-Server erscheinen dann in CasaOS als reguläre Apps
 3. Siehe README.md für Details zur Token-Ermittlung
 
+### Mods & Server-Daten
+
+⚠️ **Hinweis**: Steam-Server-Daten werden unter `/data/servers/<server-name>/` gespeichert. Einige Docker-Images speichern jedoch Daten an Orten, die nicht vom Volume-Mapping abgedeckt werden, was das Hinzufügen von Mods erschweren kann.
+
+**Spiele mit vollem Mod-Support:**
+- Terraria (tModLoader) – Mods in `/config/ModSources`
+- Valheim – Mods via BepInEx
+- Factorio – Mods in `/factorio/mods`
+
+Siehe README.md für Details und Workarounds.
+
 ---
 
 ## ❓ Fehlerbehebung
