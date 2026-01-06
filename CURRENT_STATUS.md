@@ -1,20 +1,23 @@
 # Current Implementation Status
 
+Lynx is a **Game Server Manager** that supports both **Minecraft** and **70+ Steam games**.
+
 ## ✅ Completed Features
 
-### 1. Multi-Java Version Support
+### 1. Multi-Java Version Support (Minecraft)
 - **Docker Image**: Updated `docker/runtime.Dockerfile` to include Java 8, 11, 17, and 21
 - **Java Sources**: Using Eclipse Temurin (successor to AdoptOpenJDK) for reliable downloads
+- **Multi-Arch**: Supports both amd64 and arm64 architectures
 - **Binary Paths**: All Java versions available at `/usr/local/bin/java8`, `/usr/local/bin/java11`, `/usr/local/bin/java17`, `/usr/local/bin/java21`
 
-### 2. Dynamic Java Version Selection
+### 2. Dynamic Java Version Selection (Minecraft)
 - **Entrypoint Script**: `docker/runtime-entrypoint.sh` automatically selects Java version based on server type and Minecraft version
 - **Server Type Mapping**:
   - Vanilla/Paper/Purpur: 1.8-1.16 → Java 8, 1.17-1.18 → Java 17, 1.19-1.21 → Java 21
   - Fabric: 1.8-1.18 → Java 8, 1.19-1.21 → Java 21
   - Forge/NeoForge: 1.8-1.12 → Java 8, 1.13+ → Java 17
 
-### 3. Manual Java Version Selection UI
+### 3. Manual Java Version Selection UI (Minecraft)
 - **Backend API**: New endpoints in `backend/app.py` and `backend/docker_manager.py`
   - `GET /servers/{id}/java-versions` - List available Java versions
   - `POST /servers/{id}/java-version` - Set Java version for a server
@@ -23,11 +26,27 @@
   - Shows current Java version
   - Includes "Restart Server" button to apply changes
 
-### 4. Enhanced Server Management
+### 4. Enhanced Server Management (Minecraft)
 - **RAM Configuration**: Support for min/max RAM settings
 - **Port Management**: Proper port binding and configuration
 - **JAR Validation**: Robust validation of server JAR files
 - **Error Handling**: Comprehensive error handling throughout the system
+
+### 5. Steam Game Servers (70+ Games)
+- **Game Catalog**: Extensive catalog with 70+ preconfigured games
+- **One-Click Deployment**: Deploy servers using community Docker images
+- **Supported Games Include**:
+  - Survival: Valheim, Rust, ARK, The Forest, 7 Days to Die, V Rising, Palworld
+  - Shooters: Counter-Strike 2, Hell Let Loose, Squad, Insurgency: Sandstorm, Arma 3
+  - Sandbox: Terraria, Factorio, Satisfactory, Astroneer, Stardew Valley
+  - And many more...
+- **CasaOS Integration**: Steam servers can be installed as CasaOS v2 compose apps
+- **Environment Configuration**: Customize server settings via environment variables
+
+### 6. Multi-Architecture Support
+- **Platforms**: Both linux/amd64 and linux/arm64 supported
+- **ARM64 Compatibility**: Full support for Raspberry Pi 4+, Apple Silicon, ARM servers
+- **Java Downloads**: Architecture-specific Temurin JDK binaries
 
 ## 🔧 Fixed Issues
 

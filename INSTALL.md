@@ -1,6 +1,6 @@
 # Lynx Installation Guide
 
-Complete installation guide for Lynx on all supported platforms using Docker Hub images.
+Complete installation guide for Lynx – a **Game Server Manager** supporting **Minecraft** and **70+ Steam games** – on all supported platforms using Docker Hub images.
 
 ## Supported Platforms
 
@@ -304,12 +304,14 @@ docker inspect moresonsun/lynx:latest | grep Architecture
 
 ```bash
 # UFW (Ubuntu/Debian)
-sudo ufw allow 8000/tcp
-sudo ufw allow 25565/tcp  # Default Minecraft port
+sudo ufw allow 8000/tcp        # Lynx web panel
+sudo ufw allow 25565/tcp       # Default Minecraft port
+sudo ufw allow 27015:27020/udp # Common Steam game ports
 
 # firewalld (CentOS/RHEL)
 sudo firewall-cmd --add-port=8000/tcp --permanent
 sudo firewall-cmd --add-port=25565/tcp --permanent
+sudo firewall-cmd --add-port=27015-27020/udp --permanent
 sudo firewall-cmd --reload
 ```
 

@@ -1,14 +1,35 @@
 # 🚀 **Feature Implementation Summary**
 
-## **Minecraft Controller - Enhanced Edition**
+## **Lynx – Game Server Manager**
 
-This document summarizes all the advanced features that have been implemented to bring your Minecraft Controller to **Crafty Controller level and beyond**.
+This document summarizes all the advanced features that have been implemented to bring Lynx to a full-featured **Game Server Manager** supporting both **Minecraft** and **70+ Steam games**.
 
 ---
 
 ## ✅ **COMPLETED FEATURES**
 
-### 🔐 **1. Authentication & User Management**
+### 🎮 **1. Steam Game Server Support**
+- **70+ preconfigured games** in the catalog
+- **One-click deployment** using community Docker images
+- **Automatic port configuration** per game type
+- **Environment variable customization**
+- **CasaOS v2 integration** for native app appearance
+
+**Supported Games Include:**
+- **Survival**: Valheim, Rust, ARK: Survival Evolved, The Forest, Sons of the Forest, 7 Days to Die, V Rising, Palworld, Enshrouded
+- **Shooters**: Counter-Strike 2/CS:GO, Hell Let Loose, Squad, Insurgency: Sandstorm, Arma 3, Ready or Not, Pavlov VR
+- **Sandbox**: Terraria, Factorio, Satisfactory, Astroneer, Core Keeper, Stardew Valley, Don't Starve Together
+- **Others**: Project Zomboid, DayZ, Unturned, VRChat, Barotrauma, and many more
+
+**New Endpoints:**
+- `GET /steam/catalog` - List all available Steam games
+- `GET /steam/servers` - List running Steam servers
+- `POST /steam/servers` - Create a new Steam server
+- `DELETE /steam/servers/{name}` - Remove a Steam server
+- `POST /steam/servers/{name}/start` - Start a Steam server
+- `POST /steam/servers/{name}/stop` - Stop a Steam server
+
+### 🔐 **2. Authentication & User Management**
 - **JWT-based authentication** with secure token handling
 - **Role-based permissions** (Admin, Moderator, User)
 - **User CRUD operations** with admin controls
@@ -25,7 +46,7 @@ This document summarizes all the advanced features that have been implemented to
 - `PUT /auth/users/{id}` - Update user (admin)
 - `DELETE /auth/users/{id}` - Delete user (admin)
 
-### 📅 **2. Task Scheduling System**
+### 📅 **3. Task Scheduling System**
 - **Automated backup scheduling** with cron expressions
 - **Server restart scheduling** for maintenance
 - **Custom command execution** on schedule
@@ -45,7 +66,7 @@ This document summarizes all the advanced features that have been implemented to
 - Weekly restart: `"0 4 * * 0"`
 - Hourly cleanup: `"0 * * * *"`
 
-### 👥 **3. Player Management**
+### 👥 **4. Player Management (Minecraft)**
 - **Whitelist management** (add/remove players)
 - **Ban/Unban system** with reasons
 - **Kick players** with optional reasons
@@ -64,7 +85,7 @@ This document summarizes all the advanced features that have been implemented to
 - `DELETE /players/{server}/op/{player}` - Remove OP privileges
 - `GET /players/{server}/online` - Get online players
 
-### 🎯 **4. Server Templates**
+### 🎯 **5. Server Templates (Minecraft)**
 - **Predefined server configurations** for quick setup
 - **Template CRUD operations** with full management
 - **Popular templates** with recommended configurations
@@ -81,7 +102,7 @@ Note: The legacy Templates feature has been removed from both backend and fronte
 - Fabric Modded (Ready for mods)
 - Legacy 1.12.2 (Classic Forge)
 
-### 🗄️ **5. Database Integration**
+### 🗄️ **6. Database Integration**
 - **SQLite database** for persistent storage
 - **User data management** with relationships
 - **Scheduled task storage** with history
@@ -98,7 +119,7 @@ Note: The legacy Templates feature has been removed from both backend and fronte
 - `PlayerAction` - Player management history
 - `ServerPerformance` - Performance metrics
 
-### 🔒 **6. Enhanced Security**
+### 🔒 **7. Enhanced Security**
 - **Endpoint protection** with authentication requirements
 - **Role-based access control** (RBAC)
 - **Password security** with bcrypt hashing
@@ -295,13 +316,14 @@ You now have a **production-ready Minecraft server management system** that:
 ✅ **Automates server maintenance tasks**  
 ✅ **Provides comprehensive player management**  
 ✅ **Offers template-based rapid deployment**  
+✅ **Supports 70+ Steam game servers**  
 
-Your Minecraft Controller is now **enterprise-ready** and suitable for:
+Lynx is now **enterprise-ready** and suitable for:
 - 🏢 **Multi-user hosting environments**
 - 🎮 **Gaming communities with multiple servers**
 - 🏫 **Educational institutions**
-- 💼 **Commercial Minecraft hosting**
+- 💼 **Commercial game server hosting**
 
 ---
 
-**🎉 Congratulations! Your Minecraft Controller is now a professional-grade server management platform that rivals and exceeds commercial alternatives like Crafty Controller.**
+**🎉 Congratulations! Lynx is now a professional-grade game server management platform that rivals and exceeds commercial alternatives like Crafty Controller – with the added bonus of supporting Steam games!**

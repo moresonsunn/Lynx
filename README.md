@@ -1,18 +1,50 @@
-# Lynx (Minecraft Server Manager)
+# Lynx – Game Server Manager
 
 ![GitLab CI](https://gitlab.com/kyzen4/lynx/badges/main/pipeline.svg)
 ![GitHub CI](https://github.com/moresonsunn/Lynx/actions/workflows/ci.yml/badge.svg)
 ![Docker Pulls](https://img.shields.io/docker/pulls/moresonsun/lynx)
 ![Architecture](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-blue)
 
-Lynx is a modern web-based controller to create, manage, monitor, and automate multiple Minecraft servers using Docker containers. Inspired by Crafty but focused on:
+Lynx is a modern web-based controller to create, manage, monitor, and automate **Minecraft** and **Steam game servers** using Docker containers. Inspired by Crafty but expanded to support 70+ games:
 - Fast, preload-first UI (React + Tailwind)
-- Multi-provider support (Vanilla, Paper, Purpur, Fabric, Forge, NeoForge)
+- **Minecraft**: Vanilla, Paper, Purpur, Fabric, Forge, NeoForge with automatic Java version selection
+- **Steam games**: Valheim, Rust, ARK, Terraria, Palworld, Counter-Strike, and 70+ more
 - Declarative server creation with loader + installer resolution
 - Efficient file operations (streaming uploads, zip/unzip, optimistic UI, ETag cache busting)
 - Colored live console with reset-on-power events
 - Role & permission management (users, roles, audit logs)
 - REST API + future extensibility
+
+## Supported Games
+
+### Minecraft Server Types
+| Type | Description |
+|------|-------------|
+| Vanilla | Official Mojang server |
+| Paper | High-performance Spigot fork |
+| Purpur | Paper fork with extra features |
+| Fabric | Lightweight modding platform |
+| Forge | Classic modding platform |
+| NeoForge | Modern Forge continuation |
+
+### Steam Games (70+ Supported)
+Deploy dedicated servers for popular Steam games including:
+
+| Survival & Sandbox | Shooters & Tactical | Coop & Other |
+|-------------------|---------------------|--------------|
+| Valheim | Counter-Strike 2 / CS:GO | Terraria |
+| Rust | Hell Let Loose | Don't Starve Together |
+| ARK: Survival Evolved | Ready or Not | VRChat |
+| The Forest / Sons of the Forest | Insurgency: Sandstorm | Project Zomboid |
+| Palworld | Squad | Satisfactory |
+| V Rising | Arma 3 | Core Keeper |
+| 7 Days to Die | Pavlov VR | Stardew Valley |
+| Enshrouded | DayZ | Factorio |
+| Astroneer | Unturned | Barotrauma |
+
+See the full catalog: [backend/data/steam_games/extended_catalog.json](backend/data/steam_games/extended_catalog.json)
+
+---
 
 Single Docker image (multi-arch: linux/amd64 + linux/arm64) is published (default namespace: `moresonsun`):
 - Image (controller + UI + embedded multi-Java runtime): `moresonsun/lynx:latest`
@@ -26,17 +58,30 @@ GitLab Container Registry (when pipeline runs with `GITLAB_PUSH=true`):
 Release tags (when pushing annotated git tags like `v0.1.0`) will also publish versioned images once available.
 
 ## Core Features
-- Create / start / stop / restart / kill servers
-- Multi server types & dynamic version/loader fetching
+
+### General
+- Create / start / stop / restart / kill game servers
 - Port suggestion & validation endpoints
 - Live resource stats & player info (aggregated polling)
 - Backup create/restore (zip snapshot)
 - File manager: upload (files/folders), download, zip/unzip, rename, delete
-- Automatic server-icon detection & normalization
 - ANSI-colored console output with reset between power cycles
 - User authentication, roles, permissions, audit logging
 - Monitoring endpoints (system health, dashboard data, alerts)
-<!-- AI error fixer removed during cleanup -->
+
+### Minecraft-Specific
+- Multi server types: Vanilla, Paper, Purpur, Fabric, Forge, NeoForge
+- Dynamic version/loader fetching from official APIs
+- Automatic Java version selection (Java 8, 11, 17, 21)
+- Modpack installation from CurseForge and Modrinth
+- Automatic server-icon detection & normalization
+
+### Steam Games
+- 70+ preconfigured game templates
+- One-click server deployment using community Docker images
+- Automatic port configuration per game
+- Environment variable customization
+- CasaOS integration (install as v2 compose apps)
 
 ## Tech Stack
 - Backend: Python (FastAPI, SQLAlchemy, Docker SDK)
@@ -47,7 +92,7 @@ Release tags (when pushing annotated git tags like `v0.1.0`) will also publish v
 
 ## Project Structure
 ```
-Minecraft-Controller/
+Lynx/
   backend/
   frontend/
   docker/
@@ -224,7 +269,7 @@ docker pull --platform linux/arm64 moresonsun/lynx:latest
 1. Clone repo (optional if just using images):
 ```
 git clone https://github.com/moresonsunn/Lynx.git
-cd Minecraft-Controller
+cd Lynx
 ```
 2. Pull image:
 ```

@@ -2,6 +2,8 @@
 
 Eine vollständige Anleitung zur Installation und Verwendung von Lynx auf allen Plattformen.
 
+Lynx ist ein **Game Server Manager** – verwalte **Minecraft** und **70+ Steam-Spiele** über eine einheitliche Web-Oberfläche.
+
 ---
 
 ## 📋 Inhaltsverzeichnis
@@ -10,8 +12,9 @@ Eine vollständige Anleitung zur Installation und Verwendung von Lynx auf allen 
 2. [Installation nach Plattform](#installation-nach-plattform)
 3. [Erster Start](#erster-start)
 4. [Wichtige Befehle](#wichtige-befehle)
-5. [Server verwalten](#server-verwalten)
-6. [Fehlerbehebung](#fehlerbehebung)
+5. [Minecraft-Server verwalten](#minecraft-server-verwalten)
+6. [Steam-Server erstellen](#steam-server-erstellen)
+7. [Fehlerbehebung](#fehlerbehebung)
 
 ---
 
@@ -224,12 +227,12 @@ Nach der Installation:
 
 ---
 
-## 🎮 Server verwalten
+## 🎮 Minecraft-Server verwalten
 
-### Neuen Server erstellen
+### Neuen Minecraft-Server erstellen
 
 1. Klicke auf "New Server" oder "+" im Dashboard
-2. Wähle Server-Typ (Vanilla, Paper, Forge, Fabric, etc.)
+2. Wähle Server-Typ (Vanilla, Paper, Forge, Fabric, Purpur, NeoForge)
 3. Wähle Minecraft-Version
 4. Gib einen Namen ein
 5. Klicke auf "Create"
@@ -249,6 +252,43 @@ Nach der Installation:
 
 - Lynx Web-Interface: `8000`
 - Minecraft-Server: Beginnt bei `25565`, dann automatisch `25566`, `25567`, etc.
+
+---
+
+## 🎮 Steam-Server erstellen
+
+Lynx unterstützt **70+ Steam-Spiele** – von Valheim bis Counter-Strike.
+
+### Neuen Steam-Server erstellen
+
+1. Gehe zum "Steam Games" Tab in der Seitenleiste
+2. Durchsuche oder filtere die verfügbaren Spiele
+3. Klicke auf das gewünschte Spiel
+4. Passe Name und Einstellungen an (z.B. MAX_PLAYERS, SERVER_PASSWORD)
+5. Klicke auf "Create Server"
+
+### Beliebte Steam-Spiele
+
+| Spiel | Beschreibung |
+|-------|-------------|
+| Valheim | Wikinger-Survival |
+| Rust | Hardcore-Survival |
+| ARK: Survival Evolved | Dinosaurier-Survival |
+| Terraria | 2D-Sandbox-Abenteuer |
+| Palworld | Pokémon-artiges Survival |
+| Counter-Strike 2 | Taktischer Shooter |
+| Project Zomboid | Zombie-Survival |
+| The Forest / Sons of the Forest | Horror-Survival |
+| 7 Days to Die | Zombie-Survival |
+| V Rising | Vampir-Survival |
+
+### CasaOS-Integration
+
+Auf CasaOS können Steam-Server als native v2-Apps installiert werden:
+
+1. Setze `CASAOS_API_TOKEN` in den Lynx-Umgebungsvariablen
+2. Steam-Server erscheinen dann in CasaOS als reguläre Apps
+3. Siehe README.md für Details zur Token-Ermittlung
 
 ---
 

@@ -1,11 +1,13 @@
 # Deployment Guide
 
+Lynx is a **Game Server Manager** that supports **Minecraft** and **70+ Steam games**. This guide covers deployment options.
+
 ## Quick Start (Development)
 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd Minecraft-Controller
+   cd Lynx
    ```
 
 2. **Copy environment configuration**
@@ -29,8 +31,8 @@
 ### Prerequisites
 - Docker Engine 20.10+
 - Docker Compose 2.0+
-- 4GB+ RAM recommended
-- 20GB+ disk space
+- 4GB+ RAM recommended (8GB+ for Steam games)
+- 20GB+ disk space (100GB+ recommended for multiple game servers)
 - SSL certificates (recommended)
 
 ### Step-by-Step Production Setup
@@ -53,8 +55,8 @@
 2. **Application Setup**
    ```bash
    # Clone repository
-   git clone <repository-url> /opt/minecraft-controller
-   cd /opt/minecraft-controller
+   git clone <repository-url> /opt/lynx
+   cd /opt/lynx
    
    # Setup environment
    cp .env.example .env
@@ -110,7 +112,7 @@
 1. **Automated PostgreSQL Backups**
    ```bash
    # Create backup script
-   cat > /opt/minecraft-controller/backup-db.sh << 'EOF'
+   cat > /opt/lynx/backup-db.sh << 'EOF'
    #!/bin/bash
    BACKUP_DIR="/opt/backups/postgres"
    DATE=$(date +%Y%m%d_%H%M%S)
@@ -122,13 +124,13 @@
    find $BACKUP_DIR -name "backup_*.sql.gz" -mtime +30 -delete
    EOF
    
-   chmod +x /opt/minecraft-controller/backup-db.sh
+   chmod +x /opt/lynx/backup-db.sh
    ```
 
 2. **Setup Cron Job**
    ```bash
    # Add to crontab
-   echo "0 2 * * * /opt/minecraft-controller/backup-db.sh" | crontab -
+   echo "0 2 * * * /opt/lynx/backup-db.sh" | crontab -
    ```
 
 ### Monitoring and Logs
@@ -141,7 +143,7 @@
    docker-compose logs -f nginx
    
    # Log rotation (add to logrotate)
-   sudo nano /etc/logrotate.d/minecraft-controller
+   sudo nano /etc/logrotate.d/lynx
    ```
 
 2. **System Monitoring**
