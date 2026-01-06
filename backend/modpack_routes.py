@@ -124,11 +124,42 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
         disable_dir.mkdir(parents=True, exist_ok=True)
 
         # Collect optional patterns from env/URL/files (all lowercased)
-        # Start with a conservative built-in fallback list to catch common client-only mods when metadata is absent
+        # Extended built-in list of known client-only mods for comprehensive detection
         patterns: list[str] = [
-            "oculus", "iris", "replaymod", "dynamicfps", "dynamic-fps", "dynamic_fps",
-            "sodium", "embeddium", "xaero", "xaeros", "reeses_sodium_options", "lambdynamiclights",
-            "betterf3", "particular", "itemphysic", "framework"
+            # Rendering/Graphics mods
+            "oculus", "iris", "sodium", "embeddium", "rubidium", "magnesium",
+            "optifine", "optifabric", "lambdynamiclights", "dynamicfps", "dynamic-fps", "dynamic_fps",
+            "canvas-renderer", "immediatelyfast", "entityculling", "fpsreducer", "fps_reducer",
+            "enhancedvisuals", "better-clouds", "falling-leaves", "visuality", "cull-less-leaves",
+            "particlerain", "drippyloadingscreen", "starlight-fabric", "phosphor",
+            
+            # UI/HUD mods
+            "xaero", "xaeros", "journeymap", "voxelmap", "worldmap", "minimap",
+            "betterf3", "better-f3", "appleskin", "itemphysic", "jade", "hwyla", "waila",
+            "wthit", "emi", "rei", "jei", "roughlyenoughitems", "justmap", "torohealth",
+            "blur", "tooltip", "controlling", "mod-menu", "modmenu", "configured", "catalogue",
+            "smoothboot", "smooth-boot", "loadingscreen", "mainmenu", "panoramafix",
+            "betterthirdperson", "freelook", "cameraoverhaul", "citresewn", "cit-resewn",
+            
+            # Audio/Sound mods
+            "presence-footsteps", "presencefootsteps", "soundphysics", "ambientsounds",
+            "dynamic-music", "extrasounds", "dripsounds", "auditory",
+            
+            # Recording/Streaming
+            "replaymod", "replay-mod", "replay_mod", "worldedit-cui", "axiom",
+            
+            # Cosmetics
+            "skinlayers3d", "skin-layers", "ears", "figura", "customskinloader",
+            "more-player-models", "playeranimator", "emotes", "emotecraft",
+            
+            # Client utilities
+            "litematica", "minihud", "tweakeroo", "malilib", "itemscroller", "tweakermore",
+            "freecam", "flycam", "keystrokes", "betterpvp", "5zig", "labymod",
+            "schematica", "worldeditcui", "wecui", "light-overlay", "lightoverlay",
+            
+            # Framework keywords (may appear in some client-only libs)
+            "particular", "framework",
+            "reeses_sodium_options", "rrls", "respackopt",
         ]
         try:
             extra_env = os.environ.get("CLIENT_ONLY_MOD_PATTERNS", "").strip()

@@ -1,4 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
+from typing import Optional, List
 from pathlib import Path
 import json, time, hashlib
 from auth import require_moderator
@@ -114,3 +116,179 @@ def repair_server_jar(server_name: str, current_user: User = Depends(require_mod
         "new_size": jar_path.stat().st_size,
         "sha256": meta.get("jar_sha256"),
     }
+
+
+# ======================== Crash Analysis & Auto-Fix Endpoints ========================
+
+class AutoFixRequest(BaseModel):
+    dry_run: bool = False
+
+class CrashAnalysisResponse(BaseModel):
+    server_name: str
+    analyzed_at: str
+    crash_reports_found: int
+    client_only_issues: List[str]
+    mods_to_disable: List[str]
+    auto_fixed: bool
+    details: List[str]
+    error: Optional[str] = None
+
+class AutoFixResponse(BaseModel):
+    server_name: str
+    fixed_at: str
+    dry_run: bool
+    mods_disabled: List[str]
+    actions_taken: List[str]
+    error: Optional[str] = None
+
+
+@router.get("/{server_name}/analyze-crashes")
+def analyze_server_crashes(server_name: str, current_user: User = Depends(require_moderator)):
+    """
+    Analyze crash reports for a server to identify problematic mods.
+    
+    This endpoint scans crash-reports/ and logs/ for crash indicators,
+    identifies client-only mods and mod conflicts, and provides recommendations.
+    """
+    server_dir = SERVERS_ROOT / server_name
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail="Server directory not found")
+    
+    try:
+        from crash_analyzer import analyze_server_crashes as do_analyze
+        result = do_analyze(server_name)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
+
+
+@router.post("/{server_name}/auto-fix-mods")
+def auto_fix_server_mods(
+    server_name: str,
+    req: AutoFixRequest = AutoFixRequest(),
+    current_user: User = Depends(require_moderator)
+):
+    """
+    Automatically fix detected mod issues for a server.
+    
+    This endpoint analyzes crash logs, identifies problematic mods (client-only,
+    incompatible, etc.), and moves them to a disabled folder.
+    
+    Set dry_run=true to preview what would be done without making changes.
+    """
+    server_dir = SERVERS_ROOT / server_name
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail="Server directory not found")
+    
+    try:
+        from crash_analyzer import auto_fix_server_crashes
+        result = auto_fix_server_crashes(server_name, dry_run=req.dry_run)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Auto-fix failed: {e}")
+
+
+@router.post("/{server_name}/purge-client-mods")
+def purge_client_only_mods(
+    server_name: str,
+    current_user: User = Depends(require_moderator)
+):
+    """
+    Immediately scan and disable all detectable client-only mods.
+    
+    This uses both metadata inspection (fabric.mod.json, mods.toml) and
+    known patterns to identify and disable client-only mods.
+    """
+    server_dir = SERVERS_ROOT / server_name
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail="Server directory not found")
+    
+    mods_dir = server_dir / "mods"
+    if not mods_dir.exists():
+        return {"message": "No mods directory found", "mods_disabled": []}
+    
+    try:
+        # Import and use the purge function from modpack_routes
+        from modpack_routes import _purge_client_only_mods
+        
+        disabled = []
+        def capture_event(ev):
+            if ev.get("type") == "progress" and "Disabled" in ev.get("message", ""):
+                mod_name = ev.get("message", "").split(":")[-1].strip()
+                disabled.append(mod_name)
+        
+        _purge_client_only_mods(server_dir, push_event=capture_event)
+        
+        # Count actually moved mods
+        disabled_dir = server_dir / "mods-disabled-client"
+        moved_count = len(list(disabled_dir.glob("*.jar"))) if disabled_dir.exists() else 0
+        
+        return {
+            "message": f"Purged client-only mods",
+            "server": server_name,
+            "mods_disabled_count": moved_count,
+            "disabled_mods_folder": str(disabled_dir),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Purge failed: {e}")
+
+
+@router.get("/{server_name}/disabled-mods")
+def list_disabled_mods(server_name: str, current_user: User = Depends(require_moderator)):
+    """
+    List all disabled mods (client-only, crash-related, incompatible).
+    """
+    server_dir = SERVERS_ROOT / server_name
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail="Server directory not found")
+    
+    result = {
+        "server": server_name,
+        "disabled_client": [],
+        "disabled_crash": [],
+        "disabled_incompatible": [],
+    }
+    
+    for category, folder in [
+        ("disabled_client", "mods-disabled-client"),
+        ("disabled_crash", "mods-disabled-crash"),
+        ("disabled_incompatible", "mods-disabled-incompatible"),
+    ]:
+        disabled_dir = server_dir / folder
+        if disabled_dir.exists():
+            result[category] = [f.name for f in disabled_dir.glob("*.jar")]
+    
+    return result
+
+
+@router.post("/{server_name}/restore-mod")
+def restore_disabled_mod(
+    server_name: str,
+    mod_name: str,
+    current_user: User = Depends(require_moderator)
+):
+    """
+    Restore a previously disabled mod back to the mods folder.
+    """
+    server_dir = SERVERS_ROOT / server_name
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail="Server directory not found")
+    
+    mods_dir = server_dir / "mods"
+    mods_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Check all disabled directories
+    for folder in ["mods-disabled-client", "mods-disabled-crash", "mods-disabled-incompatible"]:
+        disabled_dir = server_dir / folder
+        mod_path = disabled_dir / mod_name
+        if mod_path.exists():
+            import shutil
+            dest = mods_dir / mod_name
+            shutil.move(str(mod_path), str(dest))
+            return {
+                "message": f"Restored {mod_name} to mods folder",
+                "server": server_name,
+                "restored_from": folder,
+            }
+    
+    raise HTTPException(status_code=404, detail=f"Mod {mod_name} not found in disabled folders")

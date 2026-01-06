@@ -167,6 +167,10 @@ fi
 # -------- Incompatible-loader & client-only purge --------
 AUTO_CLIENT_PURGE=${AUTO_CLIENT_PURGE:-1}
 AUTO_INCOMPATIBLE_PURGE=${AUTO_INCOMPATIBLE_PURGE:-1}
+# Enable automatic crash recovery (disable problematic mods and retry)
+AUTO_CRASH_RECOVERY=${AUTO_CRASH_RECOVERY:-1}
+# Maximum auto-restart attempts before giving up
+MAX_CRASH_RECOVERY_ATTEMPTS=${MAX_CRASH_RECOVERY_ATTEMPTS:-3}
 
 have_unzip() { command -v unzip >/dev/null 2>&1; }
 have_curl() { command -v curl >/dev/null 2>&1; }
@@ -456,6 +460,172 @@ purge_kubejs_datapacks() {
 
 purge_kubejs_datapacks || true
 
+# -------- Crash Recovery Functions --------
+CRASH_RECOVERY_ATTEMPT=0
+
+# Check if the latest crash report or log indicates a client-only mod issue
+analyze_crash_for_client_mods() {
+  local crash_dir="./crash-reports"
+  local logs_dir="./logs"
+  local found_client_issue=0
+  
+  # Client-only crash patterns
+  local client_patterns=(
+    "Client environment required"
+    "Environment type CLIENT"
+    "onlyIn.*CLIENT"
+    "Dist.CLIENT"
+    "No OpenGL context"
+    "GLFW error"
+    "org.lwjgl.opengl"
+    "com.mojang.blaze3d"
+    "net.minecraft.client"
+    "RenderSystem.assert"
+    "GlStateManager"
+    "Display.*not created"
+  )
+  
+  # Check latest crash report
+  if [ -d "$crash_dir" ]; then
+    local latest_crash
+    latest_crash=$(ls -t "$crash_dir"/crash-*.txt 2>/dev/null | head -n1)
+    if [ -n "$latest_crash" ] && [ -f "$latest_crash" ]; then
+      for pattern in "${client_patterns[@]}"; do
+        if grep -Eqi "$pattern" "$latest_crash" 2>/dev/null; then
+          echo "INFO: Found client-only crash indicator: $pattern"
+          found_client_issue=1
+          break
+        fi
+      done
+    fi
+  fi
+  
+  # Check latest.log
+  if [ "$found_client_issue" -eq 0 ] && [ -f "$logs_dir/latest.log" ]; then
+    for pattern in "${client_patterns[@]}"; do
+      if grep -Eqi "$pattern" "$logs_dir/latest.log" 2>/dev/null; then
+        echo "INFO: Found client-only crash indicator in log: $pattern"
+        found_client_issue=1
+        break
+      fi
+    done
+  fi
+  
+  return $found_client_issue
+}
+
+# Extract mod names from crash report and disable them
+disable_crash_mods() {
+  local crash_dir="./crash-reports"
+  local mods_dir="./mods"
+  local disable_dir="./mods-disabled-crash"
+  local disabled_count=0
+  
+  [ -d "$mods_dir" ] || return 0
+  mkdir -p "$disable_dir"
+  
+  # Extended list of known client-only mod patterns
+  local client_mod_patterns=(
+    "iris" "oculus" "sodium" "embeddium" "rubidium" "optifine" "optifabric"
+    "xaero" "journeymap" "voxelmap" "worldmap" "minimap"
+    "replaymod" "replay" "dynamicfps" "dynamic-fps" "dynamic_fps"
+    "lambdynamiclights" "betterf3" "better-f3" "itemphysic"
+    "particular" "presence-footsteps" "soundphysics" "ambientsounds"
+    "litematica" "minihud" "tweakeroo" "freecam" "flycam"
+    "modmenu" "mod-menu" "controlling" "configured"
+    "canvas-renderer" "immediatelyfast" "entityculling"
+    "fpsreducer" "enhancedvisuals" "visuality" "cull-less-leaves"
+    "skinlayers" "ears" "figura" "emotecraft" "emotes"
+    "appleskin" "jade" "hwyla" "waila" "wthit" "emi" "rei"
+    "blur" "tooltip" "smooth-boot" "smoothboot" "loadingscreen"
+    "torohealth" "betterthirdperson" "cameraoverhaul" "citresewn"
+    "shader" "dripsounds" "auditory" "extrasounds"
+  )
+  
+  # First, scan for known client-only mods
+  shopt -s nullglob
+  for jar in "$mods_dir"/*.jar; do
+    local base lower
+    base="$(basename "$jar")"
+    lower="${base,,}"
+    
+    # Check metadata for environment=client
+    local is_client=0
+    if have_unzip; then
+      if unzip -p "$jar" fabric.mod.json 2>/dev/null | grep -qi '"environment"[[:space:]]*:[[:space:]]*"client"'; then
+        is_client=1
+      elif unzip -p "$jar" quilt.mod.json 2>/dev/null | grep -qi '"environment"[[:space:]]*:[[:space:]]*"client"'; then
+        is_client=1
+      elif unzip -p "$jar" META-INF/mods.toml 2>/dev/null | grep -Eiq 'clientsideonly\s*=\s*true|client_only\s*=\s*true'; then
+        is_client=1
+      fi
+    fi
+    
+    # Check against known patterns if not already identified
+    if [ "$is_client" -eq 0 ]; then
+      for pattern in "${client_mod_patterns[@]}"; do
+        if [[ "$lower" == *"$pattern"* ]]; then
+          is_client=1
+          break
+        fi
+      done
+    fi
+    
+    if [ "$is_client" -eq 1 ]; then
+      echo "INFO: [Crash Recovery] Disabling client-only mod: $base"
+      mv -f "$jar" "$disable_dir/" || true
+      disabled_count=$((disabled_count+1))
+    fi
+  done
+  shopt -u nullglob
+  
+  echo "INFO: [Crash Recovery] Disabled $disabled_count mods"
+  return $disabled_count
+}
+
+# Main crash recovery handler
+handle_crash_recovery() {
+  local exit_code="$1"
+  
+  if [ "$AUTO_CRASH_RECOVERY" != "1" ]; then
+    echo "INFO: Auto crash recovery disabled. Exiting with code $exit_code"
+    exit "$exit_code"
+  fi
+  
+  CRASH_RECOVERY_ATTEMPT=$((CRASH_RECOVERY_ATTEMPT+1))
+  
+  if [ "$CRASH_RECOVERY_ATTEMPT" -gt "$MAX_CRASH_RECOVERY_ATTEMPTS" ]; then
+    echo "ERROR: Maximum crash recovery attempts ($MAX_CRASH_RECOVERY_ATTEMPTS) reached. Manual intervention required."
+    exit "$exit_code"
+  fi
+  
+  echo "INFO: =========================================="
+  echo "INFO: Crash detected (exit code: $exit_code)"
+  echo "INFO: Recovery attempt $CRASH_RECOVERY_ATTEMPT of $MAX_CRASH_RECOVERY_ATTEMPTS"
+  echo "INFO: =========================================="
+  
+  # Analyze crash and try to fix
+  if analyze_crash_for_client_mods; then
+    echo "INFO: Client-only mod crash detected. Attempting auto-fix..."
+    disable_crash_mods
+    
+    # Re-run purge functions
+    echo "INFO: Running additional purge operations..."
+    purge_mods || true
+    
+    echo "INFO: Restarting server in 5 seconds..."
+    sleep 5
+    
+    # Restart the server
+    return 0  # Signal to retry
+  else
+    echo "INFO: Could not identify crash cause. Running general purge and retrying..."
+    disable_crash_mods
+    sleep 3
+    return 0  # Still try to restart
+  fi
+}
+
 # Run installer if present (forge/neoforge)
 INSTALLER_JAR=$(ls *installer*.jar 2>/dev/null || true)
 if [ -n "$INSTALLER_JAR" ]; then
@@ -560,6 +730,58 @@ fi
 
 # For Forge/NeoForge servers: if a jar exists, try running installer first headlessly
 # For Forge/NeoForge: prefer run.sh immediately; do not try to 'install' non-installer jars
+
+# -------- Server Start with Crash Recovery --------
+# Wrap server start in a function for crash recovery
+start_server_with_recovery() {
+  local cmd_type="$1"
+  shift
+  local cmd_args=("$@")
+  
+  while true; do
+    echo "INFO: Starting server (recovery attempt: $CRASH_RECOVERY_ATTEMPT)..."
+    
+    # Create console FIFO
+    mkfifo -m 600 console.in 2>/dev/null || true
+    
+    # Start the server process (not exec, so we can catch exit)
+    set +e
+    case "$cmd_type" in
+      "runsh")
+        tail -f -n +1 console.in | bash ./run.sh
+        ;;
+      "java")
+        tail -f -n +1 console.in | "$JAVA_BIN" $ALL_JAVA_ARGS "${cmd_args[@]}"
+        ;;
+    esac
+    local exit_code=$?
+    set -e
+    
+    echo "INFO: Server exited with code: $exit_code"
+    
+    # Clean exit (0) or stop command (143 = SIGTERM)
+    if [ "$exit_code" -eq 0 ] || [ "$exit_code" -eq 143 ]; then
+      echo "INFO: Server stopped gracefully."
+      exit 0
+    fi
+    
+    # Crash - attempt recovery
+    if [ "$AUTO_CRASH_RECOVERY" = "1" ]; then
+      handle_crash_recovery "$exit_code"
+      if [ $? -eq 0 ]; then
+        # handle_crash_recovery returned 0, retry server start
+        echo "INFO: Retrying server start after recovery..."
+        rm -f console.in 2>/dev/null || true
+        continue
+      fi
+    fi
+    
+    # Recovery failed or disabled
+    echo "ERROR: Server crashed and recovery failed or disabled."
+    exit "$exit_code"
+  done
+}
+
 if { [ "$SERVER_TYPE" = "forge" ] || [ "$SERVER_TYPE" = "neoforge" ]; }; then
   if [ -f run.sh ]; then
     echo "Starting Forge/NeoForge via run.sh"
@@ -569,10 +791,7 @@ if { [ "$SERVER_TYPE" = "forge" ] || [ "$SERVER_TYPE" = "neoforge" ]; }; then
     ln -sf "$JAVA_BIN" "$TMP_JAVA_DIR/java"
     export PATH="$TMP_JAVA_DIR:$PATH"
     echo "DEBUG: Overriding 'java' for run.sh with: $JAVA_BIN"
-  # Create stdin FIFO bridge to allow external commands
-  mkfifo -m 600 console.in 2>/dev/null || true
-  # Pipe FIFO into run.sh so Java inherits stdin
-  tail -f -n +1 console.in | exec bash ./run.sh
+    start_server_with_recovery "runsh"
   fi
 fi
 
@@ -601,14 +820,10 @@ if { [ "$SERVER_TYPE" = "fabric" ] || [ "$SERVER_TYPE" = "quilt" ]; } && [ -n "$
   # If the chosen jar filename contains 'fabric' or 'quilt', assume it's the launcher and use 'server' argument; otherwise, run normally (nogui)
   if echo "$start_jar" | grep -Eqi "fabric|quilt"; then
     echo "Starting ${SERVER_TYPE^} via launcher: $start_jar (with 'server' argument)"
-  # Create stdin FIFO bridge to allow external commands
-  mkfifo -m 600 console.in 2>/dev/null || true
-  # Feed FIFO into Java stdin so the controller can write commands
-  tail -f -n +1 console.in | exec "$JAVA_BIN" $ALL_JAVA_ARGS -jar "$start_jar" server
+    start_server_with_recovery "java" -jar "$start_jar" server
   else
     echo "Starting ${SERVER_TYPE^} using standard server jar: $start_jar (nogui)"
-  mkfifo -m 600 console.in 2>/dev/null || true
-  tail -f -n +1 console.in | exec "$JAVA_BIN" $ALL_JAVA_ARGS -jar "$start_jar" nogui
+    start_server_with_recovery "java" -jar "$start_jar" nogui
   fi
 fi
 
@@ -621,8 +836,7 @@ if [ -f run.sh ]; then
   ln -sf "$JAVA_BIN" "$TMP_JAVA_DIR/java"
   export PATH="$TMP_JAVA_DIR:$PATH"
   echo "DEBUG: Overriding 'java' for run.sh with: $JAVA_BIN"
-  mkfifo -m 600 console.in 2>/dev/null || true
-  tail -f -n +1 console.in | exec bash ./run.sh
+  start_server_with_recovery "runsh"
 fi
 
 # For other server types
@@ -652,8 +866,7 @@ if [ -n "$start_jar" ]; then
     echo "WARNING: JAR file validation failed, but attempting to start anyway..."
   fi
   
-  mkfifo -m 600 console.in 2>/dev/null || true
-  tail -f -n +1 console.in | exec "$JAVA_BIN" $ALL_JAVA_ARGS -jar "$start_jar" nogui
+  start_server_with_recovery "java" -jar "$start_jar" nogui
 fi
 
 echo "No server jar or run.sh found in $(pwd). Contents:" >&2

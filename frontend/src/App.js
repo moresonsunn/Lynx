@@ -159,6 +159,9 @@ import {
   FaUserSlash,
   FaUserCheck,
   FaUniversalAccess,
+  FaDesktop,
+  FaLock,
+  FaUnlock,
 } from 'react-icons/fa';
 import TerminalPanel from './components/TerminalPanel';
 import BackupsPanel from './components/server-details/BackupsPanel';
@@ -696,16 +699,28 @@ function useServerStats(serverId) {
   return stats;
 }
 
-function Stat({ label, value, icon }) {
+function Stat({ label, value, icon, subValue }) {
   return (
     <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3 flex items-center gap-3">
       {icon && <span className="text-xl text-white/60">{icon}</span>}
-      <div>
+      <div className="min-w-0">
         <div className="text-sm text-white/70">{label}</div>
-        <div className="text-2xl font-semibold mt-1">{value}</div>
+        <div className="text-xl font-semibold mt-1 truncate">{value}</div>
+        {subValue && <div className="text-xs text-white/50 mt-0.5">{subValue}</div>}
       </div>
     </div>
   );
+}
+
+// Format uptime from seconds to human readable
+function formatUptime(seconds) {
+  if (!seconds || seconds <= 0) return 'Offline';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
 }
 
 
@@ -1080,7 +1095,13 @@ function ServerDetailsPage({
                 </div>
               ) : null}
             </div>
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="mt-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <Stat
+                label="Uptime"
+                value={formatUptime(stats?.uptime_seconds)}
+                icon={<FaClock />}
+                subValue={stats?.restart_count > 0 ? `${stats.restart_count} restart${stats.restart_count > 1 ? 's' : ''}` : null}
+              />
               <Stat
                 label="CPU Usage"
                 value={
@@ -1091,22 +1112,24 @@ function ServerDetailsPage({
                 icon={<FaMicrochip />}
               />
               <Stat
-                label="RAM Usage"
+                label="Memory"
                 value={
                   stats && typeof stats.memory_usage_mb === 'number'
-                    ? `${Math.round(stats.memory_usage_mb)}MB / ${Math.round(stats.memory_limit_mb)}MB`
+                    ? `${Math.round(stats.memory_usage_mb)}MB`
                     : '...'
                 }
                 icon={<FaMemory />}
+                subValue={stats?.memory_limit_mb ? `of ${Math.round(stats.memory_limit_mb)}MB (${stats.memory_percent?.toFixed(0) || 0}%)` : null}
               />
               <Stat
-                label="Networking"
+                label="Network I/O"
                 value={
                   stats && typeof stats.network_rx_mb === 'number'
-                    ? `In: ${stats.network_rx_mb.toFixed(2)} MB, Out: ${stats.network_tx_mb.toFixed(2)} MB`
+                    ? `↓${stats.network_rx_mb.toFixed(1)}MB`
                     : '...'
                 }
                 icon={<FaNetworkWired />}
+                subValue={stats?.network_tx_mb !== undefined ? `↑${stats.network_tx_mb.toFixed(1)}MB sent` : null}
               />
             </div>
           </div>
@@ -1291,8 +1314,13 @@ const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
             ) : null}
             {stats && !stats.error && (
               <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px] text-white/80">
+                {stats.uptime_seconds > 0 && (
+                  <span className="rounded-full bg-green-500/20 px-2 py-0.5 shadow-inner text-green-300">
+                    <FaClock className="inline mr-1 text-[9px]" />{formatUptime(stats.uptime_seconds)}
+                  </span>
+                )}
                 <span className="rounded-full bg-white/10 px-2 py-0.5 shadow-inner">CPU {stats.cpu_percent}%</span>
-                <span className="rounded-full bg-white/10 px-2 py-0.5 shadow-inner">RAM {stats.memory_usage_mb}/{stats.memory_limit_mb} MB</span>
+                <span className="rounded-full bg-white/10 px-2 py-0.5 shadow-inner">RAM {Math.round(stats.memory_usage_mb)}/{Math.round(stats.memory_limit_mb)} MB</span>
               </div>
             )}
           </div>
@@ -1735,6 +1763,15 @@ function AdvancedUserManagementPageImpl() {
         <RolesTab 
           roles={safeRoles}
           setSelectedRole={setSelectedRole}
+          onRefresh={loadUsers}
+        />
+      )}
+
+      {selectedUser && (
+        <UserDetailsModal
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+          onUpdate={loadUsers}
         />
       )}
 
@@ -3562,7 +3599,7 @@ function App() {
   }
 
     return (
-      <div className="min-h-screen bg-ink bg-hero-gradient flex overflow-hidden">
+      <div className="h-screen bg-ink bg-hero-gradient flex overflow-hidden">
       {/* Sidebar */}
       {isAuthenticated && (() => {
         // Sidebar content reused for desktop and mobile overlay
@@ -3608,7 +3645,7 @@ function App() {
                 </div>
               </nav>
             </div>
-            <div className="p-4 border-t border-white/10 bg-black/30 backdrop-blur supports-[backdrop-filter]:bg-black/20">
+            <div className="mt-auto p-4 border-t border-white/10 bg-black/30 backdrop-blur supports-[backdrop-filter]:bg-black/20">
               {/* Language Switcher */}
               <div className={`mb-3 ${(!isMobile && !sidebarOpen) ? 'flex justify-center' : ''}`}>
                 <LanguageSwitcherCompact />
@@ -3856,12 +3893,114 @@ function UsersTab({
 }
 
 // Roles Tab Component
-function RolesTab({ roles, permissionCategories, setSelectedRole }) {
+function RolesTab({ roles, permissionCategories, setSelectedRole, onRefresh }) {
   // Ensure roles is always an array
   const safeRoles = Array.isArray(roles) ? roles : [];
+  const gd = useGlobalData();
+  
+  const [showCreateRole, setShowCreateRole] = React.useState(false);
+  const [newRoleName, setNewRoleName] = React.useState('');
+  const [newRoleDesc, setNewRoleDesc] = React.useState('');
+  const [creating, setCreating] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const handleCreateRole = async () => {
+    if (!newRoleName.trim()) {
+      setError('Role name is required');
+      return;
+    }
+    setCreating(true);
+    setError('');
+    try {
+      const res = await fetch(`${API}/users/roles`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ name: newRoleName, description: newRoleDesc, permissions: [] })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
+      setShowCreateRole(false);
+      setNewRoleName('');
+      setNewRoleDesc('');
+      // Refresh roles
+      gd?.__refreshBG && gd.__refreshBG('roles', `${API}/users/roles`, (d) => d.roles || []);
+      onRefresh && onRefresh();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDeleteRole = async (roleName) => {
+    if (!confirm(`Delete role "${roleName}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${API}/users/roles/${encodeURIComponent(roleName)}`, {
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
+      gd?.__refreshBG && gd.__refreshBG('roles', `${API}/users/roles`, (d) => d.roles || []);
+      onRefresh && onRefresh();
+    } catch (e) {
+      alert('Failed to delete role: ' + e.message);
+    }
+  };
   
   return (
     <div className="space-y-4">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <h3 className="font-medium text-white">Roles</h3>
+        <button 
+          onClick={() => setShowCreateRole(true)}
+          className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 rounded text-white text-sm flex items-center gap-2"
+        >
+          <FaPlus /> Create Role
+        </button>
+      </div>
+
+      {/* Create Role Form */}
+      {showCreateRole && (
+        <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+          <h4 className="font-medium text-white mb-3">Create New Role</h4>
+          {error && <div className="text-red-300 text-sm mb-3">{error}</div>}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="text-xs text-white/60">Name *</label>
+              <input 
+                value={newRoleName} 
+                onChange={e => setNewRoleName(e.target.value)} 
+                placeholder="e.g., helper" 
+                className="w-full mt-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-white" 
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/60">Description</label>
+              <input 
+                value={newRoleDesc} 
+                onChange={e => setNewRoleDesc(e.target.value)} 
+                placeholder="Optional description" 
+                className="w-full mt-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-white" 
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleCreateRole} disabled={creating} className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 rounded text-white text-sm disabled:opacity-50">
+              {creating ? 'Creating...' : 'Create'}
+            </button>
+            <button onClick={() => { setShowCreateRole(false); setNewRoleName(''); setNewRoleDesc(''); setError(''); }} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-white text-sm">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Role Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {safeRoles.map((role) => {
@@ -3912,13 +4051,22 @@ function RolesTab({ roles, permissionCategories, setSelectedRole }) {
                 )}
               </div>
               
-              <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="mt-4 pt-4 border-t border-white/10 flex gap-2">
                 <button 
                   onClick={() => setSelectedRole(role)}
-                  className="w-full py-2 px-4 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-medium transition-colors"
+                  className="flex-1 py-2 px-4 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-medium transition-colors"
                 >
-                  View Details
+                  View / Edit
                 </button>
+                {!role.is_system && (
+                  <button 
+                    onClick={() => handleDeleteRole(role.name)}
+                    className="py-2 px-3 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-red-300 text-sm transition-colors"
+                    title="Delete Role"
+                  >
+                    <FaTrash />
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -4117,6 +4265,603 @@ function CreateUserModal({ show, onClose, newUser, setNewUser, roles, onSubmit }
           >
             Create User
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// User Details Modal - Comprehensive user management with sessions, 2FA, API keys
+function UserDetailsModal({ user, onClose, onUpdate }) {
+  const [activeTab, setActiveTab] = React.useState('profile');
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [success, setSuccess] = React.useState('');
+  
+  // User data
+  const [editUser, setEditUser] = React.useState(user || {});
+  const [sessions, setSessions] = React.useState([]);
+  const [apiKeys, setApiKeys] = React.useState([]);
+  const [loginHistory, setLoginHistory] = React.useState([]);
+  const [twoFaStatus, setTwoFaStatus] = React.useState(null);
+  
+  // 2FA setup
+  const [twoFaSetup, setTwoFaSetup] = React.useState(null);
+  const [verifyCode, setVerifyCode] = React.useState('');
+  
+  // API Key creation
+  const [showCreateKey, setShowCreateKey] = React.useState(false);
+  const [newKeyName, setNewKeyName] = React.useState('');
+  const [newKeyExpires, setNewKeyExpires] = React.useState('');
+  const [createdKey, setCreatedKey] = React.useState(null);
+  
+  // Password reset
+  const [showPasswordReset, setShowPasswordReset] = React.useState(false);
+  const [newPassword, setNewPassword] = React.useState('');
+  const [forceChange, setForceChange] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!user) return;
+    setEditUser(user);
+    loadUserData();
+  }, [user?.id]);
+
+  const loadUserData = async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    try {
+      // Load sessions
+      const sessionsRes = await fetch(`${API}/users/${user.id}/sessions`, { headers: authHeaders() });
+      if (sessionsRes.ok) {
+        const data = await sessionsRes.json();
+        setSessions(data.sessions || []);
+      }
+      
+      // Load API keys
+      const keysRes = await fetch(`${API}/users/${user.id}/api-keys`, { headers: authHeaders() });
+      if (keysRes.ok) {
+        const data = await keysRes.json();
+        setApiKeys(data.api_keys || []);
+      }
+      
+      // Load login history
+      const historyRes = await fetch(`${API}/users/${user.id}/login-history?page_size=20`, { headers: authHeaders() });
+      if (historyRes.ok) {
+        const data = await historyRes.json();
+        setLoginHistory(data.entries || []);
+      }
+      
+      // Load 2FA status
+      const tfaRes = await fetch(`${API}/users/${user.id}/2fa/status`, { headers: authHeaders() });
+      if (tfaRes.ok) {
+        const data = await tfaRes.json();
+        setTwoFaStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to load user data:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API}/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          email: editUser.email,
+          full_name: editUser.full_name,
+          role: editUser.role,
+          is_active: editUser.is_active
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
+      setSuccess('Profile updated successfully');
+      onUpdate && onUpdate();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRevokeSession = async (sessionId) => {
+    try {
+      const res = await fetch(`${API}/users/${user.id}/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+      if (!res.ok) throw new Error('Failed to revoke session');
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      setSuccess('Session revoked');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleRevokeAllSessions = async () => {
+    if (!confirm('Revoke all sessions except current?')) return;
+    try {
+      const res = await fetch(`${API}/users/${user.id}/sessions?keep_current=true`, {
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+      if (!res.ok) throw new Error('Failed to revoke sessions');
+      const data = await res.json();
+      setSuccess(`Revoked ${data.revoked_count} sessions`);
+      loadUserData();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleCreateApiKey = async () => {
+    if (!newKeyName.trim()) {
+      setError('API key name is required');
+      return;
+    }
+    try {
+      const body = { name: newKeyName };
+      if (newKeyExpires) body.expires_days = parseInt(newKeyExpires);
+      
+      const res = await fetch(`${API}/users/${user.id}/api-keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setCreatedKey(data.key);
+      setShowCreateKey(false);
+      setNewKeyName('');
+      setNewKeyExpires('');
+      loadUserData();
+      setSuccess('API key created! Copy it now - it will not be shown again.');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleRevokeApiKey = async (keyId) => {
+    if (!confirm('Are you sure you want to revoke this API key?')) return;
+    try {
+      const res = await fetch(`${API}/users/${user.id}/api-keys/${keyId}`, {
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+      if (!res.ok) throw new Error('Failed to revoke API key');
+      setApiKeys(prev => prev.filter(k => k.id !== keyId));
+      setSuccess('API key revoked');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleSetup2FA = async () => {
+    try {
+      const res = await fetch(`${API}/users/${user.id}/2fa/setup`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setTwoFaSetup(data);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleVerify2FA = async () => {
+    if (!verifyCode.trim()) {
+      setError('Please enter the verification code');
+      return;
+    }
+    try {
+      const res = await fetch(`${API}/users/${user.id}/2fa/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ code: verifyCode })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || 'Invalid code');
+      }
+      setTwoFaSetup(null);
+      setVerifyCode('');
+      setSuccess('Two-factor authentication enabled!');
+      loadUserData();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleDisable2FA = async () => {
+    if (!confirm('Are you sure you want to disable 2FA?')) return;
+    try {
+      const res = await fetch(`${API}/users/${user.id}/2fa/disable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({})
+      });
+      if (!res.ok) throw new Error('Failed to disable 2FA');
+      setSuccess('Two-factor authentication disabled');
+      loadUserData();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!newPassword || newPassword.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    try {
+      const res = await fetch(`${API}/users/${user.id}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ new_password: newPassword, force_change: forceChange })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
+      setShowPasswordReset(false);
+      setNewPassword('');
+      setSuccess('Password reset successfully');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleUnlockUser = async () => {
+    try {
+      const res = await fetch(`${API}/users/${user.id}/unlock`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+      if (!res.ok) throw new Error('Failed to unlock user');
+      setSuccess('User unlocked successfully');
+      onUpdate && onUpdate();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  if (!user) return null;
+
+  const tabs = [
+    { id: 'profile', label: 'Profile', icon: FaUser },
+    { id: 'sessions', label: 'Sessions', icon: FaDesktop },
+    { id: 'security', label: 'Security', icon: FaShieldAlt },
+    { id: 'apikeys', label: 'API Keys', icon: FaKey },
+    { id: 'history', label: 'Login History', icon: FaHistory }
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-ink/95 backdrop-blur border border-white/10 rounded-xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <div className="flex items-center gap-4">
+            <div 
+              className="w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold text-white"
+              style={{ backgroundColor: '#6366f1' }}
+            >
+              {user.username?.charAt(0)?.toUpperCase() || '?'}
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-white">{user.username}</h2>
+              <p className="text-white/60 text-sm">{user.email}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`text-xs px-2 py-0.5 rounded ${user.is_active ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                  {user.is_active ? 'Active' : 'Inactive'}
+                </span>
+                <span className="text-xs px-2 py-0.5 rounded bg-brand-500/20 text-brand-300">{user.role}</span>
+                {user.locked_until && new Date(user.locked_until) > new Date() && (
+                  <span className="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-300">Locked</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-white/70 hover:text-white">
+            <FaTimes />
+          </button>
+        </div>
+
+        {/* Messages */}
+        {error && (
+          <div className="mx-4 mt-4 bg-red-500/10 border border-red-500/20 text-red-300 p-3 rounded-lg flex items-center gap-2">
+            <FaExclamationTriangle /> {error}
+            <button onClick={() => setError('')} className="ml-auto"><FaTimes /></button>
+          </div>
+        )}
+        {success && (
+          <div className="mx-4 mt-4 bg-green-500/10 border border-green-500/20 text-green-300 p-3 rounded-lg flex items-center gap-2">
+            <FaCheckCircle /> {success}
+            <button onClick={() => setSuccess('')} className="ml-auto"><FaTimes /></button>
+          </div>
+        )}
+        {createdKey && (
+          <div className="mx-4 mt-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 p-3 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <FaKey /> <strong>New API Key Created!</strong>
+            </div>
+            <div className="bg-black/30 p-2 rounded font-mono text-sm break-all">{createdKey}</div>
+            <p className="text-xs mt-2 text-yellow-200">Copy this key now! It will not be shown again.</p>
+            <button onClick={() => setCreatedKey(null)} className="mt-2 text-xs underline">Dismiss</button>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex border-b border-white/10 px-4 overflow-x-auto">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === tab.id 
+                  ? 'border-brand-500 text-white' 
+                  : 'border-transparent text-white/60 hover:text-white'
+              }`}
+            >
+              <tab.icon className="text-sm" /> {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading && <div className="text-center py-8 text-white/60">Loading...</div>}
+          
+          {!loading && activeTab === 'profile' && (
+            <div className="space-y-4 max-w-2xl">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-white/60">Username</label>
+                  <input value={editUser.username || ''} disabled className="w-full mt-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-white/70" />
+                </div>
+                <div>
+                  <label className="text-xs text-white/60">Email</label>
+                  <input value={editUser.email || ''} onChange={e => setEditUser({...editUser, email: e.target.value})} className="w-full mt-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-white focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label className="text-xs text-white/60">Full Name</label>
+                  <input value={editUser.full_name || ''} onChange={e => setEditUser({...editUser, full_name: e.target.value})} className="w-full mt-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-white focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label className="text-xs text-white/60">Role</label>
+                  <input value={editUser.role || ''} disabled className="w-full mt-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-white/70" />
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-4 pt-4">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={editUser.is_active || false} onChange={e => setEditUser({...editUser, is_active: e.target.checked})} />
+                  <span className="text-white/80">Active</span>
+                </label>
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button onClick={handleSaveProfile} className="px-4 py-2 bg-brand-500 hover:bg-brand-600 rounded text-white">Save Changes</button>
+                <button onClick={() => setShowPasswordReset(true)} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-white">Reset Password</button>
+                {user.locked_until && new Date(user.locked_until) > new Date() && (
+                  <button onClick={handleUnlockUser} className="px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 rounded text-yellow-300">Unlock User</button>
+                )}
+              </div>
+              
+              {/* Password Reset Form */}
+              {showPasswordReset && (
+                <div className="bg-white/5 border border-white/10 rounded-lg p-4 mt-4">
+                  <h4 className="font-medium text-white mb-3">Reset Password</h4>
+                  <input 
+                    type="password" 
+                    value={newPassword} 
+                    onChange={e => setNewPassword(e.target.value)} 
+                    placeholder="New password (min 8 chars)"
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded text-white mb-3"
+                  />
+                  <label className="flex items-center gap-2 text-white/80 mb-3">
+                    <input type="checkbox" checked={forceChange} onChange={e => setForceChange(e.target.checked)} />
+                    Require password change on next login
+                  </label>
+                  <div className="flex gap-2">
+                    <button onClick={handlePasswordReset} className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 rounded text-white text-sm">Reset</button>
+                    <button onClick={() => { setShowPasswordReset(false); setNewPassword(''); }} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-white text-sm">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!loading && activeTab === 'sessions' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-medium text-white">Active Sessions</h3>
+                <button onClick={handleRevokeAllSessions} className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded text-red-300 text-sm">Revoke All Others</button>
+              </div>
+              <div className="space-y-2">
+                {sessions.length === 0 && <div className="text-white/60 py-4">No active sessions</div>}
+                {sessions.map(s => (
+                  <div key={s.id} className="bg-white/5 border border-white/10 rounded-lg p-3 flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <FaDesktop className="text-white/60" />
+                        <span className="text-white">{s.ip_address || 'Unknown IP'}</span>
+                        {s.is_current && <span className="text-xs bg-green-500/20 text-green-300 px-2 py-0.5 rounded">Current</span>}
+                      </div>
+                      <div className="text-xs text-white/50 mt-1 truncate max-w-md">{s.user_agent || 'Unknown device'}</div>
+                      <div className="text-xs text-white/40 mt-1">Created: {s.created_at ? new Date(s.created_at).toLocaleString() : '—'}</div>
+                    </div>
+                    {!s.is_current && (
+                      <button onClick={() => handleRevokeSession(s.id)} className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 rounded text-red-300 text-sm">Revoke</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!loading && activeTab === 'security' && (
+            <div className="space-y-6 max-w-2xl">
+              {/* 2FA Status */}
+              <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                <h3 className="font-medium text-white mb-3 flex items-center gap-2"><FaShieldAlt /> Two-Factor Authentication</h3>
+                {twoFaStatus?.enabled ? (
+                  <div>
+                    <div className="flex items-center gap-2 text-green-300 mb-3">
+                      <FaCheckCircle /> 2FA is enabled
+                    </div>
+                    <p className="text-sm text-white/60 mb-3">Backup codes remaining: {twoFaStatus.backup_codes_remaining}</p>
+                    <button onClick={handleDisable2FA} className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded text-red-300 text-sm">Disable 2FA</button>
+                  </div>
+                ) : twoFaSetup ? (
+                  <div>
+                    <p className="text-white/80 mb-3">Scan this QR code with your authenticator app:</p>
+                    <div className="bg-white p-4 rounded-lg inline-block mb-4">
+                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(twoFaSetup.totp_uri)}`} alt="2FA QR Code" className="w-48 h-48" />
+                    </div>
+                    <div className="mb-4">
+                      <p className="text-xs text-white/60 mb-2">Or enter this secret manually:</p>
+                      <code className="text-xs bg-black/30 px-2 py-1 rounded text-brand-300">{twoFaSetup.secret}</code>
+                    </div>
+                    <div className="mb-4">
+                      <p className="text-xs text-white/60 mb-2">Backup codes (save these!):</p>
+                      <div className="grid grid-cols-5 gap-1 text-xs font-mono">
+                        {twoFaSetup.backup_codes?.map((c, i) => <span key={i} className="bg-black/30 px-2 py-1 rounded">{c}</span>)}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <input 
+                        type="text" 
+                        value={verifyCode} 
+                        onChange={e => setVerifyCode(e.target.value)} 
+                        placeholder="Enter 6-digit code"
+                        className="px-3 py-2 bg-white/5 border border-white/10 rounded text-white w-40"
+                        maxLength={6}
+                      />
+                      <button onClick={handleVerify2FA} className="px-4 py-2 bg-brand-500 hover:bg-brand-600 rounded text-white">Verify & Enable</button>
+                      <button onClick={() => setTwoFaSetup(null)} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-white">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-white/60 mb-3">Two-factor authentication adds an extra layer of security to your account.</p>
+                    <button onClick={handleSetup2FA} className="px-4 py-2 bg-brand-500 hover:bg-brand-600 rounded text-white">Enable 2FA</button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Account Security Info */}
+              <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                <h3 className="font-medium text-white mb-3">Account Security</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between text-white/70">
+                    <span>Failed login attempts</span>
+                    <span className={user.failed_login_attempts > 0 ? 'text-yellow-300' : 'text-green-300'}>{user.failed_login_attempts || 0}</span>
+                  </div>
+                  <div className="flex justify-between text-white/70">
+                    <span>Account locked until</span>
+                    <span>{user.locked_until ? new Date(user.locked_until).toLocaleString() : 'Not locked'}</span>
+                  </div>
+                  <div className="flex justify-between text-white/70">
+                    <span>Must change password</span>
+                    <span>{user.must_change_password ? 'Yes' : 'No'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!loading && activeTab === 'apikeys' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-medium text-white">API Keys</h3>
+                <button onClick={() => setShowCreateKey(true)} className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 rounded text-white text-sm flex items-center gap-2"><FaPlus /> Create Key</button>
+              </div>
+              
+              {/* Create Key Form */}
+              {showCreateKey && (
+                <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                  <h4 className="font-medium text-white mb-3">Create New API Key</h4>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="text-xs text-white/60">Name *</label>
+                      <input value={newKeyName} onChange={e => setNewKeyName(e.target.value)} placeholder="e.g., CI/CD Pipeline" className="w-full mt-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-white" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-white/60">Expires in (days, optional)</label>
+                      <input type="number" value={newKeyExpires} onChange={e => setNewKeyExpires(e.target.value)} placeholder="Never" className="w-full mt-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-white" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={handleCreateApiKey} className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 rounded text-white text-sm">Create</button>
+                    <button onClick={() => { setShowCreateKey(false); setNewKeyName(''); setNewKeyExpires(''); }} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-white text-sm">Cancel</button>
+                  </div>
+                </div>
+              )}
+              
+              {/* Key List */}
+              <div className="space-y-2">
+                {apiKeys.length === 0 && <div className="text-white/60 py-4">No API keys</div>}
+                {apiKeys.map(k => (
+                  <div key={k.id} className={`bg-white/5 border border-white/10 rounded-lg p-3 flex items-center justify-between ${k.is_expired ? 'opacity-50' : ''}`}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <FaKey className="text-white/60" />
+                        <span className="text-white font-medium">{k.name}</span>
+                        <span className="text-xs text-white/50 font-mono">{k.key_prefix}...</span>
+                        {k.is_expired && <span className="text-xs bg-red-500/20 text-red-300 px-2 py-0.5 rounded">Expired</span>}
+                      </div>
+                      <div className="text-xs text-white/50 mt-1">
+                        Created: {k.created_at ? new Date(k.created_at).toLocaleDateString() : '—'} 
+                        {k.expires_at && ` • Expires: ${new Date(k.expires_at).toLocaleDateString()}`}
+                        {k.last_used_at && ` • Last used: ${new Date(k.last_used_at).toLocaleString()}`}
+                      </div>
+                    </div>
+                    <button onClick={() => handleRevokeApiKey(k.id)} className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 rounded text-red-300 text-sm">Revoke</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!loading && activeTab === 'history' && (
+            <div className="space-y-2">
+              <h3 className="font-medium text-white mb-4">Recent Login History</h3>
+              {loginHistory.length === 0 && <div className="text-white/60 py-4">No login history</div>}
+              {loginHistory.map(h => (
+                <div key={h.id} className="bg-white/5 border border-white/10 rounded-lg p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${h.success ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+                      {h.success ? <FaCheckCircle className="text-green-400" /> : <FaExclamationTriangle className="text-red-400" />}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={h.success ? 'text-green-300' : 'text-red-300'}>{h.success ? 'Successful login' : 'Failed login'}</span>
+                        <span className="text-xs text-white/50">{h.ip_address}</span>
+                      </div>
+                      {h.failure_reason && <div className="text-xs text-red-300 mt-1">Reason: {h.failure_reason}</div>}
+                      <div className="text-xs text-white/40 truncate max-w-md">{h.user_agent}</div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-white/50">{h.timestamp ? new Date(h.timestamp).toLocaleString() : '—'}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

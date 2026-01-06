@@ -726,3 +726,421 @@ class UserService:
             details={}
         )
         return user
+    # ==================== SESSION MANAGEMENT ====================
+    
+    def get_user_sessions(self, user_id: int, include_expired: bool = False) -> List[Dict[str, Any]]:
+        """Get all sessions for a user."""
+        from models import UserSession
+        query = self.db.query(UserSession).filter(UserSession.user_id == user_id)
+        
+        if not include_expired:
+            query = query.filter(
+                and_(
+                    UserSession.is_active == True,
+                    UserSession.expires_at > datetime.utcnow()
+                )
+            )
+        
+        sessions = query.order_by(UserSession.created_at.desc()).all()
+        
+        return [{
+            "id": s.id,
+            "ip_address": s.ip_address,
+            "user_agent": s.user_agent,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+            "is_active": s.is_active and (s.expires_at > datetime.utcnow() if s.expires_at else False),
+            "is_current": False  # Will be set by the route
+        } for s in sessions]
+    
+    def revoke_session(self, session_id: int, user_id: int = None) -> bool:
+        """Revoke a specific session."""
+        from models import UserSession
+        query = self.db.query(UserSession).filter(UserSession.id == session_id)
+        
+        if user_id:
+            query = query.filter(UserSession.user_id == user_id)
+        
+        session = query.first()
+        if not session:
+            return False
+        
+        session.is_active = False
+        self.db.commit()
+        return True
+    
+    def revoke_all_sessions(self, user_id: int, except_session_id: int = None) -> int:
+        """Revoke all sessions for a user, optionally keeping one."""
+        from models import UserSession
+        query = self.db.query(UserSession).filter(
+            and_(
+                UserSession.user_id == user_id,
+                UserSession.is_active == True
+            )
+        )
+        
+        if except_session_id:
+            query = query.filter(UserSession.id != except_session_id)
+        
+        count = query.update({"is_active": False})
+        self.db.commit()
+        return count
+    
+    # ==================== LOGIN HISTORY ====================
+    
+    def log_login_attempt(self, username: str, success: bool, user_id: int = None,
+                         ip_address: str = None, user_agent: str = None,
+                         failure_reason: str = None) -> None:
+        """Log a login attempt."""
+        from models import LoginHistory
+        entry = LoginHistory(
+            user_id=user_id,
+            username=username,
+            success=success,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            failure_reason=failure_reason
+        )
+        self.db.add(entry)
+        self.db.commit()
+    
+    def get_login_history(self, user_id: int = None, page: int = 1, 
+                         page_size: int = 50, success_only: bool = None) -> Dict[str, Any]:
+        """Get login history with optional filtering."""
+        from models import LoginHistory
+        query = self.db.query(LoginHistory)
+        
+        if user_id:
+            query = query.filter(LoginHistory.user_id == user_id)
+        if success_only is not None:
+            query = query.filter(LoginHistory.success == success_only)
+        
+        query = query.order_by(LoginHistory.timestamp.desc())
+        total = query.count()
+        entries = query.offset((page - 1) * page_size).limit(page_size).all()
+        
+        return {
+            "entries": [{
+                "id": e.id,
+                "user_id": e.user_id,
+                "username": e.username,
+                "success": e.success,
+                "ip_address": e.ip_address,
+                "user_agent": e.user_agent,
+                "failure_reason": e.failure_reason,
+                "timestamp": e.timestamp.isoformat() if e.timestamp else None
+            } for e in entries],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size
+        }
+    
+    # ==================== API KEY MANAGEMENT ====================
+    
+    def create_api_key(self, user_id: int, name: str, permissions: List[str] = None,
+                      expires_days: int = None) -> Dict[str, Any]:
+        """Create a new API key for a user. Returns the raw key (only shown once)."""
+        from models import UserAPIKey
+        import hashlib
+        
+        # Generate a secure random key
+        raw_key = secrets.token_urlsafe(32)
+        key_prefix = raw_key[:8]
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        
+        # Calculate expiration
+        expires_at = None
+        if expires_days:
+            expires_at = datetime.utcnow() + timedelta(days=expires_days)
+        
+        api_key = UserAPIKey(
+            user_id=user_id,
+            name=name,
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            permissions=permissions or [],
+            expires_at=expires_at
+        )
+        
+        self.db.add(api_key)
+        self.db.commit()
+        self.db.refresh(api_key)
+        
+        return {
+            "id": api_key.id,
+            "name": api_key.name,
+            "key": raw_key,  # Only returned once at creation
+            "key_prefix": key_prefix,
+            "permissions": api_key.permissions,
+            "expires_at": api_key.expires_at.isoformat() if api_key.expires_at else None,
+            "created_at": api_key.created_at.isoformat() if api_key.created_at else None
+        }
+    
+    def get_api_keys(self, user_id: int) -> List[Dict[str, Any]]:
+        """Get all API keys for a user (without revealing the actual keys)."""
+        from models import UserAPIKey
+        keys = self.db.query(UserAPIKey).filter(
+            and_(
+                UserAPIKey.user_id == user_id,
+                UserAPIKey.is_active == True
+            )
+        ).order_by(UserAPIKey.created_at.desc()).all()
+        
+        return [{
+            "id": k.id,
+            "name": k.name,
+            "key_prefix": k.key_prefix,
+            "permissions": k.permissions or [],
+            "expires_at": k.expires_at.isoformat() if k.expires_at else None,
+            "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+            "last_used_ip": k.last_used_ip,
+            "created_at": k.created_at.isoformat() if k.created_at else None,
+            "is_expired": k.expires_at and k.expires_at < datetime.utcnow()
+        } for k in keys]
+    
+    def validate_api_key(self, raw_key: str) -> Optional[User]:
+        """Validate an API key and return the associated user."""
+        from models import UserAPIKey
+        import hashlib
+        
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        
+        api_key = self.db.query(UserAPIKey).filter(
+            and_(
+                UserAPIKey.key_hash == key_hash,
+                UserAPIKey.is_active == True
+            )
+        ).first()
+        
+        if not api_key:
+            return None
+        
+        # Check expiration
+        if api_key.expires_at and api_key.expires_at < datetime.utcnow():
+            return None
+        
+        # Update last used
+        api_key.last_used_at = datetime.utcnow()
+        self.db.commit()
+        
+        return api_key.user
+    
+    def revoke_api_key(self, key_id: int, user_id: int = None) -> bool:
+        """Revoke an API key."""
+        from models import UserAPIKey
+        query = self.db.query(UserAPIKey).filter(UserAPIKey.id == key_id)
+        
+        if user_id:
+            query = query.filter(UserAPIKey.user_id == user_id)
+        
+        key = query.first()
+        if not key:
+            return False
+        
+        key.is_active = False
+        self.db.commit()
+        return True
+    
+    # ==================== TWO-FACTOR AUTHENTICATION ====================
+    
+    def setup_2fa(self, user_id: int) -> Dict[str, Any]:
+        """Generate 2FA secret and return setup info (QR code URI)."""
+        from models import UserTwoFactor
+        import base64
+        
+        user = self.get_user_by_id(user_id)
+        if not user:
+            raise ValueError("User not found")
+        
+        # Check if already set up
+        existing = self.db.query(UserTwoFactor).filter(
+            UserTwoFactor.user_id == user_id
+        ).first()
+        
+        if existing and existing.is_enabled:
+            raise ValueError("2FA is already enabled for this user")
+        
+        # Generate new secret
+        secret = secrets.token_hex(20)
+        
+        # Generate backup codes
+        backup_codes = [secrets.token_hex(4).upper() for _ in range(10)]
+        backup_codes_hashed = [
+            pwd_context.hash(code) for code in backup_codes
+        ]
+        
+        if existing:
+            existing.secret = secret
+            existing.backup_codes = backup_codes_hashed
+            existing.is_enabled = False
+            existing.verified_at = None
+        else:
+            two_factor = UserTwoFactor(
+                user_id=user_id,
+                secret=secret,
+                backup_codes=backup_codes_hashed,
+                is_enabled=False
+            )
+            self.db.add(two_factor)
+        
+        self.db.commit()
+        
+        # Generate TOTP URI for QR code
+        # Format: otpauth://totp/Lynx:username?secret=SECRET&issuer=Lynx
+        import urllib.parse
+        totp_uri = f"otpauth://totp/Lynx:{urllib.parse.quote(user.username)}?secret={secret}&issuer=Lynx&algorithm=SHA1&digits=6&period=30"
+        
+        return {
+            "secret": secret,
+            "totp_uri": totp_uri,
+            "backup_codes": backup_codes,  # Only shown once at setup
+            "message": "Scan the QR code with your authenticator app, then verify with a code"
+        }
+    
+    def verify_2fa_setup(self, user_id: int, code: str) -> bool:
+        """Verify a 2FA code to complete setup."""
+        from models import UserTwoFactor
+        
+        two_factor = self.db.query(UserTwoFactor).filter(
+            UserTwoFactor.user_id == user_id
+        ).first()
+        
+        if not two_factor:
+            raise ValueError("2FA not set up for this user")
+        
+        if two_factor.is_enabled:
+            raise ValueError("2FA is already enabled")
+        
+        # Verify the TOTP code
+        if not self._verify_totp(two_factor.secret, code):
+            return False
+        
+        # Enable 2FA
+        two_factor.is_enabled = True
+        two_factor.verified_at = datetime.utcnow()
+        self.db.commit()
+        
+        self.log_audit_action(
+            user_id=user_id,
+            action="user.2fa.enabled",
+            resource_type="user",
+            resource_id=str(user_id)
+        )
+        
+        return True
+    
+    def verify_2fa(self, user_id: int, code: str) -> bool:
+        """Verify a 2FA code for login."""
+        from models import UserTwoFactor
+        
+        two_factor = self.db.query(UserTwoFactor).filter(
+            and_(
+                UserTwoFactor.user_id == user_id,
+                UserTwoFactor.is_enabled == True
+            )
+        ).first()
+        
+        if not two_factor:
+            return True  # 2FA not enabled, skip verification
+        
+        # Try TOTP code first
+        if self._verify_totp(two_factor.secret, code):
+            return True
+        
+        # Try backup codes
+        for i, hashed_code in enumerate(two_factor.backup_codes or []):
+            if pwd_context.verify(code.upper(), hashed_code):
+                # Remove used backup code
+                codes = list(two_factor.backup_codes)
+                codes.pop(i)
+                two_factor.backup_codes = codes
+                self.db.commit()
+                return True
+        
+        return False
+    
+    def disable_2fa(self, user_id: int, code: str = None) -> bool:
+        """Disable 2FA for a user."""
+        from models import UserTwoFactor
+        
+        two_factor = self.db.query(UserTwoFactor).filter(
+            UserTwoFactor.user_id == user_id
+        ).first()
+        
+        if not two_factor:
+            return True  # Already disabled
+        
+        # Require verification if enabled
+        if two_factor.is_enabled and code:
+            if not self.verify_2fa(user_id, code):
+                raise ValueError("Invalid 2FA code")
+        
+        self.db.delete(two_factor)
+        self.db.commit()
+        
+        self.log_audit_action(
+            user_id=user_id,
+            action="user.2fa.disabled",
+            resource_type="user",
+            resource_id=str(user_id)
+        )
+        
+        return True
+    
+    def get_2fa_status(self, user_id: int) -> Dict[str, Any]:
+        """Get 2FA status for a user."""
+        from models import UserTwoFactor
+        
+        two_factor = self.db.query(UserTwoFactor).filter(
+            UserTwoFactor.user_id == user_id
+        ).first()
+        
+        if not two_factor:
+            return {
+                "enabled": False,
+                "verified": False,
+                "backup_codes_remaining": 0
+            }
+        
+        return {
+            "enabled": two_factor.is_enabled,
+            "verified": two_factor.verified_at is not None,
+            "verified_at": two_factor.verified_at.isoformat() if two_factor.verified_at else None,
+            "backup_codes_remaining": len(two_factor.backup_codes or [])
+        }
+    
+    def _verify_totp(self, secret: str, code: str) -> bool:
+        """Verify a TOTP code against a secret."""
+        import hmac
+        import struct
+        import time
+        
+        try:
+            # Clean the code
+            code = code.replace(" ", "").replace("-", "")
+            if len(code) != 6 or not code.isdigit():
+                return False
+            
+            # Get current time window
+            now = int(time.time())
+            
+            # Check current window and adjacent windows (30 second tolerance)
+            for offset in [-1, 0, 1]:
+                time_counter = (now // 30) + offset
+                
+                # Generate expected code
+                msg = struct.pack(">Q", time_counter)
+                h = hmac.new(bytes.fromhex(secret), msg, "sha1").digest()
+                
+                offset_byte = h[-1] & 0x0F
+                truncated = struct.unpack(">I", h[offset_byte:offset_byte + 4])[0]
+                truncated &= 0x7FFFFFFF
+                expected = str(truncated % 1000000).zfill(6)
+                
+                if code == expected:
+                    return True
+            
+            return False
+        except Exception:
+            return False

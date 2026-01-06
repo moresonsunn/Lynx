@@ -59,6 +59,52 @@ class AIErrorFixer:
     def _load_error_patterns(self) -> Dict[str, Dict[str, Any]]:
         """Load error detection patterns and their severity levels."""
         return {
+            "client_only_mod_crash": {
+                "patterns": [
+                    r"Client environment required",
+                    r"Environment type CLIENT is required",
+                    r"onlyIn.*CLIENT",
+                    r"@OnlyIn\(.*CLIENT\)",
+                    r"Dist\.CLIENT",
+                    r"No OpenGL context",
+                    r"GLFW error",
+                    r"org\.lwjgl\.opengl",
+                    r"com\.mojang\.blaze3d",
+                    r"net\.minecraft\.client",
+                    r"RenderSystem\.assert",
+                    r"GlStateManager",
+                    r"Display.*not created",
+                    r"Framebuffer.*not complete",
+                ],
+                "severity": "high",
+                "category": "client_mod"
+            },
+            "mixin_injection_failure": {
+                "patterns": [
+                    r"Mixin injection failed",
+                    r"Mixin apply failed",
+                    r"Mixin config.*failed",
+                    r"MixinApplyError",
+                    r"from mod.*Mixin",
+                    r"Target method.*not found",
+                    r"Critical injection failure",
+                ],
+                "severity": "high",
+                "category": "mod_conflict"
+            },
+            "mod_incompatibility": {
+                "patterns": [
+                    r"Mod.*requires",
+                    r"Missing.*dependency",
+                    r"Incompatible mod",
+                    r"Mod conflict detected",
+                    r"Failed to create mod instance",
+                    r"ModResolutionException",
+                    r"Unsupported.*loader",
+                ],
+                "severity": "high",
+                "category": "mod_conflict"
+            },
             "jar_corruption": {
                 "patterns": [
                     r"Error: Invalid or corrupt jarfile",
@@ -142,6 +188,36 @@ class AIErrorFixer:
     def _load_fix_strategies(self) -> Dict[str, List[Dict[str, Any]]]:
         """Load fix strategies for different error types."""
         return {
+            "client_only_mod_crash": [
+                {
+                    "name": "disable_client_only_mods",
+                    "description": "Automatically disable client-only mods causing crashes",
+                    "function": self._fix_client_only_mod_crash,
+                    "priority": 1
+                },
+                {
+                    "name": "analyze_and_fix_crash",
+                    "description": "Analyze crash log and disable problematic mods",
+                    "function": self._analyze_and_fix_crash,
+                    "priority": 2
+                }
+            ],
+            "mixin_injection_failure": [
+                {
+                    "name": "analyze_mixin_crash",
+                    "description": "Analyze and fix mixin injection failures",
+                    "function": self._fix_mixin_crash,
+                    "priority": 1
+                }
+            ],
+            "mod_incompatibility": [
+                {
+                    "name": "fix_mod_incompatibility",
+                    "description": "Detect and disable incompatible mods",
+                    "function": self._fix_mod_incompatibility,
+                    "priority": 1
+                }
+            ],
             "jar_corruption": [
                 {
                     "name": "redownload_server_jar",
@@ -447,7 +523,116 @@ class AIErrorFixer:
             
         except Exception as e:
             logger.error(f"Failed to create backup: {e}")
-    
+
+    def _fix_client_only_mod_crash(self, error_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Fix crashes caused by client-only mods."""
+        try:
+            container_id = error_info.get("container_id")
+            container_name = error_info.get("container_name")
+            
+            if not container_id and not container_name:
+                return {"success": False, "error": "No container ID or name provided"}
+            
+            # Get server name from container
+            server_name = container_name
+            if container_id and self.docker_client:
+                try:
+                    container = self.docker_client.containers.get(container_id)
+                    server_name = container.name
+                except Exception:
+                    pass
+            
+            if not server_name:
+                return {"success": False, "error": "Could not determine server name"}
+            
+            # Use crash analyzer to fix the issue
+            from crash_analyzer import auto_fix_server_crashes
+            result = auto_fix_server_crashes(server_name)
+            
+            if result.get("mods_disabled"):
+                logger.info(f"Disabled {len(result['mods_disabled'])} client-only mods for {server_name}")
+                
+                # Restart the container
+                if container_id and self.docker_client:
+                    try:
+                        container = self.docker_client.containers.get(container_id)
+                        container.restart()
+                        logger.info(f"Restarted container {server_name}")
+                    except Exception as e:
+                        logger.warning(f"Could not restart container: {e}")
+                
+                return {
+                    "success": True,
+                    "message": f"Disabled {len(result['mods_disabled'])} client-only mods",
+                    "mods_disabled": result["mods_disabled"]
+                }
+            else:
+                return {"success": False, "error": "No problematic mods identified"}
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _analyze_and_fix_crash(self, error_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze crash logs and automatically fix issues."""
+        try:
+            container_name = error_info.get("container_name")
+            logs = error_info.get("logs", "")
+            
+            if not container_name:
+                return {"success": False, "error": "No container name provided"}
+            
+            # Use crash analyzer
+            from crash_analyzer import crash_analyzer, analyze_crash_log
+            
+            analysis = analyze_crash_log(logs)
+            
+            if analysis.get("client_only_detected") or analysis.get("problematic_mods"):
+                result = crash_analyzer.auto_fix_server(container_name)
+                
+                if result.get("mods_disabled"):
+                    return {
+                        "success": True,
+                        "message": f"Fixed crash: disabled {len(result['mods_disabled'])} mods",
+                        "analysis": analysis,
+                        "mods_disabled": result["mods_disabled"]
+                    }
+            
+            return {"success": False, "error": "Could not automatically fix crash"}
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _fix_mixin_crash(self, error_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Fix mixin injection failures."""
+        try:
+            # Mixin crashes often involve incompatible mods
+            return self._analyze_and_fix_crash(error_info)
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _fix_mod_incompatibility(self, error_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Fix mod incompatibility issues."""
+        try:
+            container_name = error_info.get("container_name")
+            if not container_name:
+                return {"success": False, "error": "No container name provided"}
+            
+            # Use crash analyzer for incompatibility
+            from crash_analyzer import auto_fix_server_crashes
+            result = auto_fix_server_crashes(container_name)
+            
+            if result.get("mods_disabled"):
+                return {
+                    "success": True,
+                    "message": f"Fixed incompatibility: disabled {len(result['mods_disabled'])} mods",
+                    "mods_disabled": result["mods_disabled"]
+                }
+            
+            return {"success": False, "error": "Could not fix mod incompatibility automatically"}
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def _fix_jar_corruption(self, error_info: Dict[str, Any]) -> Dict[str, Any]:
         """Fix corrupted JAR files."""
         try:

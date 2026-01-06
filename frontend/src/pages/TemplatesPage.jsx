@@ -19,7 +19,22 @@ const TMOD_WORLD_DIFFICULTY_OPTIONS = [
 ];
 
 const TMOD_WORLD_ENV_KEY_SET = new Set(['WORLD_NAME', 'WORLD_FILENAME', 'WORLD_SIZE', 'WORLD_DIFFICULTY', 'WORLD_SEED']);
-const STEAM_PER_PAGE = 9;
+const STEAM_PER_PAGE = 12;
+
+// Game category detection based on keywords in name/summary
+const STEAM_CATEGORIES = [
+  { id: 'all', label: 'All Games', keywords: [] },
+  { id: 'survival', label: 'Survival', keywords: ['survival', 'zombie', 'craft', 'rust', 'ark', 'dayz', 'forest', 'valheim', 'conan', 'enshrouded', 'palworld', '7 days', 'scum', 'icarus', 'raft', 'subnautica', 'hurtworld', 'miscreated', 'deadside', 'sunkenland'] },
+  { id: 'fps', label: 'FPS / Shooter', keywords: ['shooter', 'fps', 'tactical', 'counter-strike', 'cs2', 'csgo', 'insurgency', 'squad', 'arma', 'hell let loose', 'post scriptum', 'rising storm', 'killing floor', 'left 4 dead', 'pavlov', 'ready or not', 'ground branch', 'tf2', 'team fortress', 'quake', 'unreal tournament', 'mordhau', 'chivalry'] },
+  { id: 'sandbox', label: 'Sandbox / Building', keywords: ['sandbox', 'build', 'factory', 'factorio', 'satisfactory', 'space engineers', 'medieval engineers', 'eco', 'creativerse', 'minetest', 'terraria', 'starbound', 'core keeper', 'vintage story'] },
+  { id: 'racing', label: 'Racing / Driving', keywords: ['racing', 'race', 'truck', 'driving', 'car', 'assetto', 'rfactor', 'kartkraft', 'wreckfest', 'beamng', 'automobilista', 'dirt', 'trackmania', 'euro truck', 'american truck', 'mudrunner', 'snowrunner', 'farming simulator'] },
+  { id: 'rpg', label: 'RPG / Adventure', keywords: ['rpg', 'adventure', 'mmo', 'v rising', 'mount & blade', 'bannerlord', 'wurm', 'path of titans', 'myth of empires', 'dark and darker', 'nightingale'] },
+  { id: 'coop', label: 'Co-op / Horror', keywords: ['co-op', 'coop', 'horror', 'phasmophobia', 'lethal company', 'content warning', 'devour', 'gtfo', 'deep rock', 'risk of rain', 'barotrauma', 'sven co-op', 'alien swarm', 'no more room'] },
+  { id: 'military', label: 'Military / Sim', keywords: ['military', 'ww2', 'ww1', 'war', 'battlefield', 'day of defeat', 'day of infamy', 'red orchestra', 'beyond the wire', 'operation harsh'] },
+  { id: 'dinosaur', label: 'Dinosaur', keywords: ['dinosaur', 'dino', 'isle', 'ark', 'pixark', 'beasts of bermuda', 'path of titans'] },
+  { id: 'gmod', label: 'Garry\'s Mod', keywords: ['gmod', 'garry', 'prophunt', 'ttt', 'darkrp', 'murder', 'sandbox'] },
+  { id: 'source', label: 'Source Engine', keywords: ['source', 'half-life', 'black mesa', 'synergy', 'fistful', 'nuclear dawn', 'brainbread', 'zombie panic', 'age of chivalry', 'pirates, vikings'] },
+];
 
 export default function TemplatesPage({
   API,
@@ -69,16 +84,19 @@ export default function TemplatesPage({
   const [steamForm, setSteamForm] = useState({ name: '', hostPort: '', env: {} });
   const [steamSubmitting, setSteamSubmitting] = useState(false);
   const [steamInstallResult, setSteamInstallResult] = useState(null);
+  const [steamSearchQuery, setSteamSearchQuery] = useState('');
+  const [steamCategory, setSteamCategory] = useState('all');
+  const [steamAllGames, setSteamAllGames] = useState([]);
+  const [steamTotalCount, setSteamTotalCount] = useState(0);
 
+  // Load all Steam games once for client-side filtering
   useEffect(() => {
     let cancelled = false;
-    async function loadSteamGames() {
+    async function loadAllSteamGames() {
       setSteamGamesLoading(true);
       setSteamGamesError('');
       try {
-        const limit = STEAM_PER_PAGE + 1;
-        const offset = Math.max(steamPage * STEAM_PER_PAGE, 0);
-        const response = await fetch(`${API}/steam/games?limit=${limit}&offset=${offset}`, { headers: safeAuthHeaders() });
+        const response = await fetch(`${API}/steam/games?include_all=true`, { headers: safeAuthHeaders() });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           const message = data?.detail || `HTTP ${response.status}`;
@@ -86,15 +104,13 @@ export default function TemplatesPage({
         }
         if (!cancelled) {
           const rawGames = Array.isArray(data?.games) ? data.games : [];
-          const hasExtra = rawGames.length > STEAM_PER_PAGE;
-          setSteamHasMore(hasExtra);
-          setSteamGames(hasExtra ? rawGames.slice(0, STEAM_PER_PAGE) : rawGames);
+          setSteamAllGames(rawGames);
+          setSteamTotalCount(rawGames.length);
         }
       } catch (error) {
         if (!cancelled) {
-          setSteamGames([]);
+          setSteamAllGames([]);
           setSteamGamesError(String(error?.message || error));
-          setSteamHasMore(false);
         }
       } finally {
         if (!cancelled) {
@@ -102,11 +118,52 @@ export default function TemplatesPage({
         }
       }
     }
-    loadSteamGames();
+    loadAllSteamGames();
     return () => {
       cancelled = true;
     };
-  }, [API, safeAuthHeaders, steamPage]);
+  }, [API, safeAuthHeaders]);
+
+  // Filter games based on search and category
+  const filteredSteamGames = useMemo(() => {
+    let games = steamAllGames;
+    
+    // Apply category filter
+    if (steamCategory !== 'all') {
+      const category = STEAM_CATEGORIES.find(c => c.id === steamCategory);
+      if (category && category.keywords.length > 0) {
+        games = games.filter(game => {
+          const searchText = `${game.name || ''} ${game.summary || ''} ${game.slug || ''}`.toLowerCase();
+          return category.keywords.some(kw => searchText.includes(kw.toLowerCase()));
+        });
+      }
+    }
+    
+    // Apply search filter
+    if (steamSearchQuery.trim()) {
+      const query = steamSearchQuery.toLowerCase().trim();
+      games = games.filter(game => {
+        const searchText = `${game.name || ''} ${game.summary || ''} ${game.slug || ''}`.toLowerCase();
+        return searchText.includes(query);
+      });
+    }
+    
+    return games;
+  }, [steamAllGames, steamSearchQuery, steamCategory]);
+
+  // Paginate filtered games
+  useEffect(() => {
+    const startIdx = steamPage * STEAM_PER_PAGE;
+    const endIdx = startIdx + STEAM_PER_PAGE;
+    const paginatedGames = filteredSteamGames.slice(startIdx, endIdx);
+    setSteamGames(paginatedGames);
+    setSteamHasMore(endIdx < filteredSteamGames.length);
+  }, [filteredSteamGames, steamPage]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setSteamPage(0);
+  }, [steamSearchQuery, steamCategory]);
 
   const goToPreviousSteamPage = () => {
     setSteamPage((prev) => (prev > 0 ? prev - 1 : 0));
@@ -874,9 +931,43 @@ export default function TemplatesPage({
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <h3 className="text-lg font-semibold">Steam & Other Dedicated Servers</h3>
-              <p className="text-sm text-white/60">Deploy curated Steam-compatible servers with one click. Containers appear under My Servers automatically.</p>
+              <p className="text-sm text-white/60">
+                Deploy {steamTotalCount > 0 ? `${steamTotalCount}+` : ''} curated game servers with one click. 
+                {filteredSteamGames.length !== steamTotalCount && filteredSteamGames.length > 0 && (
+                  <span className="ml-1 text-brand-300">Showing {filteredSteamGames.length} matches.</span>
+                )}
+              </p>
             </div>
             <span className="text-xs uppercase tracking-wide bg-brand-500/15 text-brand-200 px-3 py-1 rounded">Beta</span>
+          </div>
+
+          {/* Search and Category Filter */}
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="Search games... (e.g. Valheim, Rust, ARK)"
+                value={steamSearchQuery}
+                onChange={(e) => setSteamSearchQuery(e.target.value)}
+                className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:border-brand-400/50 focus:outline-none transition"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {STEAM_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setSteamCategory(cat.id)}
+                  className={`px-3 py-2 text-xs rounded-lg border transition-all ${
+                    steamCategory === cat.id
+                      ? 'bg-brand-500 border-brand-400 text-white'
+                      : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {steamGamesError ? (
@@ -889,42 +980,45 @@ export default function TemplatesPage({
             <div className="text-sm text-white/60">Loading Steam catalog…</div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {steamGames.map((game) => {
                   const isSelected = steamSelectedGame?.slug === game.slug;
                   return (
                     <div
                       key={game.slug || game.name}
-                      className={`bg-white/5 border rounded-lg p-4 space-y-3 transition-all ${
-                        isSelected ? 'border-brand-400/40 bg-brand-500/10 shadow-lg shadow-brand-500/20' : 'border-white/10'
+                      className={`bg-white/5 border rounded-lg p-4 space-y-2 transition-all cursor-pointer hover:border-brand-400/40 hover:bg-brand-500/5 ${
+                        isSelected ? 'border-brand-400/60 bg-brand-500/10 shadow-lg shadow-brand-500/20 ring-1 ring-brand-400/30' : 'border-white/10'
                       }`}
+                      onClick={() => openSteamGameInstaller(game)}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-white font-semibold text-sm sm:text-base">{game.name || game.slug}</div>
-                          <div className="text-xs text-white/50 mt-1 break-words">{game.summary || game.notes || 'Generic dedicated server template.'}</div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-white font-semibold text-sm truncate" title={game.name || game.slug}>
+                            {game.name || game.slug}
+                          </div>
                         </div>
-                        <span className="text-xs bg-brand-500/15 text-brand-200 px-2 py-0.5 rounded">Linux</span>
+                        {isSelected && (
+                          <span className="flex-shrink-0 w-2 h-2 bg-brand-400 rounded-full mt-1.5"></span>
+                        )}
                       </div>
-                      <div className="text-xs text-white/50">
-                        Ports: {(game.ports || []).map((p) => `${p.container}/${(p.protocol || 'tcp').toUpperCase()}`).join(', ') || 'n/a'}
+                      <div className="text-xs text-white/50 line-clamp-2 min-h-[2.5rem]">
+                        {game.summary || game.notes || 'Dedicated server template.'}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => openSteamGameInstaller(game)}
-                        className={`w-full inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                          isSelected ? 'bg-brand-500 text-white' : 'bg-white/10 text-white hover:bg-white/20'
-                        }`}
-                        disabled={steamSubmitting && !isSelected}
-                      >
-                        {isSelected ? 'Selected' : 'Deploy'}
-                      </button>
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <div className="text-[10px] text-white/40 truncate flex-1">
+                          {(game.ports || []).slice(0, 2).map((p) => `${p.container}/${(p.protocol || 'tcp').toUpperCase()}`).join(', ')}
+                          {(game.ports || []).length > 2 && ` +${game.ports.length - 2}`}
+                        </div>
+                        <span className="text-[10px] bg-white/10 text-white/50 px-1.5 py-0.5 rounded flex-shrink-0">Linux</span>
+                      </div>
                     </div>
                   );
                 })}
-                {steamGames.length === 0 && !steamGamesError ? (
+                {steamGames.length === 0 && !steamGamesError && !steamGamesLoading ? (
                   <div className="col-span-full bg-white/5 border border-white/10 rounded-lg p-6 text-sm text-white/60 text-center">
-                    No Steam templates available yet. Check back soon.
+                    {steamSearchQuery || steamCategory !== 'all' 
+                      ? 'No games match your search. Try different keywords or select "All Games".'
+                      : 'No Steam templates available yet. Check back soon.'}
                   </div>
                 ) : null}
               </div>
@@ -937,7 +1031,12 @@ export default function TemplatesPage({
                 >
                   Previous
                 </button>
-                <span className="text-xs text-white/60">Page {steamPage + 1}</span>
+                <span className="text-xs text-white/60">
+                  Page {steamPage + 1} of {Math.max(1, Math.ceil(filteredSteamGames.length / STEAM_PER_PAGE))}
+                  {filteredSteamGames.length > 0 && (
+                    <span className="ml-2 text-white/40">({filteredSteamGames.length} games)</span>
+                  )}
+                </span>
                 <button
                   type="button"
                   onClick={goToNextSteamPage}

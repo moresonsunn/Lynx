@@ -3,24 +3,25 @@ from typing import List, Optional, Dict, Any
 from .providers import register_provider
 from .vanilla import VanillaProvider
 import logging
-import xml.etree.ElementTree as ET
+import re
 
 logger = logging.getLogger(__name__)
 
 # Official MinecraftForge API endpoints
 PROMOTIONS_URL = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
+MAVEN_API = "https://maven.minecraftforge.net/api/maven/versions/releases/net/minecraftforge/forge"
 MAVEN_BASE = "https://maven.minecraftforge.net/net/minecraftforge/forge"
-FORGE_FILES_API = "https://files.minecraftforge.net/net/minecraftforge/forge"
 
 class ForgeProvider:
-    """Official MinecraftForge server provider using Forge APIs.
+    """Official MinecraftForge server provider using Forge Maven API.
     
     Forge servers require an installer that sets up the server environment.
     The installer is obtained from: https://maven.minecraftforge.net/net/minecraftforge/forge/{maven_coord}/forge-{maven_coord}-installer.jar
     Where maven_coord is usually "{mc_version}-{forge_version}", but for legacy versions (e.g., 1.7.10)
     it is "{mc_version}-{forge_version}-{mc_version}".
     
-    API Documentation: https://files.minecraftforge.net/
+    Forge Version Format: {mc_version}-{forge_version}
+    Example: 1.20.1-47.3.0 → MC 1.20.1, Forge 47.3.0
     """
     name = "forge"
 
@@ -28,33 +29,108 @@ class ForgeProvider:
         self._cached_versions = None
         self._cached_promotions = None
         self._cached_forge_versions = {}
+        self._cached_all_versions = None
 
     def list_versions(self) -> List[str]:
         """Get all Minecraft versions supported by Forge."""
         if self._cached_versions:
             return self._cached_versions
         
-        # Use vanilla versions as base, but filter for Forge compatibility
+        try:
+            all_forge_versions = self._get_all_forge_versions()
+            
+            # Extract unique MC versions from forge versions
+            mc_versions = set()
+            for forge_version in all_forge_versions:
+                mc_version = self._extract_mc_version(forge_version)
+                if mc_version:
+                    mc_versions.add(mc_version)
+            
+            # Sort versions (newest first)
+            sorted_versions = sorted(mc_versions, key=self._version_key, reverse=True)
+            
+            self._cached_versions = sorted_versions
+            logger.info(f"Found {len(sorted_versions)} Forge-compatible MC versions")
+            return sorted_versions
+            
+        except Exception as e:
+            logger.warning(f"Could not fetch Forge versions from Maven API, falling back to promotions: {e}")
+            # Fallback to promotions API
+            return self._list_versions_from_promotions()
+
+    def _list_versions_from_promotions(self) -> List[str]:
+        """Fallback: Get supported MC versions from promotions API."""
         vanilla_versions = VanillaProvider().list_versions()
-        
-        # Get promotions to see which versions have Forge builds
         try:
             promotions = self._get_promotions()
             supported_versions = []
             
             for version in vanilla_versions:
-                # Check if this version has recommended or latest forge builds
                 if f"{version}-recommended" in promotions or f"{version}-latest" in promotions:
                     supported_versions.append(version)
             
-            # Cache and return
             self._cached_versions = supported_versions
-            logger.info(f"Found {len(supported_versions)} Forge-compatible versions")
             return supported_versions
+        except Exception as e:
+            logger.warning(f"Could not filter Forge versions: {e}")
+            return vanilla_versions
+
+    def _version_key(self, version: str) -> tuple:
+        """Create a sortable key from a version string."""
+        try:
+            parts = version.split('.')
+            return tuple(int(p) for p in parts)
+        except:
+            return (0,)
+
+    def _get_all_forge_versions(self) -> List[str]:
+        """Get all Forge versions from Maven API."""
+        if self._cached_all_versions:
+            return self._cached_all_versions
+            
+        try:
+            logger.info("Fetching Forge versions from Maven API")
+            resp = requests.get(MAVEN_API, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            versions = data.get("versions", [])
+            
+            # Filter out prerelease and special versions
+            stable_versions = []
+            for v in versions:
+                # Skip prerelease, snapshot versions
+                if "pre" in v.lower() or "snapshot" in v.lower():
+                    continue
+                stable_versions.append(v)
+            
+            self._cached_all_versions = stable_versions
+            logger.info(f"Cached {len(stable_versions)} Forge versions")
+            return stable_versions
             
         except Exception as e:
-            logger.warning(f"Could not filter Forge versions, using vanilla list: {e}")
-            return vanilla_versions
+            logger.error(f"Failed to fetch Forge versions from Maven API: {e}")
+            return []
+
+    def _extract_mc_version(self, forge_version: str) -> Optional[str]:
+        """Extract Minecraft version from Forge version string.
+        
+        Forge versions are in format: {mc_version}-{forge_version}[-{mc_version}]
+        Examples:
+        - 1.20.1-47.3.0 → 1.20.1
+        - 1.7.10-10.13.4.1614-1.7.10 → 1.7.10
+        """
+        try:
+            # Split by first hyphen to get MC version
+            parts = forge_version.split('-')
+            if len(parts) >= 2:
+                mc_version = parts[0]
+                # Validate it looks like a MC version
+                if re.match(r'^\d+\.\d+(\.\d+)?$', mc_version):
+                    return mc_version
+            return None
+        except:
+            return None
 
     def _get_promotions(self) -> Dict[str, Any]:
         """Get the promotions data (recommended/latest versions)."""
@@ -77,44 +153,62 @@ class ForgeProvider:
             raise ValueError(f"Could not fetch Forge promotions: {e}")
 
     def get_forge_versions_for_minecraft(self, minecraft_version: str) -> List[str]:
-        """Get all available Forge versions for a specific Minecraft version."""
+        """Get all available Forge versions for a specific Minecraft version.
+        
+        Args:
+            minecraft_version: Minecraft version like "1.20.1" or "1.16.5"
+        
+        Returns:
+            List of Forge version numbers (without MC prefix) sorted by newest first
+        """
         if minecraft_version in self._cached_forge_versions:
             return self._cached_forge_versions[minecraft_version]
             
         try:
-            # Try to get version list from Files API
-            logger.info(f"Fetching Forge versions for {minecraft_version}")
-            versions_url = f"{FORGE_FILES_API}/index_{minecraft_version}.html"
+            all_versions = self._get_all_forge_versions()
+            matching_versions = []
             
-            resp = requests.get(versions_url, timeout=30)
-            if resp.status_code == 404:
-                # This Minecraft version doesn't have Forge support
-                self._cached_forge_versions[minecraft_version] = []
-                return []
-                
-            resp.raise_for_status()
+            for full_version in all_versions:
+                mc_version = self._extract_mc_version(full_version)
+                if mc_version == minecraft_version:
+                    # Extract just the forge version part
+                    forge_version = self._extract_forge_version(full_version)
+                    if forge_version:
+                        matching_versions.append(forge_version)
             
-            # Parse HTML to extract version numbers
-            # This is a fallback method as the Files site doesn't have a clean API
-            import re
-            forge_versions = []
+            # Sort versions (newest first)
+            def version_sort_key(v):
+                try:
+                    # Handle versions like "47.3.0" or "10.13.4.1614"
+                    parts = v.split('.')
+                    return tuple(int(p) for p in parts)
+                except:
+                    return (0,)
             
-            # Look for version patterns in the HTML
-            version_pattern = rf'{re.escape(minecraft_version)}-(\d+\.\d+\.\d+(?:\.\d+)?)'
-            matches = re.findall(version_pattern, resp.text)
+            matching_versions.sort(key=version_sort_key, reverse=True)
             
-            forge_versions = list(set(matches))  # Remove duplicates
-            forge_versions.sort(key=lambda x: [int(i) for i in x.split('.')], reverse=True)  # Sort by version
-            
-            self._cached_forge_versions[minecraft_version] = forge_versions
-            logger.info(f"Found {len(forge_versions)} Forge versions for {minecraft_version}")
-            return forge_versions
+            self._cached_forge_versions[minecraft_version] = matching_versions
+            logger.info(f"Found {len(matching_versions)} Forge versions for MC {minecraft_version}")
+            return matching_versions
             
         except Exception as e:
-            logger.error(f"Failed to fetch Forge versions for {minecraft_version}: {e}")
-            # Return empty list rather than failing
-            self._cached_forge_versions[minecraft_version] = []
+            logger.error(f"Failed to get Forge versions for {minecraft_version}: {e}")
             return []
+
+    def _extract_forge_version(self, full_version: str) -> Optional[str]:
+        """Extract Forge version number from full version string.
+        
+        Examples:
+        - 1.20.1-47.3.0 → 47.3.0
+        - 1.7.10-10.13.4.1614-1.7.10 → 10.13.4.1614
+        """
+        try:
+            parts = full_version.split('-')
+            if len(parts) >= 2:
+                return parts[1]
+            return None
+        except:
+            return None
 
     def get_recommended_forge_version(self, minecraft_version: str) -> Optional[str]:
         """Get the recommended Forge version for a Minecraft version."""

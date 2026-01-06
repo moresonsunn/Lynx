@@ -2629,12 +2629,48 @@ class DockerManager:
 
     def get_server_stats(self, container_id: str) -> dict:
         """
-        Returns CPU %, RAM usage (MB), and network I/O (MB) for the given container.
+        Returns CPU %, RAM usage (MB), network I/O (MB), uptime, restarts, and health for the given container.
         If stats are not available (container not running or Docker not responding), returns an error message.
         """
         try:
             container = self._get_container_any(container_id)
             container.reload()
+            attrs = container.attrs or {}
+            state = attrs.get("State", {})
+            
+            # Extract uptime and restart info
+            started_at = state.get("StartedAt", "")
+            finished_at = state.get("FinishedAt", "")
+            restart_count = attrs.get("RestartCount", 0)
+            health_status = "unknown"
+            if "Health" in state:
+                health_status = state["Health"].get("Status", "unknown")
+            
+            # Calculate uptime in seconds
+            uptime_seconds = 0
+            if container.status == "running" and started_at:
+                try:
+                    from datetime import datetime, timezone
+                    # Docker timestamps are in ISO format with optional microseconds
+                    started_str = started_at.replace("Z", "+00:00")
+                    if "." in started_str:
+                        # Truncate microseconds to 6 digits if longer
+                        parts = started_str.split(".")
+                        fraction_and_tz = parts[1]
+                        if "+" in fraction_and_tz:
+                            fraction, tz = fraction_and_tz.split("+", 1)
+                            fraction = fraction[:6]
+                            started_str = f"{parts[0]}.{fraction}+{tz}"
+                        elif "-" in fraction_and_tz:
+                            fraction, tz = fraction_and_tz.rsplit("-", 1)
+                            fraction = fraction[:6]
+                            started_str = f"{parts[0]}.{fraction}-{tz}"
+                    started_dt = datetime.fromisoformat(started_str)
+                    now = datetime.now(timezone.utc)
+                    uptime_seconds = int((now - started_dt).total_seconds())
+                except Exception as e:
+                    logger.debug(f"Could not parse uptime: {e}")
+            
             if container.status != "running":
                 return {
                     "id": container.id,
@@ -2645,6 +2681,11 @@ class DockerManager:
                     "memory_percent": 0.0,
                     "network_rx_mb": 0.0,
                     "network_tx_mb": 0.0,
+                    "uptime_seconds": 0,
+                    "restart_count": restart_count,
+                    "health_status": health_status,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
                 }
             # Single-sample CPU calculation using precpu_stats to avoid delay
             stats_now = container.stats(stream=False)
@@ -2689,6 +2730,10 @@ class DockerManager:
                 "memory_percent": round(mem_percent, 2),
                 "network_rx_mb": round(rx_mb, 2),
                 "network_tx_mb": round(tx_mb, 2),
+                "uptime_seconds": uptime_seconds,
+                "restart_count": restart_count,
+                "health_status": health_status,
+                "started_at": started_at,
             }
         except docker.errors.NotFound:
             logger.warning(f"Container {container_id} not found for stats request.")
@@ -2701,6 +2746,10 @@ class DockerManager:
                 "memory_percent": 0.0,
                 "network_rx_mb": 0.0,
                 "network_tx_mb": 0.0,
+                "uptime_seconds": 0,
+                "restart_count": 0,
+                "health_status": "unknown",
+                "started_at": "",
             }
         except Exception as e:
             logger.error(f"Error getting stats for container {container_id}: {e}")
@@ -2713,6 +2762,10 @@ class DockerManager:
                 "memory_percent": 0.0,
                 "network_rx_mb": 0.0,
                 "network_tx_mb": 0.0,
+                "uptime_seconds": 0,
+                "restart_count": 0,
+                "health_status": "unknown",
+                "started_at": "",
             }
 
     def get_server_stats_cached(self, container_id: str, ttl_seconds: int = 3) -> dict:

@@ -163,3 +163,57 @@ class PlayerAction(Base):
     performed_by = Column(Integer, ForeignKey("users.id"))
     performed_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)  # for bans/whitelist status
+
+
+class UserAPIKey(Base):
+    """API keys for programmatic access"""
+    __tablename__ = "user_api_keys"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)  # User-friendly name for the key
+    key_hash = Column(String, nullable=False)  # Hashed API key (never store raw)
+    key_prefix = Column(String, nullable=False)  # First 8 chars for identification
+    permissions = Column(JSON, default=list)  # Optional: subset of user's permissions
+    expires_at = Column(DateTime, nullable=True)  # Optional expiration
+    last_used_at = Column(DateTime, nullable=True)
+    last_used_ip = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationship
+    user = relationship("User", backref="api_keys")
+
+
+class UserTwoFactor(Base):
+    """Two-factor authentication (TOTP) for users"""
+    __tablename__ = "user_two_factor"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    secret = Column(String, nullable=False)  # TOTP secret (encrypted)
+    is_enabled = Column(Boolean, default=False)  # Only enabled after verification
+    backup_codes = Column(JSON, default=list)  # One-time backup codes (hashed)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    verified_at = Column(DateTime, nullable=True)
+    
+    # Relationship
+    user = relationship("User", backref="two_factor")
+
+
+class LoginHistory(Base):
+    """Track all login attempts for security monitoring"""
+    __tablename__ = "login_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Null for unknown users
+    username = Column(String, nullable=False)  # Store attempted username
+    success = Column(Boolean, nullable=False)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    failure_reason = Column(String, nullable=True)  # "invalid_password", "2fa_failed", "locked", etc.
+    location = Column(String, nullable=True)  # GeoIP location if available
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationship
+    user = relationship("User", backref="login_history")

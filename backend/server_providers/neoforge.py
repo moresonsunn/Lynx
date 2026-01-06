@@ -3,22 +3,24 @@ from typing import List, Optional, Dict, Any
 from .providers import register_provider
 from .vanilla import VanillaProvider
 import logging
-import xml.etree.ElementTree as ET
+import re
 
 logger = logging.getLogger(__name__)
 
-# Official NeoForge API endpoints
-API_BASE = "https://api.neoforged.net"
-VERSIONS_API = f"{API_BASE}/versions"
+# Official NeoForge Maven API endpoint
+MAVEN_API = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge"
 MAVEN_BASE = "https://maven.neoforged.net/releases/net/neoforged/neoforge"
 
 class NeoForgeProvider:
-    """Official NeoForge server provider using NeoForge APIs.
+    """Official NeoForge server provider using NeoForge Maven API.
     
     NeoForge servers require an installer that sets up the server environment.
     The installer is obtained from: https://maven.neoforged.net/releases/net/neoforged/neoforge/{neoforge_version}/neoforge-{neoforge_version}-installer.jar
     
-    API Documentation: https://api.neoforged.net/
+    NeoForge Version Scheme:
+    - Version XX.Y.Z maps to Minecraft 1.XX.Y (where XX >= 20)
+    - Example: 21.4.56 → MC 1.21.4
+    - Example: 20.4.251 → MC 1.20.4
     """
     name = "neoforge"
 
@@ -33,131 +35,143 @@ class NeoForgeProvider:
             return self._cached_versions
         
         try:
-            # Get supported MC versions from NeoForge API
-            logger.info("Fetching NeoForge supported versions from API")
-            supported_versions = []
+            logger.info("Fetching NeoForge supported versions from Maven API")
+            neoforge_versions = self._get_all_neoforge_versions()
             
-            # NeoForge typically supports recent versions, let's get from vanilla and filter
-            vanilla_versions = VanillaProvider().list_versions()
-            neoforge_data = self._get_neoforge_versions()
-            
-            # Extract supported MC versions from NeoForge data
+            # Extract unique MC versions
             mc_versions = set()
-            for version_info in neoforge_data:
-                mc_version = version_info.get("minecraft_version")
+            for nf_version in neoforge_versions:
+                mc_version = self._infer_mc_version_from_neoforge(nf_version)
                 if mc_version:
                     mc_versions.add(mc_version)
             
-            # Filter vanilla versions to only include NeoForge-supported ones
-            for version in vanilla_versions:
-                if version in mc_versions:
-                    supported_versions.append(version)
+            # Sort versions (newest first)
+            sorted_versions = sorted(mc_versions, key=self._version_key, reverse=True)
             
-            # Cache and return
-            self._cached_versions = supported_versions
-            logger.info(f"Found {len(supported_versions)} NeoForge-compatible versions")
-            return supported_versions
+            self._cached_versions = sorted_versions
+            logger.info(f"Found {len(sorted_versions)} NeoForge-compatible MC versions: {sorted_versions}")
+            return sorted_versions
             
         except Exception as e:
             logger.warning(f"Could not fetch NeoForge versions from API, using fallback: {e}")
-            # Fallback: NeoForge generally supports recent versions
-            vanilla_versions = VanillaProvider().list_versions()
-            # Filter to recent versions (1.20+) as NeoForge is relatively new
-            recent_versions = [v for v in vanilla_versions if self._is_recent_version(v)]
-            self._cached_versions = recent_versions
-            return recent_versions
+            # Fallback: Return common recent versions
+            fallback = ["1.21.5", "1.21.4", "1.21.3", "1.21.1", "1.21", "1.20.6", "1.20.4", "1.20.2"]
+            self._cached_versions = fallback
+            return fallback
 
-    def _is_recent_version(self, version: str) -> bool:
-        """Check if a Minecraft version is recent enough for NeoForge support."""
+    def _version_key(self, version: str) -> tuple:
+        """Create a sortable key from a version string."""
         try:
             parts = version.split('.')
-            major = int(parts[0])
-            minor = int(parts[1])
-            
-            # NeoForge started around 1.20.1
-            return major > 1 or (major == 1 and minor >= 20)
+            return tuple(int(p) for p in parts)
         except:
-            return False
+            return (0,)
 
-    def _get_neoforge_versions(self) -> List[Dict[str, Any]]:
-        """Get all NeoForge versions from API."""
+    def _get_all_neoforge_versions(self) -> List[str]:
+        """Get all NeoForge versions from Maven API."""
         if self._cached_neoforge_versions:
             return self._cached_neoforge_versions
             
         try:
-            logger.info("Fetching NeoForge versions from API")
-            resp = requests.get(VERSIONS_API, timeout=30)
+            logger.info("Fetching NeoForge versions from Maven API")
+            resp = requests.get(MAVEN_API, timeout=30)
             resp.raise_for_status()
             data = resp.json()
             
+            # Extract versions list
+            versions = data.get("versions", [])
+            
+            # Filter out snapshots, alpha, and special versions
+            stable_versions = []
+            for v in versions:
+                # Skip snapshot/alpha/special versions
+                if "alpha" in v.lower() or "snapshot" in v.lower() or "craftmine" in v.lower():
+                    continue
+                stable_versions.append(v)
+            
             # Cache the result
-            self._cached_neoforge_versions = data
-            logger.info(f"Cached {len(data)} NeoForge versions")
-            return data
+            self._cached_neoforge_versions = stable_versions
+            logger.info(f"Cached {len(stable_versions)} NeoForge versions")
+            return stable_versions
             
         except Exception as e:
-            logger.error(f"Failed to fetch NeoForge versions from API: {e}")
-            # Try maven metadata as fallback
-            return self._get_versions_from_maven()
-
-    def _get_versions_from_maven(self) -> List[Dict[str, Any]]:
-        """Fallback: Get versions from Maven metadata."""
-        try:
-            logger.info("Fetching NeoForge versions from Maven metadata")
-            meta_url = f"{MAVEN_BASE}/maven-metadata.xml"
-            resp = requests.get(meta_url, timeout=30)
-            resp.raise_for_status()
-            
-            root = ET.fromstring(resp.text)
-            versions = []
-            
-            for version_elem in root.findall(".//version"):
-                version = version_elem.text
-                if version:
-                    # Try to infer MC version from NeoForge version pattern
-                    mc_version = self._infer_mc_version_from_neoforge(version)
-                    versions.append({
-                        "version": version,
-                        "minecraft_version": mc_version,
-                    })
-            
-            logger.info(f"Found {len(versions)} NeoForge versions from Maven")
-            return versions
-            
-        except Exception as e:
-            logger.error(f"Failed to fetch versions from Maven: {e}")
+            logger.error(f"Failed to fetch NeoForge versions from Maven API: {e}")
             return []
 
     def _infer_mc_version_from_neoforge(self, neoforge_version: str) -> Optional[str]:
-        """Try to infer Minecraft version from NeoForge version."""
-        # NeoForge version patterns (this is a heuristic)
-        if neoforge_version.startswith("21."):
-            return "1.21"
-        elif neoforge_version.startswith("47."):
-            return "1.20.1"
-        elif neoforge_version.startswith("46."):
-            return "1.19.4"
-        return None
+        """Infer Minecraft version from NeoForge version.
+        
+        NeoForge version scheme: XX.Y.Z → Minecraft 1.XX.Y
+        - 21.4.56 → 1.21.4
+        - 20.4.251 → 1.20.4
+        - 21.1.217 → 1.21.1
+        - 21.0.167 → 1.21 (or 1.21.0)
+        """
+        try:
+            # Parse XX.Y.Z format
+            match = re.match(r'^(\d+)\.(\d+)\.', neoforge_version)
+            if not match:
+                return None
+            
+            major = int(match.group(1))  # e.g., 21
+            minor = int(match.group(2))  # e.g., 4
+            
+            # NeoForge versions for MC 1.20.x start with 20.x
+            # NeoForge versions for MC 1.21.x start with 21.x
+            if major < 20:
+                return None  # Invalid for NeoForge
+            
+            # Build MC version: 1.XX.Y
+            if minor == 0:
+                return f"1.{major}"  # 1.21 instead of 1.21.0
+            else:
+                return f"1.{major}.{minor}"
+                
+        except Exception as e:
+            logger.debug(f"Could not parse NeoForge version {neoforge_version}: {e}")
+            return None
 
     def get_neoforge_versions_for_minecraft(self, minecraft_version: str) -> List[str]:
-        """Get all available NeoForge versions for a specific Minecraft version."""
+        """Get all available NeoForge versions for a specific Minecraft version.
+        
+        Args:
+            minecraft_version: Minecraft version like "1.21.4" or "1.21"
+        
+        Returns:
+            List of NeoForge versions sorted by newest first
+        """
         if minecraft_version in self._cached_mc_mappings:
             return self._cached_mc_mappings[minecraft_version]
             
         try:
-            neoforge_data = self._get_neoforge_versions()
-            versions = []
+            all_versions = self._get_all_neoforge_versions()
+            matching_versions = []
             
-            for version_info in neoforge_data:
-                if version_info.get("minecraft_version") == minecraft_version:
-                    versions.append(version_info["version"])
+            for nf_version in all_versions:
+                mc_version = self._infer_mc_version_from_neoforge(nf_version)
+                if mc_version == minecraft_version:
+                    matching_versions.append(nf_version)
             
-            # Sort versions (newest first)
-            versions.sort(key=lambda x: [int(i) for i in x.split('.')], reverse=True)
+            # Sort versions (newest first) - handle both stable and beta
+            def version_sort_key(v):
+                # Remove -beta suffix for sorting
+                base = v.replace('-beta', '')
+                try:
+                    parts = base.split('.')
+                    return tuple(int(p) for p in parts[:3])
+                except:
+                    return (0, 0, 0)
             
-            self._cached_mc_mappings[minecraft_version] = versions
-            logger.info(f"Found {len(versions)} NeoForge versions for {minecraft_version}")
-            return versions
+            matching_versions.sort(key=version_sort_key, reverse=True)
+            
+            # Separate stable and beta versions - stable first
+            stable = [v for v in matching_versions if '-beta' not in v]
+            beta = [v for v in matching_versions if '-beta' in v]
+            sorted_versions = stable + beta
+            
+            self._cached_mc_mappings[minecraft_version] = sorted_versions
+            logger.info(f"Found {len(sorted_versions)} NeoForge versions for MC {minecraft_version} ({len(stable)} stable, {len(beta)} beta)")
+            return sorted_versions
             
         except Exception as e:
             logger.error(f"Failed to get NeoForge versions for {minecraft_version}: {e}")
