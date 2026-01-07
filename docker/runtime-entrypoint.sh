@@ -136,6 +136,7 @@ find_any_java() {
     "/opt/jdk8u392-b08/bin/java"
     "/opt/jdk-11.0.21+9/bin/java"
     "/opt/jdk-17.0.9+9/bin/java"
+    "/opt/jdk-21.0.5+9/bin/java"
     "/usr/local/bin/java21"
     "/usr/local/bin/java17"
     "/usr/local/bin/java11"
