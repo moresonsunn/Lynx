@@ -99,9 +99,16 @@ export default function TemplatesPage({
             // Apply defaults
             if (defaults.memory_min_mb) {
               setMinRam(`${defaults.memory_min_mb}M`);
+              // If parent provided a create-form setter, update those too (values expected in MB)
+              try {
+                if (typeof setCreateMinRam === 'function') setCreateMinRam(String(defaults.memory_min_mb));
+              } catch (e) {}
             }
             if (defaults.memory_max_mb) {
               setMaxRam(`${defaults.memory_max_mb}M`);
+              try {
+                if (typeof setCreateMaxRam === 'function') setCreateMaxRam(String(defaults.memory_max_mb));
+              } catch (e) {}
             }
             if (defaults.java_args) {
               setJavaOverride(defaults.java_args);
