@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FaLayerGroup, FaPlusCircle } from 'react-icons/fa';
+import { FaLayerGroup, FaPlusCircle, FaDice } from 'react-icons/fa';
 import { normalizeRamInput } from '../utils/ram';
 import { useTranslation } from '../i18n/I18nContext';
 
@@ -63,9 +63,19 @@ export default function TemplatesPage({
   const { t } = useTranslation();
   const safeAuthHeaders = useMemo(() => (typeof authHeaders === 'function' ? authHeaders : () => ({})), [authHeaders]);
 
-  const [serverName, setServerName] = useState('mp-' + Math.random().toString(36).slice(2, 6));
+  // Generate a random server name
+  const generateRandomName = () => {
+    const adjectives = ['epic', 'swift', 'brave', 'cosmic', 'noble', 'mystic', 'crystal', 'shadow', 'iron', 'golden'];
+    const nouns = ['realm', 'world', 'forge', 'craft', 'land', 'haven', 'peak', 'core', 'vault', 'nexus'];
+    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const noun = nouns[Math.floor(Math.random() * nouns.length)];
+    const num = Math.floor(Math.random() * 1000);
+    return `${adj}-${noun}-${num}`;
+  };
+
+  const [serverName, setServerName] = useState(generateRandomName);
   const [hostPort, setHostPort] = useState('');
-  const [minRam, setMinRam] = useState('2048M');
+  const [minRam, setMinRam] = useState('1024M');
   const [maxRam, setMaxRam] = useState('4096M');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -73,6 +83,38 @@ export default function TemplatesPage({
   const [javaOverride, setJavaOverride] = useState('');
   const [serverType, setServerType] = useState('');
   const [serverVersion, setServerVersion] = useState('');
+  const [serverDefaults, setServerDefaults] = useState(null);
+
+  // Load server defaults from settings
+  useEffect(() => {
+    let cancelled = false;
+    async function loadServerDefaults() {
+      try {
+        const response = await fetch(`${API}/settings`, { headers: safeAuthHeaders() });
+        if (response.ok) {
+          const settings = await response.json();
+          if (!cancelled && settings.server_defaults) {
+            const defaults = settings.server_defaults;
+            setServerDefaults(defaults);
+            // Apply defaults
+            if (defaults.memory_min_mb) {
+              setMinRam(`${defaults.memory_min_mb}M`);
+            }
+            if (defaults.memory_max_mb) {
+              setMaxRam(`${defaults.memory_max_mb}M`);
+            }
+            if (defaults.java_args) {
+              setJavaOverride(defaults.java_args);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load server defaults:', e);
+      }
+    }
+    loadServerDefaults();
+    return () => { cancelled = true; };
+  }, [API, safeAuthHeaders]);
 
   const [templatesTab, setTemplatesTab] = useState('minecraft');
   const [steamGames, setSteamGames] = useState([]);
@@ -607,11 +649,21 @@ export default function TemplatesPage({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-white/70 mb-1">Server Name</label>
-                <input
-                  value={serverName}
-                  onChange={e => setServerName(e.target.value)}
-                  className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white"
-                />
+                <div className="flex gap-2">
+                  <input
+                    value={serverName}
+                    onChange={e => setServerName(e.target.value)}
+                    className="flex-1 rounded bg-white/5 border border-white/10 px-3 py-2 text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setServerName(generateRandomName())}
+                    className="px-3 py-2 rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+                    title="Generate random name"
+                  >
+                    <FaDice />
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm text-white/70 mb-1">Host Port (optional)</label>
@@ -840,11 +892,21 @@ export default function TemplatesPage({
                   </div>
                   <div>
                     <label className="block text-xs text-white/60 mb-1">Server Name</label>
-                    <input
-                      className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white"
-                      value={serverName}
-                      onChange={e => setServerName(e.target.value)}
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        className="flex-1 rounded bg-white/5 border border-white/10 px-3 py-2 text-white"
+                        value={serverName}
+                        onChange={e => setServerName(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setServerName(generateRandomName())}
+                        className="px-3 py-2 rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+                        title="Generate random name"
+                      >
+                        <FaDice />
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs text-white/60 mb-1">Host Port (optional)</label>
@@ -1113,13 +1175,23 @@ export default function TemplatesPage({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs text-white/60 mb-1">Server name</label>
-                    <input
-                      className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white"
-                      value={steamForm.name}
-                      onChange={(e) => updateSteamField('name', e.target.value)}
-                      placeholder={`${steamSelectedGame.default_name || steamSelectedGame.slug}-server`}
-                      required
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        className="flex-1 rounded bg-white/5 border border-white/10 px-3 py-2 text-white"
+                        value={steamForm.name}
+                        onChange={(e) => updateSteamField('name', e.target.value)}
+                        placeholder={`${steamSelectedGame.default_name || steamSelectedGame.slug}-server`}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateSteamField('name', generateRandomName())}
+                        className="px-3 py-2 rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+                        title="Generate random name"
+                      >
+                        <FaDice />
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs text-white/60 mb-1">Host port (optional)</label>

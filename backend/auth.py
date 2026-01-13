@@ -26,7 +26,25 @@ if not _raw_secret or _raw_secret == "your-secret-key-change-this-in-production"
 SECRET_KEY = _raw_secret
 ALGORITHM = "HS256"
 
+# Default token expiration (can be overridden by settings)
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+
+def get_security_settings():
+    """Get security settings from system settings."""
+    try:
+        from settings_routes import load_settings
+        settings = load_settings()
+        return settings.get("security", {})
+    except Exception:
+        return {}
+
+
+def get_token_expiry_minutes():
+    """Get token expiry from settings or environment."""
+    security = get_security_settings()
+    hours = security.get("session_timeout_hours", 24)
+    return hours * 60
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -48,7 +66,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        # Use settings-based expiry
+        expire_minutes = get_token_expiry_minutes()
+        expire = datetime.utcnow() + timedelta(minutes=expire_minutes)
     
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)

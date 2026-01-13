@@ -78,15 +78,31 @@ class AdminPasswordReset(BaseModel):
     force_change: bool = True
 
 
+def _get_password_settings():
+    """Get password settings from system settings."""
+    try:
+        from settings_routes import load_settings
+        settings = load_settings()
+        return settings.get("security", {})
+    except Exception:
+        return {}
+
+
 def _ensure_password_strength(password: str):
-    if len(password) < 8:
-        raise HTTPException(status_code=400, detail="New password must be at least 8 characters long")
-    if not any(ch.isupper() for ch in password):
-        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
-    if not any(ch.islower() for ch in password):
-        raise HTTPException(status_code=400, detail="Password must contain at least one lowercase letter")
-    if not any(ch.isdigit() for ch in password):
-        raise HTTPException(status_code=400, detail="Password must contain at least one digit")
+    security = _get_password_settings()
+    require_strong = security.get("require_strong_password", True)
+    min_length = security.get("min_password_length", 8)
+    
+    if len(password) < min_length:
+        raise HTTPException(status_code=400, detail=f"Password must be at least {min_length} characters long")
+    
+    if require_strong:
+        if not any(ch.isupper() for ch in password):
+            raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
+        if not any(ch.islower() for ch in password):
+            raise HTTPException(status_code=400, detail="Password must contain at least one lowercase letter")
+        if not any(ch.isdigit() for ch in password):
+            raise HTTPException(status_code=400, detail="Password must contain at least one digit")
 
 @router.post("/login", response_model=Token)
 async def login(

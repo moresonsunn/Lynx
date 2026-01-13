@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 from docker_manager import DockerManager
 from runtime_adapter import get_runtime_manager, get_runtime_manager_or_docker
-import server_providers  
+import server_providers  # noqa: F401 - ensure providers register
 from server_providers.providers import get_provider_names, get_provider
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse, StreamingResponse
@@ -29,7 +29,7 @@ from bs4 import BeautifulSoup
 import threading
 import logging
 
-
+# New imports for enhanced features
 from database import init_db, SessionLocal
 from routers import (
     auth_router,
@@ -79,7 +79,7 @@ def get_fabric_loader_versions(minecraft_version: str):
         raise Exception(f"Failed to fetch loader versions from FabricMC meta for version {minecraft_version}")
 
     data = resp.json()
-    
+    # Each entry: {"loader": {"version": "<ver>", ...}, ...}
     loader_versions = [entry["loader"]["version"] for entry in data if "loader" in entry and "version" in entry["loader"]]
     return loader_versions
 
@@ -90,7 +90,7 @@ def get_neoforge_loader_versions():
         raise Exception("Failed to load NeoForged main page")
     soup = BeautifulSoup(resp.content, "html.parser")
     versions = []
-    
+    # Adjust the selector when you inspect the NeoForge page structure
     for row in soup.select("table.versions-table tbody tr"):
         tds = row.find_all("td")
         if tds and len(tds) > 0:
@@ -102,15 +102,15 @@ def get_neoforge_loader_versions():
 
 app = FastAPI()
 
-
+# ---- CORS Configuration ----
 try:
     from fastapi.middleware.cors import CORSMiddleware
     _origins_env = os.getenv("ALLOWED_ORIGINS", "*")
-    
+    # Strip surrounding quotes that may appear due to docker-compose quoting (e.g. "http://a,http://b")
     if (_origins_env.startswith('"') and _origins_env.endswith('"')) or (_origins_env.startswith("'") and _origins_env.endswith("'")):
         _origins_env = _origins_env[1:-1]
     _origins_regex_env = os.getenv("ALLOWED_ORIGIN_REGEX")
-    
+    # Priority: explicit regex > explicit list > wildcard fallback
     if _origins_regex_env:
         app.add_middleware(
             CORSMiddleware,
@@ -148,15 +148,15 @@ try:
 except Exception as e:
     print(f"[CORS] Skipped due to error: {e}")
 
-
+# Enable gzip compression for API responses and static assets
 try:
     from starlette.middleware.gzip import GZipMiddleware
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 except Exception:
-    
+    # If starlette version lacks middleware or import fails, continue without compression
     pass
 
-
+# Include all routers
 app.include_router(auth_router)
 app.include_router(scheduler_router)
 app.include_router(player_router)
@@ -176,7 +176,7 @@ app.include_router(maintenance_router)
 app.include_router(steam_router)
 app.include_router(settings_router)
 
-
+# /api aliases to avoid ad-block filters blocking paths like /servers/stats or /auth/login
 for _router in [
     auth_router,
     scheduler_router,
@@ -202,10 +202,10 @@ for _router in [
     except Exception:
         pass
 
-
+# Debug endpoint for header inspection (disabled unless explicitly enabled)
 if os.getenv("ENABLE_DEBUG_ENDPOINTS", "0") == "1":
     @app.get("/debug/echo-headers")
-    async def debug_echo_headers(request: Request):  
+    async def debug_echo_headers(request: Request):  # type: ignore
         return {
             "headers": {k: v for k, v in request.headers.items()},
             "origin": request.headers.get("origin"),
@@ -220,13 +220,13 @@ async def startup_event():
     print("Starting up application...")
     logging.basicConfig(level=logging.INFO)
     try:
-        
+        # Initialize database
         print("Initializing database...")
         logging.info("Initializing database...")
         init_db()
         print("Database initialized successfully")
         logging.info("Database initialized")
-        
+        # Optional admin password reset via environment variable (one-shot on each start if set)
         try:
             admin_pw = os.getenv("ADMIN_PASSWORD")
             if admin_pw:
@@ -237,7 +237,7 @@ async def startup_event():
                     from models import User
                     admin_user = db_sess.query(User).filter(User.username == 'admin').first()
                     if admin_user:
-                        
+                        # Use bulk update pattern to avoid ORM attribute typing issues under some analyzers
                         db_sess.query(User).filter(User.id == admin_user.id).update({
                             'hashed_password': get_password_hash(admin_pw),
                             'must_change_password': False,
@@ -248,7 +248,7 @@ async def startup_event():
         except Exception as e:
             logging.error(f"Failed to process ADMIN_PASSWORD reset: {e}")
         
-        
+        # Start task scheduler
         logging.info("Starting task scheduler...")
         scheduler = get_scheduler()
         scheduler.start()
@@ -261,7 +261,7 @@ async def startup_event():
 async def shutdown_event():
     """Clean up when the application shuts down."""
     try:
-        
+        # Stop task scheduler
         scheduler = get_scheduler()
         scheduler.stop()
         logging.info("Task scheduler stopped")
@@ -269,21 +269,21 @@ async def shutdown_event():
     except Exception as e:
         logging.error(f"Error during shutdown: {e}")
 
-
-from starlette.responses import Response  
+# Catch-all OPTIONS preflight to avoid proxy-related 400 responses
+from starlette.responses import Response  # noqa: E402
 
 def _preflight_headers(request: Request) -> dict:
     origin = request.headers.get("origin", "*") if request else "*"
     req_method = (request.headers.get("access-control-request-method", "") or "").upper()
     req_headers = (request.headers.get("access-control-request-headers", "") or "").strip()
     allow_headers = [h.strip() for h in req_headers.split(",") if h.strip()]
-    
+    # Always include common headers we rely on
     lower = [h.lower() for h in allow_headers]
     def ensure(h: str):
         if h.lower() not in lower:
             allow_headers.append(h)
             lower.append(h.lower())
-    
+    # Common headers browsers include
     for h in [
         "Authorization","Content-Type","Accept","Origin","X-Requested-With",
         "Cache-Control","Pragma","If-Modified-Since","Accept-Language","Accept-Encoding"
@@ -297,16 +297,16 @@ def _preflight_headers(request: Request) -> dict:
         "Access-Control-Allow-Methods": allow_methods,
         "Access-Control-Allow-Headers": ", ".join(allow_headers) if allow_headers else "*",
         "Access-Control-Allow-Credentials": "true",
-        
+        # Chrome Private Network Access (PNA) preflight support
         "Access-Control-Allow-Private-Network": "true",
         "Access-Control-Max-Age": "600",
-        
+        # Expose common headers so the client can read them
         "Access-Control-Expose-Headers": "Content-Length, Content-Type, ETag, Authorization",
         "Vary": "Origin",
     }
 
 @app.options("/{rest_of_path:path}")
-def cors_preflight_passthrough(rest_of_path: str, request: Request):  
+def cors_preflight_passthrough(rest_of_path: str, request: Request):  # type: ignore
     try:
         headers = _preflight_headers(request)
         headers.setdefault("Content-Length", "0")
@@ -314,17 +314,17 @@ def cors_preflight_passthrough(rest_of_path: str, request: Request):
     except Exception:
         return Response(status_code=200, headers={"Content-Length": "0"})
 
-
+# Explicit preflight routes for common endpoints (some proxies match strictly)
 @app.options("/servers/{container_id}/logs")
 @app.options("/api/servers/{container_id}/logs")
-def cors_preflight_logs(container_id: str, request: Request):  
+def cors_preflight_logs(container_id: str, request: Request):  # type: ignore
     headers = _preflight_headers(request)
     headers.setdefault("Content-Length", "0")
     return Response(status_code=200, headers=headers)
 
 @app.options("/servers/{container_id}/command")
 @app.options("/api/servers/{container_id}/command")
-def cors_preflight_command(container_id: str, request: Request):  
+def cors_preflight_command(container_id: str, request: Request):  # type: ignore
     headers = _preflight_headers(request)
     headers.setdefault("Content-Length", "0")
     return Response(status_code=200, headers=headers)
@@ -335,7 +335,7 @@ _docker_manager: Any = None
 def get_docker_manager() -> Any:
     global _docker_manager
     if _docker_manager is None:
-        
+        # Prefer local runtime adapter when enabled
         adapter = None
         try:
             adapter = get_runtime_manager()
@@ -350,11 +350,11 @@ def get_docker_manager() -> Any:
 def list_servers(current_user: User = Depends(require_auth)):
     try:
         servers = get_docker_manager().list_servers()
-        
-        from docker_manager import MINECRAFT_PORT  
+        # Enrich each with host_port convenience (primary Minecraft port 25565/tcp)
+        from docker_manager import MINECRAFT_PORT  # local import to avoid circular at module import time
         for s in servers:
             if isinstance(s, dict) and 'host_port' not in s:
-                
+                # Prefer new style port_mappings if present
                 try:
                     mappings = s.get('port_mappings') or {}
                     primary = mappings.get(f"{MINECRAFT_PORT}/tcp") if isinstance(mappings, dict) else None
@@ -362,7 +362,7 @@ def list_servers(current_user: User = Depends(require_auth)):
                     if isinstance(primary, dict):
                         hp = primary.get('host_port')
                     if not hp:
-                        
+                        # Fallback to legacy 'ports' raw structure
                         raw_ports = s.get('ports') or {}
                         mapping = raw_ports.get(f"{MINECRAFT_PORT}/tcp") if isinstance(raw_ports, dict) else None
                         if mapping and isinstance(mapping, list) and len(mapping) > 0:
@@ -428,20 +428,20 @@ def suggest_port(
 
 class ServerCreateRequest(BaseModel):
     name: str
-    type: str  
-    version: str  
-    host_port: int | None = None  
-    loader_version: str | None = None  
-    installer_version: str | None = None  
-    min_ram: int | str = 1024  
-    max_ram: int | str = 2048  
+    type: str  # e.g. vanilla, paper, purpur, fabric, forge, neoforge
+    version: str  # minecraft version (e.g. 1.21.1)
+    host_port: int | None = None  # if omitted/None we will auto-pick an available port
+    loader_version: str | None = None  # specific loader build (fabric/forge/etc.)
+    installer_version: str | None = None  # for installers that have separate versioning
+    min_ram: int | str = 1024  # MB or string like "512M"
+    max_ram: int | str = 2048  # MB or string like "2G"
 
 class ServerImportRequest(BaseModel):
-    name: str  
+    name: str  # Must match existing directory under SERVERS_CONTAINER_ROOT
     host_port: int | None = None
     min_ram: int | str = 1024
     max_ram: int | str = 2048
-    java_version: str | None = None  
+    java_version: str | None = None  # optional preferred Java version (8/11/17/21)
 
 @app.post("/servers/import")
 @app.post("/api/servers/import")
@@ -452,7 +452,7 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
     Optional: specify a host_port to bind the Minecraft port; otherwise auto-assign.
     """
     try:
-        
+        # Normalize RAM inputs similar to create_server
         def fmt(r):
             if isinstance(r, int):
                 return f"{r // 1024}G" if r >= 1024 else f"{r}M"
@@ -467,8 +467,8 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
             extra_env["JAVA_VERSION"] = req.java_version
             extra_env["JAVA_BIN"] = f"/usr/local/bin/java{req.java_version}"
 
-        
-        
+        # Best-effort detection so imported servers show Type/Version instead of Unknown.
+        # This is intentionally lightweight (no jar introspection), and mirrors the ZIP import behavior.
         try:
             from pathlib import Path
             import json as _json
@@ -491,11 +491,11 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
                 except Exception:
                     pass
 
-            
+            # Use common jar naming patterns first.
             jar_files = [p.name for p in server_dir.glob("*.jar") if p.is_file()]
             server_jar = server_dir / "server.jar"
             if server_jar.exists() and server_jar.stat().st_size > 50_000:
-                
+                # Prefer server.jar
                 jar_files = [server_jar.name] + [j for j in jar_files if j != server_jar.name]
 
             patterns = [
@@ -518,10 +518,10 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
                 if detected_type:
                     break
             if not detected_type and server_jar.exists() and server_jar.stat().st_size > 50_000:
-                
+                # At least indicate it's a Java Minecraft server.
                 detected_type = "vanilla"
 
-            
+            # Update server_meta.json with detection for UI and future restarts.
             meta_path = server_dir / "server_meta.json"
             meta: dict = {}
             if meta_path.exists():
@@ -547,7 +547,7 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
             except Exception:
                 pass
         except Exception:
-            
+            # Detection should never block an import.
             pass
 
         result = dm.create_server_from_existing(
@@ -557,7 +557,7 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
             max_ram=max_ram,
             extra_env=extra_env or None,
         )
-        
+        # Enrich with host_port lookup (best effort)
         try:
             if isinstance(result, dict) and 'id' in result and 'host_port' not in result:
                 from docker_manager import MINECRAFT_PORT
@@ -580,30 +580,30 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
 @app.post("/api/servers")
 def create_server(req: ServerCreateRequest, current_user: User = Depends(require_auth)):
     try:
-        
+        # Convert RAM values to proper format
         def format_ram(ram_value):
             if isinstance(ram_value, int):
-                
+                # Convert MB to G format
                 if ram_value >= 1024:
                     return f"{ram_value // 1024}G"
                 else:
                     return f"{ram_value}M"
             else:
-                
+                # Already a string, return as is
                 return str(ram_value)
         
         min_ram = format_ram(req.min_ram)
         max_ram = format_ram(req.max_ram)
         
-        
+        # Pass loader_version if present, otherwise None
         result = get_docker_manager().create_server(
             req.name, req.type, req.version, req.host_port, req.loader_version, min_ram, max_ram, req.installer_version
         )
-        
+        # Enrich with selected host port if possible (best effort)
         try:
-            
+            # If result doesn't already have host_port, attempt to look it up from container mapping
             if isinstance(result, dict) and 'id' in result and 'host_port' not in result:
-                from docker_manager import MINECRAFT_PORT  
+                from docker_manager import MINECRAFT_PORT  # local import to avoid circular issues
                 import docker
                 client = docker.from_env()
                 c = client.containers.get(result['id'])
@@ -636,7 +636,7 @@ def stop_server(container_id: str):
 from pydantic import BaseModel
 
 class PowerSignal(BaseModel):
-    signal: str  
+    signal: str  # start | stop | restart | kill
 
 class MkdirRequest(BaseModel):
     path: str
@@ -737,7 +737,7 @@ def get_server_resources(container_id: str, current_user: User = Depends(require
         dm = get_docker_manager()
         stats = dm.get_server_stats(container_id)
         players = dm.get_player_info(container_id)
-        
+        # Backward-compatible flat fields plus structured payload
         response = {
             "id": stats.get("id", container_id),
             "cpu_percent": stats.get("cpu_percent", 0.0),
@@ -784,7 +784,7 @@ def delete_server(container_id: str, current_user: User = Depends(require_modera
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 
-
+# Simple directory creation endpoint for Files panel
 @app.post("/servers/{name}/mkdir")
 @app.post("/api/servers/{name}/mkdir")
 def mkdir_path(name: str, req: MkdirRequest, current_user: User = Depends(require_moderator)):
@@ -837,13 +837,13 @@ def get_bulk_stats(ttl: int = Query(3, ge=0, le=60), current_user: User = Depend
 def get_server_info(container_id: str, request: Request):
     try:
         info = get_docker_manager().get_server_info(container_id)
-        
+        # Attach top-level directory snapshot and common subdirs for instant files panel
         try:
             name = info.get("name") or info.get("container_name") or info.get("server_name")
             if name:
                 snap = fm_list_dir(name, ".")
                 info["dir_snapshot"] = snap[:200]
-                
+                # Deep snapshot for common subdirs
                 deep = {}
                 for sub in ["world", "world_nether", "world_the_end", "plugins", "mods", "config", "datapacks"]:
                     try:
@@ -857,7 +857,7 @@ def get_server_info(container_id: str, request: Request):
             info.setdefault("dir_snapshot", [])
             info.setdefault("dir_snapshot_deep", {})
         
-        
+        # Generate a simple ETag using dir mtime and java_version if present
         etag = None
         try:
             from pathlib import Path
@@ -888,7 +888,7 @@ async def stream_servers(request: Request, token: str | None = Query(None)):
     (JWT or session token). This keeps the stream lightweight while giving near-real-time updates
     without frequent polling.
     """
-    
+    # Resolve user from token param to allow EventSource auth
     db = SessionLocal()
     user = None
     if token:
@@ -900,7 +900,7 @@ async def stream_servers(request: Request, token: str | None = Query(None)):
             user = None
         if user is None:
             try:
-                from user_service import UserService  
+                from user_service import UserService  # lazy import to avoid circular
                 user_service = UserService(db)
                 user = user_service.get_user_by_session_token(token, refresh_expiry=True)
             except Exception:
@@ -941,21 +941,21 @@ def get_server_console(container_id: str, tail: int = 100):
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Console unavailable: {e}")
 
-
+#
 
 @app.get("/servers/{name}/files")
 @app.get("/api/servers/{name}/files")
 def files_list(name: str, request: Request, path: str = "."):
-    
+    # Compute a simple ETag based on directory mtime to enable client caching
     try:
         from pathlib import Path
         base = (SERVERS_ROOT.resolve() / name / path).resolve()
-        
+        # Prevent path traversal
         root = SERVERS_ROOT.resolve() / name
         if not str(base).startswith(str(root)):
             raise HTTPException(status_code=400, detail="Invalid path")
         if base.exists() and base.is_dir():
-            
+            # Combine mtime with entry count for better change detection
             try:
                 with os.scandir(base) as it:
                     count = sum(1 for _ in it)
@@ -983,7 +983,7 @@ def files_list(name: str, request: Request, path: str = "."):
 @app.get("/servers/{name}/file")
 @app.get("/api/servers/{name}/file")
 def file_read(name: str, request: Request, path: str):
-    
+    # ETag based on file size and mtime
     try:
         from pathlib import Path
         p = (SERVERS_ROOT.resolve() / name / path).resolve()
@@ -1035,11 +1035,11 @@ def file_or_folder_download(name: str, path: str = Query(".")):
 
     if target.is_file():
         return FileResponse(str(target), filename=target.name)
-    
+    # It's a directory: create a temporary zip and send it
     import tempfile, shutil
     tmpdir = Path(tempfile.mkdtemp(prefix="dl_zip_"))
     archive_base = tmpdir / (Path(path).name or "folder")
-    
+    # shutil.make_archive adds extension automatically
     archive_path = shutil.make_archive(str(archive_base), 'zip', root_dir=str(target))
     fname = f"{(Path(path).name or 'folder')}.zip"
     return FileResponse(archive_path, filename=fname)
@@ -1054,7 +1054,7 @@ async def file_upload(
 ):
     if not file:
         raise HTTPException(status_code=400, detail="No file provided")
-    
+    # Stream upload to disk asynchronously to improve throughput and reduce memory
     from file_manager import get_upload_dest, sanitize_filename
     from pathlib import Path
     dest = get_upload_dest(name, path, file.filename or "uploaded")
@@ -1070,13 +1070,13 @@ async def file_upload(
             await file.close()
         except Exception:
             pass
-    
+    # Post-process potential server icon uploads
     try:
         from file_manager import maybe_process_server_icon
         maybe_process_server_icon(name, dest, file.filename or dest.name)
     except Exception:
         pass
-    
+    # Invalidate caches for this server after upload
     try:
         from file_manager import _invalidate_cache
         _invalidate_cache(name)
@@ -1173,7 +1173,7 @@ def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
     This reduces multiple round-trips for the Config panel.
     """
     try:
-        
+        # Read server.properties
         props_text = fm_read_file(name, "server.properties")
     except Exception:
         props_text = ""
@@ -1182,11 +1182,11 @@ def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
     except Exception:
         eula_text = ""
 
-    
+    # Parse properties into dict
     props_map = {}
     try:
         for line in (props_text or "").splitlines():
-            if not line or line.strip().startswith("
+            if not line or line.strip().startswith("#"):
                 continue
             if "=" in line:
                 k, v = line.split("=", 1)
@@ -1202,7 +1202,7 @@ def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
     except Exception:
         eula_accepted = False
 
-    
+    # Java info (if container_id provided)
     java = None
     try:
         if container_id:
@@ -1231,7 +1231,7 @@ def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
 def set_server_java_version(container_id: str, request: dict = Body(...)):
     """Set the Java version for a server."""
     try:
-        
+        # Use the runtime manager abstraction (local or docker) to perform the update
         rm = get_runtime_manager_or_docker()
         java_version = request.get("java_version")
         if not java_version:
@@ -1243,7 +1243,7 @@ def set_server_java_version(container_id: str, request: dict = Body(...)):
         if isinstance(result, dict) and result.get("success") is False:
             raise HTTPException(status_code=500, detail=result.get("error") or "Unknown error")
 
-        
+        # Normalize response
         return {
             "success": True,
             "message": f"Java version updated to {java_version}",
@@ -1306,11 +1306,11 @@ def get_available_java_versions(container_id: str):
         docker_manager = get_docker_manager()
         container_info = docker_manager.get_server_info(container_id)
         
-        
+        # Get current Java version
         current_version = container_info.get("java_version", "21")
         current_bin = container_info.get("java_bin", "/usr/local/bin/java21")
         
-        
+        # Available versions with descriptions
         available_versions = [
             {"version": "8", "name": "Java 8", "description": "Legacy support (1.8-1.16)", "bin": "/usr/local/bin/java8"},
             {"version": "11", "name": "Java 11", "description": "Intermediate support", "bin": "/usr/local/bin/java11"},
@@ -1335,7 +1335,7 @@ def version_info():
     git_sha = os.environ.get("GIT_COMMIT", "unknown")
     return {"name": APP_NAME, "version": APP_VERSION, "git_commit": git_sha}
 
-
+# --- Added convenience endpoints for server detail & logs ---
 @app.get("/servers/{container_id}")
 @app.get("/api/servers/{container_id}")
 def get_server_details(container_id: str, current_user: User = Depends(require_auth)):
@@ -1361,8 +1361,8 @@ def get_server_logs_endpoint(container_id: str, tail: int = Query(200, ge=1, le=
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get server logs: {e}")
 
-
-
+# SPA fallback route - must be added BEFORE static files mount
+# This catches all client-side routes and serves index.html
 SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/change-password"]
 
 @app.get("/login")
@@ -1382,14 +1382,14 @@ async def spa_fallback():
         return FileResponse(index_path, media_type="text/html")
     raise HTTPException(status_code=404, detail="Frontend not found")
 
-
+# Mount the React UI at root as the last route so it doesn't shadow API endpoints
 try:
     app.mount("/", StaticFiles(directory="static", html=True), name="ui")
 except Exception:
-    
+    # Static directory may not exist in some environments (e.g., dev without build)
     pass
 
-
+# Avoid noisy 404s for favicon when UI is served without a favicon file
 @app.get("/favicon.ico")
 def favicon_placeholder():
     return Response(status_code=204)

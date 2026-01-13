@@ -88,7 +88,7 @@ def _extract_modpack_metadata(base: Path) -> Dict[str, Any]:
             elif cand.name == "manifest.json":
                 _apply_curseforge(cand)
 
-    
+    # If metadata still sparse, try one level deeper
     if not metadata:
         for child in base.iterdir():
             if child.is_dir():
@@ -123,17 +123,17 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
         disable_dir = target_dir / "mods-disabled-client"
         disable_dir.mkdir(parents=True, exist_ok=True)
 
-        
-        
+        # Collect optional patterns from env/URL/files (all lowercased)
+        # Extended built-in list of known client-only mods for comprehensive detection
         patterns: list[str] = [
-            
+            # Rendering/Graphics mods
             "oculus", "iris", "sodium", "embeddium", "rubidium", "magnesium",
             "optifine", "optifabric", "lambdynamiclights", "dynamicfps", "dynamic-fps", "dynamic_fps",
             "canvas-renderer", "immediatelyfast", "entityculling", "fpsreducer", "fps_reducer",
             "enhancedvisuals", "better-clouds", "falling-leaves", "visuality", "cull-less-leaves",
             "particlerain", "drippyloadingscreen", "starlight-fabric", "phosphor",
             
-            
+            # UI/HUD mods (NOTE: jei, rei, emi are dual-sided, NOT client-only)
             "xaero", "xaeros", "journeymap", "voxelmap", "worldmap", "minimap",
             "betterf3", "better-f3", "appleskin", "itemphysic", "jade", "hwyla", "waila",
             "wthit", "justmap", "torohealth",
@@ -141,23 +141,23 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
             "smoothboot", "smooth-boot", "loadingscreen", "mainmenu", "panoramafix",
             "betterthirdperson", "freelook", "cameraoverhaul", "citresewn", "cit-resewn",
             
-            
+            # Audio/Sound mods
             "presence-footsteps", "presencefootsteps", "soundphysics", "ambientsounds",
             "dynamic-music", "extrasounds", "dripsounds", "auditory",
             
-            
+            # Recording/Streaming
             "replaymod", "replay-mod", "replay_mod", "worldedit-cui", "axiom",
             
-            
+            # Cosmetics
             "skinlayers3d", "skin-layers", "ears", "figura", "customskinloader",
             "more-player-models", "playeranimator", "emotes", "emotecraft",
             
-            
+            # Client utilities
             "litematica", "minihud", "tweakeroo", "malilib", "itemscroller", "tweakermore",
             "freecam", "flycam", "keystrokes", "betterpvp", "5zig", "labymod",
             "schematica", "worldeditcui", "wecui", "light-overlay", "lightoverlay",
             
-            
+            # Framework keywords (may appear in some client-only libs)
             "particular", "framework",
             "reeses_sodium_options", "rrls", "respackopt",
         ]
@@ -178,7 +178,7 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
                     if rr.ok:
                         for line in rr.text.splitlines():
                             line = (line or "").strip().lower()
-                            if not line or line.startswith("
+                            if not line or line.startswith("#"):
                                 continue
                             patterns.append(line)
                 except Exception:
@@ -190,7 +190,7 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
                 if cfg.exists():
                     for line in cfg.read_text(encoding="utf-8", errors="ignore").splitlines():
                         line = (line or "").strip().lower()
-                        if not line or line.startswith("
+                        if not line or line.startswith("#"):
                             continue
                         patterns.append(line)
         except Exception:
@@ -201,7 +201,7 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
             name = jar.name.lower()
             client_only = False
             has_metadata = False
-            
+            # Inspect contents for Fabric/Quilt/Forge metadata flags
             try:
                 with zipfile.ZipFile(jar, 'r') as zf:
                     try:
@@ -230,15 +230,15 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
                         if not client_only and 'META-INF/mods.toml' in zf.namelist():
                             has_metadata = True
                             txt = zf.read('META-INF/mods.toml').decode('utf-8', errors='ignore').lower()
-                            
-                            
+                            # Strict Forge heuristic: only mark as client-only on explicit boolean flags.
+                            # Avoid generic side=\"client\" which often appears in dependency blocks.
                             if ('clientsideonly=true' in txt) or ('onlyclient=true' in txt) or ('client_only=true' in txt):
                                 client_only = True
                     except Exception:
                         pass
             except Exception:
                 pass
-            
+            # Optional fallback to provided name-patterns only (only if no metadata at all)
             if not client_only and not has_metadata and patterns and any(pat in name for pat in patterns):
                 client_only = True
             if client_only:
@@ -262,7 +262,7 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
                 "progress": 61
             })
     except Exception:
-        
+        # Best-effort only
         pass
 
 def _ensure_server_jar(
@@ -275,14 +275,14 @@ def _ensure_server_jar(
     """Ensure a runnable server jar or installer exists in target_dir.
     Attempts for known loaders; falls back to vanilla server.jar.
     """
-    
+    # Quick check for existing jar or run.sh
     patterns = [
         "server.jar", "run.sh", "neoforge-*-universal.jar", "*forge-*-universal.jar",
         "forge-*-server.jar", "forge-*.jar", "*paper*.jar", "*purpur*.jar", "*fabric*.jar", "*server*.jar"
     ]
     for pat in patterns:
         if list(target_dir.glob(pat)):
-            return  
+            return  # something present already
 
     try:
         ldr = (loader or "").lower()
@@ -290,13 +290,13 @@ def _ensure_server_jar(
         lver = (loader_version or "").strip()
 
         if ldr == "fabric":
-            
+            # Determine loader version if missing
             if not lver and mc:
                 try:
                     resp = requests.get(f"https://meta.fabricmc.net/v2/versions/loader/{mc}", timeout=30)
                     if resp.ok:
                         arr = resp.json()
-                        
+                        # Pick first stable else first entry
                         stable = next((x for x in arr if x.get("stable")), None)
                         lver = (stable or (arr[0] if arr else {})).get("loader", {}).get("version") or ""
                 except Exception:
@@ -309,7 +309,7 @@ def _ensure_server_jar(
                 return
 
         if ldr == "forge":
-            
+            # If loader_version missing, use promotions_slim.json to find recommended/latest
             if not lver and mc:
                 try:
                     resp = requests.get("https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json", timeout=30)
@@ -320,7 +320,7 @@ def _ensure_server_jar(
                 except Exception:
                     pass
             if mc and lver:
-                
+                # If loader_version already includes the MC version prefix, don't duplicate
                 base = lver if lver.startswith(f"{mc}-") else f"{mc}-{lver}"
                 url = f"https://maven.minecraftforge.net/net/minecraftforge/forge/{base}/forge-{base}-installer.jar"
                 out = target_dir / f"forge-{base}-installer.jar"
@@ -329,7 +329,7 @@ def _ensure_server_jar(
                 return
 
         if ldr == "neoforge":
-            
+            # Prefer provided loader_version; otherwise, try to infer latest for this MC version
             if not lver and mc:
                 try:
                     meta_url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"
@@ -338,7 +338,7 @@ def _ensure_server_jar(
                         import xml.etree.ElementTree as ET
                         root = ET.fromstring(resp.text)
                         versions = [v.text or "" for v in root.findall(".//version")]
-                        
+                        # Choose the latest version that starts with the MC version prefix
                         for v in reversed(versions):
                             if v.startswith(mc):
                                 lver = v
@@ -352,7 +352,7 @@ def _ensure_server_jar(
                 _download_to(out, url, timeout=300)
                 return
 
-        
+        # Fallback: vanilla server jar for the given Minecraft version
         if mc:
             try:
                 man = requests.get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json", timeout=30).json()
@@ -409,12 +409,12 @@ async def import_server_pack(
         host = (u.netloc or "").lower()
         path = (u.path or "")
         if "curseforge.com" in host and "/download/" in path:
-            
+            # Expect .../download/<fileId>
             try:
                 file_id = path.rstrip("/").split("/")[-1]
                 if not file_id.isdigit():
                     return raw_url, headers
-                
+                # Use CF Core API to get file info and download URL
                 from integrations_store import get_integration_key
                 api_key = get_integration_key("curseforge")
                 if not api_key:
@@ -432,22 +432,22 @@ async def import_server_pack(
                 data = info.json().get("data") or {}
                 dl = data.get("downloadUrl")
                 if not dl:
-                    
+                    # Fallback to the webpage URL (may still 403)
                     return raw_url, headers
                 return dl, headers
             except HTTPException:
                 raise
             except Exception as e:
-                
+                # Fall back to raw URL
                 return raw_url, headers
         return raw_url, headers
 
     try:
-        
+        # Resolve and download
         download_url, headers = resolve_download_url(str(payload.server_pack_url))
         with requests.get(download_url, stream=True, timeout=60, headers=headers) as r:
             if r.status_code == 403 and "curseforge" in download_url:
-                
+                # If direct URL still forbidden, provide clearer guidance
                 raise HTTPException(status_code=400, detail="Failed to download server pack: CurseForge denied access (403). Ensure a valid CurseForge Core API key is configured and use a valid Server Pack file.")
             r.raise_for_status()
             with open(zip_path, "wb") as f:
@@ -455,12 +455,12 @@ async def import_server_pack(
                     if chunk:
                         f.write(chunk)
 
-        
+        # Extract
         with zipfile.ZipFile(zip_path, 'r') as z:
             z.extractall(tmpdir)
 
-        
-        
+        # Move extracted content into target dir
+        # Heuristic: If the zip contains a single top-level folder, use its content
         def _single_top_level_dir(base: Path):
             entries = [p for p in base.iterdir()]
             if len(entries) == 1 and entries[0].is_dir():
@@ -471,11 +471,11 @@ async def import_server_pack(
         pack_metadata = _extract_modpack_metadata(tmpdir)
         shutil.move(str(src_dir), str(target_dir))
 
-        
+        # Ensure EULA accepted
         eula = target_dir / "eula.txt"
         eula.write_text("eula=true\n", encoding="utf-8")
 
-        
+        # Start container using runtime, pointing to existing dir
         result = dm.create_server_from_existing(
             name=payload.server_name,
             host_port=payload.host_port,
@@ -507,7 +507,7 @@ async def import_server_pack(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to import server pack: {e}")
     finally:
-        
+        # Cleanup temp dir
         try:
             shutil.rmtree(tmpdir, ignore_errors=True)
         except Exception:
@@ -519,7 +519,7 @@ async def import_server_pack_upload(
     host_port: Optional[int] = Form(None),
     min_ram: str = Form("2G"),
     max_ram: str = Form("4G"),
-    
+    # Optional overrides to influence Java/runtime selection
     java_version_override: Optional[str] = Form(None),
     server_type: Optional[str] = Form(None),
     server_version: Optional[str] = Form(None),
@@ -548,11 +548,11 @@ async def import_server_pack_upload(
     zip_path = tmpdir / "serverpack.zip"
 
     try:
-        
+        # Save uploaded file to disk
         with open(zip_path, 'wb') as out_f:
             shutil.copyfileobj(file.file, out_f)
 
-        
+        # Safely extract ZIP into tmpdir/extracted
         extract_dir = tmpdir / "extracted"
         extract_dir.mkdir(parents=True, exist_ok=True)
 
@@ -565,11 +565,11 @@ async def import_server_pack_upload(
 
         with zipfile.ZipFile(zip_path, 'r') as z:
             for member in z.infolist():
-                
+                # Skip directories explicitly handled
                 name = member.filename
                 if name.endswith('/'):
                     continue
-                
+                # Prevent absolute paths or traversal
                 dest_path = extract_dir / name
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 if not is_within(extract_dir, dest_path):
@@ -577,7 +577,7 @@ async def import_server_pack_upload(
                 with z.open(member) as src, open(dest_path, 'wb') as dst:
                     shutil.copyfileobj(src, dst)
 
-        
+        # If there is a single top-level directory, use its contents
         def _single_top_level_dir(base: Path):
             entries = [p for p in base.iterdir()]
             if len(entries) == 1 and entries[0].is_dir():
@@ -587,7 +587,7 @@ async def import_server_pack_upload(
         src_dir = _single_top_level_dir(extract_dir) or extract_dir
         shutil.move(str(src_dir), str(target_dir))
 
-        
+        # Ensure EULA accepted
         try:
             (target_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
         except Exception:
@@ -601,7 +601,7 @@ async def import_server_pack_upload(
         if server_version:
             extra_env["SERVER_VERSION"] = str(server_version)
 
-        
+        # Detect metadata (type, version, port) from extracted files before container start
         def detect_imported_server_info(root: Path) -> dict:
             info: dict[str, str | int | None] = {
                 "detected_type": None,
@@ -609,7 +609,7 @@ async def import_server_pack_upload(
                 "detected_port": None,
             }
             try:
-                
+                # server.properties port
                 props_file = root / "server.properties"
                 if props_file.exists():
                     try:
@@ -621,13 +621,13 @@ async def import_server_pack_upload(
                                 break
                     except Exception:
                         pass
-                
+                # Jar inspection
                 jar_files = [p.name for p in root.glob("*.jar") if p.is_file()]
-                
+                # Prefer server.jar if large enough
                 server_jar = root / "server.jar"
                 if server_jar.exists() and server_jar.stat().st_size > 50_000:
                     jar_files.insert(0, server_jar.name)
-                
+                # Pattern maps
                 import re
                 patterns = [
                     ("paper", re.compile(r"paper-(?P<ver>\d+(?:\.\d+)+)-\d+\.jar", re.IGNORECASE)),
@@ -648,7 +648,7 @@ async def import_server_pack_upload(
                             break
                     if info["detected_type"]:
                         break
-                
+                # Fallback: if no type matched but a reasonably sized server.jar exists -> vanilla
                 if not info["detected_type"] and server_jar.exists() and server_jar.stat().st_size > 50_000:
                     info["detected_type"] = "vanilla"
             except Exception:
@@ -656,14 +656,14 @@ async def import_server_pack_upload(
             return info
 
         detected = detect_imported_server_info(target_dir)
-        
+        # Merge detected info into env if user did not provide them
         if not server_type and detected.get("detected_type"):
             extra_env["SERVER_TYPE"] = str(detected["detected_type"])
         if not server_version and detected.get("detected_version"):
             extra_env["SERVER_VERSION"] = str(detected["detected_version"])
-        
+        # Override host_port if not provided but detected port present
         if host_port is None and isinstance(detected.get("detected_port"), int):
-            host_port = int(detected["detected_port"])  
+            host_port = int(detected["detected_port"])  # Will be passed through create
 
         result = dm.create_server_from_existing(
             name=server_name,
@@ -673,7 +673,7 @@ async def import_server_pack_upload(
             extra_env=extra_env or None,
         )
 
-        
+        # Update server_meta.json with detection results
         try:
             meta_path = target_dir / "server_meta.json"
             meta = {}
@@ -727,7 +727,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
             if not provider:
                 raise RuntimeError("Unknown provider (not configured)")
 
-            
+            # Resolve version
             versions = provider.get_versions(req.pack_id, limit=50)
             v = None
             if req.version_id:
@@ -737,7 +737,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
             if not v:
                 raise RuntimeError("No versions available for this pack")
 
-            
+            # Determine downloadable artifact (modrinth .mrpack or curseforge .zip server pack)
             files = v.get("files") or []
             artifact = None
             for f in files:
@@ -750,12 +750,12 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
             if not artifact or not artifact.get("url"):
                 raise RuntimeError("No downloadable file for this version")
 
-            
+            # Prepare server dir
             servers_root = SERVERS_ROOT
             target_dir = servers_root / req.name
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            
+            # Download artifact
             tmpdir = Path(tempfile.mkdtemp(prefix="modpack_install_"))
             filename = artifact.get("filename") or "artifact.bin"
             url = artifact.get("url")
@@ -781,24 +781,24 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
             else:
                 raise RuntimeError("Unsupported modpack file type")
 
-            
+            # Initialize variables used by both paths
             idx = None
             loader = None
             mc_version = None
             loader_version = None
             if lower_name.endswith(".mrpack"):
-                
+                # Extract overrides and parse Modrinth index
                 _push_event(task_id, {"type": "progress", "step": "extract", "message": "Extracting overrides and index", "progress": 40})
                 with zipfile.ZipFile(artifact_path, 'r') as z:
                     names = z.namelist()
-                    
+                    # Extract overrides/
                     for name in names:
                         if name.startswith("overrides/") and not name.endswith("/"):
                             dest = target_dir / name[len("overrides/"):]
                             dest.parent.mkdir(parents=True, exist_ok=True)
                             with z.open(name) as src, open(dest, 'wb') as dst:
                                 shutil.copyfileobj(src, dst)
-                    
+                    # Read index (modrinth.index.json or index.json)
                     index_name = None
                     for cand in ("modrinth.index.json", "index.json"):
                         if cand in names:
@@ -808,20 +808,20 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                         with z.open(index_name) as s:
                             idx = json.load(s)
             elif lower_name.endswith(".zip"):
-                
+                # Extract entire server pack zip into target_dir
                 _push_event(task_id, {"type": "progress", "step": "extract", "message": "Unpacking server pack zip", "progress": 40})
                 extract_dir = tmpdir / "extracted"
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 with zipfile.ZipFile(artifact_path, 'r') as z:
                     z.extractall(extract_dir)
-                
+                # If a single top-level dir, move contents; else move all
                 def _single_top_level_dir(base: Path):
                     entries = [p for p in base.iterdir()]
                     if len(entries) == 1 and entries[0].is_dir():
                         return entries[0]
                     return None
                 src_dir = _single_top_level_dir(extract_dir) or extract_dir
-                
+                # Move contents into target_dir
                 for p in src_dir.iterdir():
                     dest = target_dir / p.name
                     if p.is_dir():
@@ -829,7 +829,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                     else:
                         target_dir.mkdir(parents=True, exist_ok=True)
                         shutil.move(str(p), str(dest))
-                
+                # If overrides/ exists, merge its contents into root and remove folder
                 for ov_name in ("overrides", "server-overrides"):
                     ov_dir = target_dir / ov_name
                     if ov_dir.exists() and ov_dir.is_dir():
@@ -844,13 +844,13 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                             shutil.rmtree(ov_dir, ignore_errors=True)
                         except Exception:
                             pass
-                
+                # If manifest.json exists, use CurseForge API to download listed mods into mods/
                 manifest_path = None
                 for cand in (target_dir / "manifest.json",):
                     if cand.exists():
                         manifest_path = cand
                         break
-                
+                # also search one-level deep if not found
                 if not manifest_path:
                     for child in target_dir.iterdir():
                         if child.is_dir() and (child / "manifest.json").exists():
@@ -860,14 +860,14 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                     try:
                         with open(manifest_path, 'r', encoding='utf-8') as f:
                             mani = json.load(f)
-                        
+                        # Derive loader/minecraft version
                         mc = mani.get("minecraft", {})
                         mv = mc.get("version")
                         if isinstance(mv, str):
                             mc_version = mv
                         mls = mc.get("modLoaders") or []
                         if isinstance(mls, list) and mls:
-                            
+                            # Scan all entries, prefer NeoForge > Forge > Fabric
                             preferred = ["neoforge", "forge", "fabric"]
                             for pref in preferred:
                                 for entry in mls:
@@ -901,7 +901,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                             from integrations_store import get_integration_key
                             api_key = get_integration_key("curseforge")
                             if not api_key:
-                                
+                                # Abort install early to avoid a broken server missing required dependencies
                                 raise RuntimeError("CurseForge API key not configured; cannot download listed mods from manifest.json")
                             else:
                                 headers = {"x-api-key": api_key, "Accept": "application/json", "User-Agent": "minecraft-controller/1.0"}
@@ -919,7 +919,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                                         rr = requests.get(url_meta, headers=headers, timeout=30)
                                         rr.raise_for_status()
                                         data = rr.json().get("data") or {}
-                                        
+                                        # Skip client-only files on dedicated servers
                                         try:
                                             gv = [str(x).lower() for x in (data.get("gameVersions") or [])]
                                             if ("client" in gv) and ("server" not in gv):
@@ -943,7 +943,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                                         _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Downloaded {done}/{total} mods", "progress": pct})
                                     except Exception as de:
                                         _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Failed mod {proj}/{fid}: {de}", "progress": 58})
-                                
+                                # After Mods download, remove client-only mods that slip through
                                 try:
                                     _purge_client_only_mods(target_dir, push_event=lambda ev: _push_event(task_id, ev))
                                 except Exception:
@@ -951,13 +951,13 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                     except Exception as e:
                         _push_event(task_id, {"type": "progress", "step": "mods", "message": f"manifest.json processing failed: {e}", "progress": 52})
 
-                
+                # After processing manifest and overrides, ensure a server jar/installer is present
                 try:
                     _ensure_server_jar(target_dir, loader, mc_version, loader_version, push_event=lambda ev: _push_event(task_id, ev))
                 except Exception as e:
                     _push_event(task_id, {"type": "progress", "step": "server", "message": f"Server jar check failed: {e}", "progress": 64})
 
-            
+            # Derive loader/mc_version (for .mrpack path only). Do not clobber if already known.
             if isinstance(idx, dict):
                 deps = idx.get("dependencies", {})
                 if mc_version is None:
@@ -973,8 +973,8 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                         loader = "forge"
                         loader_version = deps.get("forge")
 
-            
-            
+            # Download files listed in index (mods/config/etc.) for .mrpack
+            # Cache Modrinth project server_side info to avoid repeated lookups
             modrinth_side_cache: dict[str, str] = {}
             if isinstance(idx, dict) and isinstance(idx.get("files"), list):
                 _push_event(task_id, {"type": "progress", "step": "mods", "message": "Downloading mods and files", "progress": 55})
@@ -983,11 +983,11 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                     downloads = entry.get("downloads") or []
                     if not path or not downloads:
                         continue
-                    
+                    # Skip client-only files if env marks server unsupported
                     env = entry.get("env") or {}
                     if isinstance(env, dict) and str(env.get("server", "")).lower() == "unsupported":
                         continue
-                    
+                    # If env missing, best-effort: Detect Modrinth project from URL and skip if server_side is unsupported
                     url0 = downloads[0]
                     try:
                         if isinstance(url0, str) and "cdn.modrinth.com/data/" in url0:
@@ -1015,7 +1015,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                                 for chunk in r.iter_content(chunk_size=8192):
                                     if chunk:
                                         f.write(chunk)
-                        
+                        # Verify hashes if provided
                         hashes = entry.get("hashes") or {}
                         import hashlib
                         if isinstance(hashes, dict):
@@ -1040,9 +1040,9 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                                 if h.hexdigest().lower() != str(hashes["sha1"]).lower():
                                     raise ValueError(f"SHA1 mismatch for {path}")
                     except Exception as de:
-                        
+                        # Continue even if a mod fails; log event
                         _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Failed to fetch {path}: {de}", "progress": 58})
-            
+            # After Mods download, remove client-only mods that slip through
             try:
                 _purge_client_only_mods(target_dir, push_event=lambda ev: _push_event(task_id, ev))
             except Exception:
@@ -1059,9 +1059,9 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                 except Exception:
                     return "2048M"
 
-            
+            # Two paths: .mrpack => create_server; .zip => create_server_from_existing
             if lower_name.endswith(".mrpack"):
-                
+                # Fallbacks if not found earlier
                 if not loader:
                     loaders = v.get("loaders") or []
                     for cand in ("neoforge", "forge", "fabric"):
@@ -1099,9 +1099,9 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                     }
                 )
             else:
-                
+                # .zip server pack path
                 _push_event(task_id, {"type": "progress", "step": "prepare", "message": "Preparing existing server files", "progress": 70})
-                
+                # Ensure EULA accepted
                 try:
                     (target_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
                 except Exception:
@@ -1112,7 +1112,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                 max_ram_n = normalize_ram(max_ram)
 
                 _push_event(task_id, {"type": "progress", "step": "create", "message": "Creating server container", "progress": 85})
-                
+                # Try to pass loader/version to runtime for Java selection if known
                 extra_env = {}
                 try:
                     if loader:
@@ -1180,11 +1180,11 @@ async def list_updates():
 
 @router.post("/update")
 async def update_modpack(server_name: str, provider: str, pack_id: str, version_id: str, current_user: User = Depends(require_moderator)):
-    
+    # Simplified update: stop, backup, apply new files (overrides+mods), restart
     from catalog_routes import get_providers_live
     dm = get_docker_manager()
     providers = get_providers_live()
-    
+    # Find server container id
     target = None
     for s in dm.list_servers():
         if s.get("name") == server_name:
@@ -1196,20 +1196,20 @@ async def update_modpack(server_name: str, provider: str, pack_id: str, version_
     if not container_id:
         raise HTTPException(status_code=400, detail="Container id missing")
 
-    
+    # Stop server
     try:
         dm.stop_server(container_id)
     except Exception:
         pass
 
-    
+    # Backup
     try:
         from backup_manager import create_backup as bk_create
         bk_create(server_name)
     except Exception:
         pass
 
-    
+    # Download and apply new version (reuse logic from install worker in a simplified form)
     p = providers.get(provider)
     if not p:
         raise HTTPException(status_code=400, detail="Provider not configured")
@@ -1243,7 +1243,7 @@ async def update_modpack(server_name: str, provider: str, pack_id: str, version_
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-        
+        # Extract overrides and download files
         idx = None
         with zipfile.ZipFile(mrpack_path, 'r') as z:
             names = z.namelist()
@@ -1282,7 +1282,7 @@ async def update_modpack(server_name: str, provider: str, pack_id: str, version_
                                     f.write(chunk)
                 except Exception:
                     continue
-        
+        # Record metadata about installed modpack version (labels not updatable post-create)
         try:
             meta_path = target_dir / "modpack.meta.json"
             meta = {
@@ -1299,7 +1299,7 @@ async def update_modpack(server_name: str, provider: str, pack_id: str, version_
             shutil.rmtree(tmpdir, ignore_errors=True)
         except Exception:
             pass
-    
+    # Start server
     dm.start_server(container_id)
     return {"ok": True}
 

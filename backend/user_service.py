@@ -121,7 +121,7 @@ DEFAULT_ROLES = {
         "permissions": list(DEFAULT_PERMISSIONS.keys()),
         "is_system": True,
         "level": 5,
-        "color": "
+        "color": "#dc2626"
     },
     "admin": {
         "description": "System administrator with full server and user management",
@@ -155,7 +155,7 @@ DEFAULT_ROLES = {
         ],
         "is_system": True,
         "level": 4,
-        "color": "
+        "color": "#f97316"
     },
     "moderator": {
         "description": "Server moderator with management rights but limited system access",
@@ -180,7 +180,7 @@ DEFAULT_ROLES = {
         ],
         "is_system": True,
         "level": 3,
-        "color": "
+        "color": "#eab308"
     },
     "helper": {
         "description": "Server helper with console access and basic management",
@@ -203,7 +203,7 @@ DEFAULT_ROLES = {
         ],
         "is_system": True,
         "level": 2,
-        "color": "
+        "color": "#22c55e"
     },
     "user": {
         "description": "Regular user with read-only access to assigned servers",
@@ -224,7 +224,7 @@ DEFAULT_ROLES = {
         ],
         "is_system": True,
         "level": 1,
-        "color": "
+        "color": "#3b82f6"
     },
     "guest": {
         "description": "Guest user with minimal read-only access",
@@ -235,7 +235,7 @@ DEFAULT_ROLES = {
         ],
         "is_system": True,
         "level": 0,
-        "color": "
+        "color": "#6b7280"
     }
 }
 

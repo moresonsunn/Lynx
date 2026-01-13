@@ -151,7 +151,7 @@ function AppLayout({ children }) {
       </div>
 
       {/* Sidebar Footer */}
-      <div className="mt-auto p-4 border-t border-white/10 bg-black/30 backdrop-blur supports-[backdrop-filter]:bg-black/20">
+      <div className="mt-auto p-4 border-t border-white/10 bg-sidebar-footer backdrop-blur supports-[backdrop-filter]:bg-sidebar-footer">
         {/* Language Switcher */}
         <div className={`mb-3 ${(!isMobile && !sidebarOpen) ? 'flex justify-center' : ''}`}>
           <LanguageSwitcherCompact />
@@ -200,13 +200,13 @@ function AppLayout({ children }) {
           return sidebarOpen ? (
             <div className="fixed inset-0 z-50 flex">
               <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-              <div className="relative w-64 bg-black/20 border-r border-white/10">{sidebarContent}</div>
+              <div className="relative w-64 bg-sidebar border-r border-white/10">{sidebarContent}</div>
             </div>
           ) : null;
         }
 
         return (
-          <div className={`${sidebarOpen ? 'w-64' : 'w-16'} bg-black/20 border-r border-white/10 transition-all duration-300 flex flex-col sticky top-0 h-screen`}>
+          <div className={`${sidebarOpen ? 'w-64' : 'w-16'} bg-sidebar border-r border-white/10 transition-all duration-300 flex flex-col sticky top-0 h-screen`}>
             {sidebarContent}
           </div>
         );
@@ -215,7 +215,7 @@ function AppLayout({ children }) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="border-b border-white/10 bg-ink/80 backdrop-blur supports-[backdrop-filter]:bg-ink/60">
+        <header className="border-b border-white/10 bg-topbar backdrop-blur supports-[backdrop-filter]:bg-topbar">
           <div className="px-4 md:px-6 flex items-center justify-between h-14 gap-3">
             <div className="flex items-center gap-3">
               <button
@@ -497,7 +497,7 @@ function AppRoutes() {
       <Route path="/servers/:serverId/:tab" element={<ProtectedRoute><ServerDetailsPage /></ProtectedRoute>} />
       <Route path="/templates" element={<ProtectedRoute><TemplatesPageWrapper /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-      
+
       {/* Admin routes */}
       <Route path="/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
       
