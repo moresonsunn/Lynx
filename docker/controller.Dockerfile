@@ -2,16 +2,15 @@
 FROM node:20-alpine AS ui
 WORKDIR /ui
 
-# Install dependencies first for better caching
-ENV NODE_ENV=production
+# Install dependencies (including devDependencies needed for build)
 COPY frontend/package*.json ./
-# Prefer npm ci when lockfile is present; fall back to npm install
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev --silent; else npm install --omit=dev --silent; fi
+RUN if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi
 
 # Copy frontend source
 COPY frontend ./
 
 # Build React app
+ENV NODE_ENV=production
 RUN npm run build
 
 # --- Backend image ---
