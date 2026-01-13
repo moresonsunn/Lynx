@@ -50,6 +50,7 @@ from probe_routes import router as probe_router
 from maintenance_routes import router as maintenance_router
 from steam_routes import router as steam_router
 from server_types_routes import router as server_types_router
+from settings_routes import router as settings_router
 from auth import require_auth, get_current_user, require_admin, require_moderator, get_password_hash, verify_token, get_user_by_username
 from scheduler import get_scheduler
 from models import User
@@ -173,6 +174,7 @@ app.include_router(repair_router)
 app.include_router(probe_router)
 app.include_router(maintenance_router)
 app.include_router(steam_router)
+app.include_router(settings_router)
 
 # /api aliases to avoid ad-block filters blocking paths like /servers/stats or /auth/login
 for _router in [
