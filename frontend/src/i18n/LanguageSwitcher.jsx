@@ -86,17 +86,20 @@ const LanguageSwitcher = ({
     'top-right': 'bottom-full right-0 mb-1',
   };
 
-  // Minimal variant - just an icon button
+  // Minimal variant - icon button with optional language name
   if (variant === 'minimal') {
     return (
       <div className={`relative ${className}`} ref={dropdownRef}>
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors"
           title={t('common.language')}
           aria-label={t('common.selectLanguage')}
         >
           <span className="text-lg">{currentLang.flag}</span>
+          {showLabel && (
+            <span className="text-sm text-white/80">{currentLang.nativeName}</span>
+          )}
         </button>
 
         {isOpen && (
@@ -250,13 +253,13 @@ const LanguageSwitcher = ({
  * 
  * A compact version for use in tight spaces like the sidebar
  */
-export const LanguageSwitcherCompact = ({ className = '' }) => {
+export const LanguageSwitcherCompact = ({ className = '', showLabel = true }) => {
   return (
     <LanguageSwitcher 
       variant="minimal" 
-      showLabel={false}
+      showLabel={showLabel}
       className={className}
-      dropdownPosition="top-right"
+      dropdownPosition="top-left"
     />
   );
 };

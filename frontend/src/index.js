@@ -1,15 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App, { GlobalDataProvider } from './App';
+// Use the new router-based App for proper URL routing
+import AppWithRouter from './AppRouter';
 import './index.css';
 import * as serviceWorker from './serviceWorker';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <GlobalDataProvider>
-      <App />
-    </GlobalDataProvider>
+    <AppWithRouter />
   </React.StrictMode>
 );
 

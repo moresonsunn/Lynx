@@ -49,7 +49,7 @@ BASE_STEAM_GAMES = {
             "ADMIN_PASSWORD": "admin",
             "SERVER_NAME": "Zomboid Server",
         },
-        "volume": {"container": "/home/steam/Zomboid"},
+        "volume": {"container": "/serverdata"},
     },
     "valheim": {
         "display_name": "Valheim",
@@ -185,7 +185,7 @@ BASE_STEAM_GAMES = {
             "SERVER_NAME": "7 Days Server",
             "SERVER_PASS": "change-me",
         },
-        "volume": {"container": "/config"},
+        "volume": {"container": "/steamcmd/7dtd"},
     },
     "enshrouded": {
         "display_name": "Enshrouded",
@@ -209,7 +209,7 @@ BASE_STEAM_GAMES = {
             "STEAM_USER": "",
             "STEAM_PASSWORD": "",
         },
-        "volume": {"container": "/config"},
+        "volume": {"container": "/home/steam/enshrouded"},
     },
     "assetto_corsa": {
         "display_name": "Assetto Corsa",
@@ -257,7 +257,7 @@ BASE_STEAM_GAMES = {
             "QUERY_PORT": 27015,
             "AUTO_UPDATE": 0,
         },
-        "volume": {"container": "/config"},
+        "volume": {"container": "/ark-server"},
     },
     "the_front": {
         "display_name": "The Front",
@@ -319,7 +319,7 @@ BASE_STEAM_GAMES = {
             "MAX_PLAYERS": 70,
             "QUERY_PORT": 27015,
         },
-        "volume": {"container": "/config"},
+        "volume": {"container": "/ark"},
     },
     "conan_exiles": {
         "display_name": "Conan Exiles",
@@ -358,7 +358,7 @@ BASE_STEAM_GAMES = {
             "MAX_PLAYERS": 80,
             "RCON_PASSWORD": "change-me",
         },
-        "volume": {"container": "/config"},
+        "volume": {"container": "/home/steam/squad-dedicated"},
     },
     "eco": {
         "display_name": "Eco",
@@ -555,7 +555,7 @@ BASE_STEAM_GAMES = {
             "ADMIN_PASSWORD": "change-me",
             "MAX_PLAYERS": 48,
         },
-        "volume": {"container": "/config"},
+        "volume": {"container": "/home/steam/mordhau-dedicated"},
     },
     "tf2": {
         "display_name": "Team Fortress 2",
@@ -573,7 +573,7 @@ BASE_STEAM_GAMES = {
             "SV_PASSWORD": "",
             "MAXPLAYERS": 24,
         },
-        "volume": {"container": "/config"},
+        "volume": {"container": "/home/steam/tf2-dedicated"},
     },
     "vrising": {
         "display_name": "V Rising",
@@ -590,7 +590,7 @@ BASE_STEAM_GAMES = {
             "SERVER_PASSWORD": "",
             "ADMIN_PASSWORD": "change-me",
         },
-        "volume": {"container": "/config"},
+        "volume": {"container": "/mnt/vrising/server"},
     },
 }
 

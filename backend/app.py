@@ -8,7 +8,7 @@ from runtime_adapter import get_runtime_manager, get_runtime_manager_or_docker
 import server_providers  # noqa: F401 - ensure providers register
 from server_providers.providers import get_provider_names, get_provider
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, StreamingResponse
 import os
 import docker
 from docker.errors import NotFound as DockerNotFound
@@ -1357,6 +1357,27 @@ def get_server_logs_endpoint(container_id: str, tail: int = Query(200, ge=1, le=
         return dm.get_server_logs(container_id, tail=tail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get server logs: {e}")
+
+# SPA fallback route - must be added BEFORE static files mount
+# This catches all client-side routes and serves index.html
+SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/change-password"]
+
+@app.get("/login")
+@app.get("/servers")
+@app.get("/servers/{path:path}")
+@app.get("/templates")
+@app.get("/templates/{path:path}")
+@app.get("/settings")
+@app.get("/settings/{path:path}")
+@app.get("/users")
+@app.get("/users/{path:path}")
+@app.get("/change-password")
+async def spa_fallback():
+    """Serve React SPA for client-side routing."""
+    index_path = os.path.join("static", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path, media_type="text/html")
+    raise HTTPException(status_code=404, detail="Frontend not found")
 
 # Mount the React UI at root as the last route so it doesn't shadow API endpoints
 try:

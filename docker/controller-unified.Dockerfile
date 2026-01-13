@@ -3,10 +3,10 @@
 
 FROM node:20-alpine AS ui
 WORKDIR /ui
-ENV NODE_ENV=production
 COPY frontend/package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev --silent; else npm install --omit=dev --silent; fi
+RUN npm ci --silent || npm install --silent
 COPY frontend ./
+ENV NODE_ENV=production
 RUN npm run build
 
 # Base: start from OpenJDK 21 (includes Java 21)

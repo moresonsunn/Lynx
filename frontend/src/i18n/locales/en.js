@@ -411,6 +411,7 @@ export default {
   // Server Detail Tabs
   tabs: {
     overview: 'Overview',
+    console: 'Console',
     files: 'Files',
     config: 'Config',
     players: 'Players',

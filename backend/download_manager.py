@@ -1,8 +1,9 @@
+from __future__ import annotations
 import shutil
 from pathlib import Path
 import requests
 from server_providers.providers import get_provider
-from typing import Optional, Any
+from typing import Optional, Any, Union
 import logging, hashlib, json, time, re
 
 logger = logging.getLogger(__name__)
@@ -34,16 +35,19 @@ def stream_download(url: str, dest_file: Path):
             def _looks_like_jar() -> bool:
                 if 'application/java-archive' in content_type or 'application/octet-stream' in content_type:
                     return True
-                if 'filename=' in content_disp and content_disp.lower().endswith('.jar"'):
+                if 'filename=' in content_disp and '.jar' in content_disp.lower():
                     return True
                 # URL itself may end with .jar
                 if url.lower().endswith('.jar'):
                     return True
                 return False
 
+            # Check if content-disposition indicates a JAR file (even if content-type is wrong)
+            is_jar_disposition = 'filename=' in content_disp and '.jar' in content_disp.lower()
+            
             # If server returns JSON/HTML, read a small portion to decide if it's actually a JAR (mis-labeled) or a real error
-            initial_chunk: bytes | None = None
-            if 'application/json' in content_type or 'text/html' in content_type:
+            initial_chunk: Optional[bytes] = None
+            if ('application/json' in content_type or 'text/html' in content_type) and not is_jar_disposition:
                 # Peek the first chunk
                 try:
                     initial_chunk = next(r.iter_content(chunk_size=1024))
@@ -121,7 +125,7 @@ def stream_download(url: str, dest_file: Path):
         logger.error(f"Unexpected error during download: {e}")
         raise
 
-def _sha256(path: Path) -> str | None:
+def _sha256(path: Path) -> Optional[str]:
     try:
         h = hashlib.sha256()
         with open(path, 'rb') as f:

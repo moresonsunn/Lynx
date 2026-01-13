@@ -3054,6 +3054,13 @@ function App() {
   // Initialize sidebar open state based on screen width (closed on small screens)
   const initialSidebarOpen = (typeof window !== 'undefined') ? window.innerWidth >= 768 : true;
   const [sidebarOpen, setSidebarOpen] = useState(initialSidebarOpen);
+  
+  // Toast notification state for instant feedback
+  const [toast, setToast] = useState(null); // { type: 'success'|'error'|'info', message: string }
+  const showToast = useCallback((type, message, duration = 4000) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), duration);
+  }, []);
   const [isMobile, setIsMobile] = useState((typeof window !== 'undefined') ? window.innerWidth < 768 : false);
 
   // Update isMobile on resize and auto-close sidebar on mobile
@@ -3345,8 +3352,9 @@ function App() {
   // Create server handler, using loader_version as in backend/app.py - optimized with useCallback
   const createServer = useCallback(async function createServer(e) {
     e.preventDefault();
+    const serverName = name; // capture name for use after async operations
     const payload = {
-      name,
+      name: serverName,
       type: selectedType,
       version,
       loader_version: SERVER_TYPES_WITH_LOADER.includes(selectedType) ? loaderVersion : null,
@@ -3358,35 +3366,45 @@ function App() {
     // Optimistic placeholder entry so the card appears immediately
     const optimistic = {
       id: `pending-${Date.now()}`,
-      name,
+      name: serverName,
       status: 'creating',
       type: selectedType,
       version,
     };
     setServersData && setServersData(prev => (Array.isArray(prev) ? [optimistic, ...prev] : [optimistic]));
     gd && gd.__setGlobalData && gd.__setGlobalData(cur => ({ ...cur, servers: [optimistic, ...(cur.servers || [])] }));
+    
+    // Show creating notification
+    showToast('info', `Creating server "${serverName}"...`, 10000);
 
     // Fire create request
-    await fetch(`${API}/servers`, {
+    const createResp = await fetch(`${API}/servers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    
+    if (!createResp.ok) {
+      const errData = await createResp.json().catch(() => ({}));
+      showToast('error', `Failed to create server: ${errData.detail || 'Unknown error'}`);
+      gd && gd.__refreshServers && gd.__refreshServers();
+      return;
+    }
 
     // After creation, poll briefly until the new server appears, then update lists.
     // This avoids requiring a full page reload and handles async backend provisioning.
-    const start = Date.now();
+    const startTime = Date.now();
     const timeoutMs = 15000; // poll up to 15s
-    const intervalMs = 800;  // gentle cadence
-    let found = false;
-    while (Date.now() - start < timeoutMs) {
+    const intervalMs = 500;  // faster polling for quicker feedback
+    let foundServer = null;
+    while (Date.now() - startTime < timeoutMs) {
       try {
         const r = await fetch(`${API}/servers`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const updated = await r.json();
         // consider it appeared if any entry matches by name
-        if (Array.isArray(updated) && updated.some(s => s && s.name === name)) {
-          found = true;
+        foundServer = Array.isArray(updated) ? updated.find(s => s && s.name === serverName) : null;
+        if (foundServer) {
           if (gd && gd.__setGlobalData) {
             gd.__setGlobalData(cur => ({ ...cur, servers: updated }));
           }
@@ -3402,11 +3420,20 @@ function App() {
       } catch {}
       await new Promise(res => setTimeout(res, intervalMs));
     }
-    // Final fallback refresh if not found in time (keeps optimistic card until background refresh swaps it)
-    if (!found) {
+    
+    // Show success and navigate to the new server
+    if (foundServer) {
+      showToast('success', `Server "${serverName}" created successfully!`);
+      // Navigate to the new server
+      setSelectedServer(foundServer.id);
+      setCurrentPage('servers');
+      if (isMobile) setSidebarOpen(false);
+    } else {
+      // Final fallback refresh if not found in time
+      showToast('info', `Server "${serverName}" is being created. It will appear shortly.`);
       gd && gd.__refreshServers && gd.__refreshServers();
     }
-  }, [name, selectedType, version, loaderVersion, installerVersion, hostPort, minRam, maxRam, gd]);
+  }, [name, selectedType, version, loaderVersion, installerVersion, hostPort, minRam, maxRam, gd, showToast, isMobile]);
 
   // Start server handler - optimized
   const start = useCallback(async function start(id) {
