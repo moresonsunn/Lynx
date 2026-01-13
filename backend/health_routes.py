@@ -50,7 +50,7 @@ class ApplicationHealth(BaseModel):
     scheduler_running: bool
     
 class OverallHealth(BaseModel):
-    status: str  # healthy, warning, error
+    status: str  
     timestamp: datetime
     system_info: SystemInfo
     database: DatabaseHealth
@@ -69,25 +69,25 @@ def get_docker_manager():
 @router.get("/system-info", response_model=SystemInfo)
 async def get_system_info():
     """Get detailed system information."""
-    # CPU and memory info
+    
     cpu_count = psutil.cpu_count()
     memory = psutil.virtual_memory()
     memory_total_gb = memory.total / (1024**3)
     memory_available_gb = memory.available / (1024**3)
     memory_used_percent = memory.percent
     
-    # Disk info
+    
     disk = psutil.disk_usage('/')
     disk_total_gb = disk.total / (1024**3)
     disk_used_gb = disk.used / (1024**3)
     disk_used_percent = (disk.used / disk.total) * 100
     
-    # System uptime
+    
     boot_time = psutil.boot_time()
     uptime_seconds = datetime.now().timestamp() - boot_time
     uptime_hours = uptime_seconds / 3600
     
-    # Load average (Unix-like systems only)
+    
     load_average = None
     try:
         if hasattr(os, 'getloadavg'):
@@ -113,11 +113,11 @@ async def get_system_info():
 async def get_database_health(db: Session = Depends(get_db)):
     """Get database health status."""
     try:
-        # Test database connection using optimized health check
+        
         if not health_check_db():
             raise Exception("Database connection failed")
         
-        # Get database type
+        
         db_url = str(engine.url)
         if "postgresql" in db_url:
             database_type = "PostgreSQL"
@@ -126,7 +126,7 @@ async def get_database_health(db: Session = Depends(get_db)):
         else:
             database_type = "Unknown"
         
-        # Count tables
+        
         inspector = None
         total_tables = 0
         try:
@@ -136,7 +136,7 @@ async def get_database_health(db: Session = Depends(get_db)):
         except Exception:
             pass
         
-        # Count users
+        
         user_count = db.query(User).count()
         
         return DatabaseHealth(
@@ -163,7 +163,7 @@ async def get_docker_health():
         docker_manager = get_docker_manager()
         client = getattr(docker_manager, "client", None)
 
-        # Local runtime mode does not expose a Docker client
+        
         if client is None:
             return DockerHealth(
                 connected=True,
@@ -174,16 +174,16 @@ async def get_docker_health():
                 error=None
             )
 
-        # Get Docker version
+        
         version_info = client.version()
         version = version_info.get('Version', 'Unknown')
 
-        # Count containers
+        
         containers = client.containers.list(all=True)
         containers_total = len(containers)
         containers_running = len([c for c in containers if getattr(c, "status", None) == 'running'])
 
-        # Count images
+        
         images = client.images.list()
         images_count = len(images)
 
@@ -209,13 +209,13 @@ async def get_docker_health():
 @router.get("/application", response_model=ApplicationHealth)
 async def get_application_health():
     """Get application health status."""
-    # Application uptime (simplified - would need to track actual start time)
-    uptime_seconds = 0  # This would be tracked from app startup
     
-    # AI monitoring removed
+    uptime_seconds = 0  
+    
+    
     ai_monitoring = False
     
-    # Check scheduler status
+    
     scheduler_running = False
     try:
         from scheduler import get_scheduler
@@ -226,7 +226,7 @@ async def get_application_health():
     
     return ApplicationHealth(
         status="healthy",
-        version="1.0.0",  # This should come from a version file or config
+        version="1.0.0",  
         uptime_seconds=uptime_seconds,
         ai_monitoring=ai_monitoring,
         scheduler_running=scheduler_running
@@ -238,13 +238,13 @@ async def get_overall_health(
     db: Session = Depends(get_db)
 ):
     """Get comprehensive health status."""
-    # Get all health components
+    
     system_info = await get_system_info()
     database = await get_database_health(db)
     docker = await get_docker_health()
     application = await get_application_health()
     
-    # Determine overall status
+    
     status = "healthy"
     
     if not database.connected or not docker.connected:
@@ -269,7 +269,7 @@ async def get_database_pool_status(current_user: User = Depends(require_auth)):
     pool_status = get_connection_pool_status()
     db_healthy = health_check_db()
     
-    # Calculate pool utilization percentage
+    
     utilization = 0
     if not pool_status.get('error') and pool_status.get('pool_size', 0) > 0:
         checked_out = pool_status.get('checked_out', 0)
@@ -287,38 +287,38 @@ async def get_database_pool_status(current_user: User = Depends(require_auth)):
 async def get_quick_health():
     """Get a quick health check (no authentication required)."""
     try:
-        # Quick database test using health check function
+        
         from database import DATABASE_URL, init_db
         db_ok = health_check_db()
-        # If DB is sqlite and health check failed, attempt to auto-create directory and initialize DB once.
+        
         if not db_ok and isinstance(DATABASE_URL, str) and DATABASE_URL.startswith('sqlite'):
             try:
-                # Extract path part after sqlite:// (support sqlite:/// and sqlite:////)
+                
                 path_part = DATABASE_URL.split('sqlite:')[-1]
-                # Trim leading slashes to form absolute path correctly
+                
                 sqlite_path = path_part
-                # Some variants are sqlite:////absolute/path -> keep leading /
+                
                 if sqlite_path.startswith(':///'):
                     sqlite_path = sqlite_path[2:]
-                # Ensure directory exists
+                
                 db_file = sqlite_path
                 db_dir = os.path.dirname(db_file)
                 if db_dir and not os.path.exists(db_dir):
                     os.makedirs(db_dir, exist_ok=True)
-                # Try to initialize DB tables (safe to call even if already present)
+                
                 try:
                     init_db()
                 except Exception:
-                    # ignore initialization errors here; we'll re-check health below
+                    
                     pass
-                # Re-run health check
+                
                 db_ok = health_check_db()
             except Exception:
                 db_ok = False
     except Exception:
         db_ok = False
     
-    # Quick Docker test
+    
     try:
         docker_manager = get_docker_manager()
         client = getattr(docker_manager, "client", None)
@@ -330,7 +330,7 @@ async def get_quick_health():
     except Exception:
         docker_ok = False
     
-    # System resources check
+    
     memory = psutil.virtual_memory()
     memory_ok = memory.percent < 95
     
@@ -339,7 +339,7 @@ async def get_quick_health():
     
     overall_status = "ok" if all([db_ok, docker_ok, memory_ok, disk_ok]) else "error"
 
-    # Provide diagnostic details to help with container health debugging
+    
     return {
         "status": overall_status,
         "timestamp": datetime.utcnow().isoformat(),

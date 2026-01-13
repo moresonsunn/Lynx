@@ -69,7 +69,7 @@ class LocalAdapter:
     def _get_docker(self):
         if self._docker is None:
             try:
-                from docker_manager import DockerManager  # Local import to avoid circular dependency
+                from docker_manager import DockerManager  
             except Exception as exc:
                 raise RuntimeError(f"Docker manager unavailable: {exc}")
             self._docker = DockerManager()
@@ -118,7 +118,7 @@ class LocalAdapter:
             return identifier
         return None
 
-    # --- Server lifecycle ---
+    
     def list_servers(self) -> List[Dict]:
         items = self.local.list_servers()
         for it in items:
@@ -131,7 +131,7 @@ class LocalAdapter:
             raw_ports = {f"{MINECRAFT_PORT}/tcp": None}
             it.setdefault("ports", raw_ports)
             it.setdefault("port_mappings", {f"{MINECRAFT_PORT}/tcp": {"host_port": None, "host_ip": None}})
-            # Enrich labels from metadata so features like updates work in local mode
+            
             try:
                 if name:
                     meta_path = (SERVERS_ROOT / str(name) / "server_meta.json")
@@ -197,7 +197,7 @@ class LocalAdapter:
             max_ram=max_ram,
             installer_version=installer_version,
         )
-        # Persist modpack metadata into local server_meta.json if provided via labels
+        
         try:
             if extra_labels:
                 meta_updates: Dict[str, Any] = {}
@@ -230,7 +230,7 @@ class LocalAdapter:
             extra_env=extra_env,
             extra_labels=extra_labels,
         )
-        # Persist modpack metadata into local server_meta.json if provided via labels
+        
         try:
             if extra_labels:
                 meta_updates: Dict[str, Any] = {}
@@ -253,15 +253,15 @@ class LocalAdapter:
         return self.local.stop_server(container_id)
 
     def start_server(self, container_id: str) -> Dict:
-        # For local runtime, starting means spawn from existing folder.
-        # Pass None for RAM so LocalRuntimeManager preserves saved metadata values.
+        
+        
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
             return self._get_docker().start_server(steam_id)
         return self.local.create_server_from_existing(container_id, min_ram=None, max_ram=None)
 
     def restart_server(self, container_id: str) -> Dict:
-        # Stop then start again from existing
+        
         try:
             steam_id = self._resolve_steam_id(container_id)
         except Exception:
@@ -272,7 +272,7 @@ class LocalAdapter:
             self.local.stop_server(container_id)
         except Exception:
             pass
-        # Preserve previously configured RAM by passing None to defer to metadata
+        
         return self.local.create_server_from_existing(container_id, min_ram=None, max_ram=None)
 
     def kill_server(self, container_id: str) -> Dict:
@@ -290,7 +290,7 @@ class LocalAdapter:
     def update_metadata(self, container_id: str, **fields: Any) -> None:
         self.local.update_metadata(container_id, **fields)
 
-    # --- Info & metrics ---
+    
     def get_server_stats(self, container_id: str) -> Dict:
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
@@ -323,7 +323,7 @@ class LocalAdapter:
                 procs = _gather_process_tree(pid)
                 if not procs:
                     procs = [psutil.Process(pid)]
-                # Prime CPU samples
+                
                 for pr in procs:
                     try:
                         pr.cpu_percent(interval=None)
@@ -346,7 +346,7 @@ class LocalAdapter:
                     net_func = getattr(pr, "net_io_counters", None)
                     if callable(net_func):
                         try:
-                            counters = net_func()  # type: ignore[attr-defined]
+                            counters = net_func()  
                             if counters:
                                 total_rx += getattr(counters, "bytes_recv", 0)
                                 total_tx += getattr(counters, "bytes_sent", 0)
@@ -411,7 +411,7 @@ class LocalAdapter:
         server_type = meta.get("type")
         version = meta.get("version")
         created_at = meta.get("created_at")
-        # Accept new created_ts (seconds epoch) or container_created_ts
+        
         if not created_at:
             epoch_source = meta.get("created_ts") or meta.get("container_created_ts")
             if epoch_source:
@@ -454,14 +454,14 @@ class LocalAdapter:
         return info
 
     def update_server_java_version(self, container_id: str, java_version: str) -> Dict:
-        # Apply java version change for local runtime by persisting env overrides
+        
         try:
             if java_version not in ("8", "11", "17", "21"):
                 raise ValueError(f"Invalid Java version: {java_version}")
             java_bin = f"/usr/local/bin/java{java_version}"
 
-            # Persist env overrides to server metadata and restart the process
-            # Load existing metadata and merge
+            
+            
             try:
                 meta_path = (SERVERS_ROOT / container_id / "server_meta.json")
                 meta = {}
@@ -474,26 +474,26 @@ class LocalAdapter:
             if not isinstance(stored_overrides, dict):
                 stored_overrides = {}
             merged = {str(k): str(v) for k, v in stored_overrides.items() if v is not None}
-            # Persist both override-style keys and legacy keys for compatibility
+            
             merged["JAVA_VERSION_OVERRIDE"] = str(java_version)
             merged["JAVA_BIN_OVERRIDE"] = str(java_bin)
             merged["JAVA_VERSION"] = str(java_version)
             merged["JAVA_BIN"] = str(java_bin)
 
-            # update metadata (this will persist merged env_overrides)
+            
             try:
-                # Persist env_overrides under metadata so create_server_from_existing applies them
-                # Also persist top-level java_version for UI visibility
+                
+                
                 self.local.update_metadata(container_id, env_overrides=merged, java_version=str(java_version))
             except Exception:
                 pass
 
-            # Stop and restart the server so new env is applied
+            
             try:
                 self.local.stop_server(container_id)
             except Exception:
                 pass
-            # Preserve configured RAM by deferring to metadata
+            
             result = self.local.create_server_from_existing(container_id, min_ram=None, max_ram=None)
             return {
                 "success": True,
@@ -554,7 +554,7 @@ class LocalAdapter:
         except Exception as e:
             return {"success": False, "error": str(e), "id": container_id}
 
-    # --- Console/logs ---
+    
     def get_server_logs(self, container_id: str, tail: int = 200) -> Dict:
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
@@ -597,7 +597,7 @@ class LocalAdapter:
         except Exception as e:
             return {"id": container_id, "ok": False, "error": str(e)}
 
-    # --- Rename server support (parity with DockerManager.rename_server) ---
+    
     def rename_server(self, old_name: str, new_name: str) -> Dict:
         """Rename a local-runtime server directory and restart under the new name.
 
@@ -614,13 +614,13 @@ class LocalAdapter:
         if new_dir.exists():
             return {"ok": False, "error": f"Target directory {new_dir} already exists"}
 
-        # Stop old process (ignore errors)
+        
         try:
             self.local.stop_server(old_name)
         except Exception:
             pass
 
-        # Read metadata to preserve RAM and env
+        
         meta_path = old_dir / "server_meta.json"
         meta = {}
         if meta_path.exists():
@@ -640,10 +640,10 @@ class LocalAdapter:
             max_ram = meta.get("max_ram")
         env_overrides = meta.get("env_overrides") if isinstance(meta.get("env_overrides"), dict) else {}
 
-        # Rename directory
+        
         old_dir.rename(new_dir)
 
-        # Update metadata name/history
+        
         try:
             new_meta = dict(meta or {})
             prev = new_meta.get("previous_names") or []
@@ -656,7 +656,7 @@ class LocalAdapter:
         except Exception:
             pass
 
-        # Recreate under new name preserving RAM/env (allow LocalRuntimeManager to infer defaults if None)
+        
         try:
             result = self.local.create_server_from_existing(
                 new_name,
@@ -670,7 +670,7 @@ class LocalAdapter:
 
         return {"ok": True, "old_name": old_name, "new_name": new_name, "result": result}
 
-    # --- Ports helpers used by API ---
+    
     def get_used_host_ports(self, only_minecraft: bool = True) -> Set[int]:
         return set()
 
@@ -702,7 +702,7 @@ def get_runtime_manager_or_docker():
         _adapter_cache = adapter
         return adapter
 
-    from docker_manager import DockerManager  # Local import to avoid circular dependency
+    from docker_manager import DockerManager  
 
     _adapter_cache = DockerManager()
     return _adapter_cache

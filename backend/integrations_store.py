@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-# Persist in the servers data volume so it survives image rebuilds
+
 STORE_PATH = Path("/data/servers/integrations.json")
 
 

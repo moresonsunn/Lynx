@@ -6,7 +6,7 @@ import { API, authHeaders } from '../context/AppContext';
 import { normalizeRamInput } from '../utils/ram';
 import { FaChevronRight } from 'react-icons/fa';
 
-// Skeleton loading component for consistent loading states
+
 const SkeletonCard = ({ className = '' }) => (
   <div className={`glassmorphism rounded-xl p-4 animate-pulse ${className}`}>
     <div className="flex items-center gap-3 mb-2">
@@ -23,7 +23,7 @@ const SkeletonCard = ({ className = '' }) => (
   </div>
 );
 
-// Modern Dashboard Page - ZERO LOADING with preloaded global data
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -39,12 +39,12 @@ export default function DashboardPage() {
     isInitialized 
   } = globalData;
 
-  // Use preloaded featured modpacks, fallback to local fetch if needed
+  
   const [localFeatured, setLocalFeatured] = useState([]);
   const [featuredError, setFeaturedError] = useState('');
   const featured = featuredModpacks?.length > 0 ? featuredModpacks : localFeatured;
 
-  // Lightweight install modal state
+  
   const [installOpen, setInstallOpen] = useState(false);
   const [installPack, setInstallPack] = useState(null);
   const [installProvider, setInstallProvider] = useState('modrinth');
@@ -57,7 +57,7 @@ export default function DashboardPage() {
   const [minRam, setMinRam] = useState('2048M');
   const [maxRam, setMaxRam] = useState('4096M');
   
-  // Only fetch if preloaded data not available after a delay
+  
   useEffect(() => {
     if (featuredModpacks?.length > 0) return;
     let cancelled = false;
@@ -150,7 +150,7 @@ export default function DashboardPage() {
     }
   }
 
-  // Calculate real-time metrics - INSTANT calculation from preloaded data
+  
   const { totalServers, runningServers, totalMemoryMB, avgCpuPercent, criticalAlerts, warningAlerts } = useMemo(() => {
     const total = servers?.length || 0;
     const runningList = Array.isArray(servers) ? servers.filter(s => s?.status === 'running') : [];

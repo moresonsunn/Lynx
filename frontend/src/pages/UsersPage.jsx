@@ -32,7 +32,7 @@ export default function UsersPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Refresh user data
+  
   const loadUsers = async () => {
     try {
       const refresher = globalData.__refreshBG;
@@ -46,7 +46,7 @@ export default function UsersPage() {
     }
   };
 
-  // Filtered users
+  
   const filteredUsers = safeUsers.filter(user => {
     const matchesSearch = user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -57,7 +57,7 @@ export default function UsersPage() {
     return matchesSearch && matchesRole && matchesStatus;
   });
 
-  // User actions
+  
   async function toggleUserActive(userId, isActive) {
     try {
       await fetch(`${API}/users/${userId}`, {

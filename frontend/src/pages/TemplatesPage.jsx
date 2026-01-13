@@ -21,7 +21,7 @@ const TMOD_WORLD_DIFFICULTY_OPTIONS = [
 const TMOD_WORLD_ENV_KEY_SET = new Set(['WORLD_NAME', 'WORLD_FILENAME', 'WORLD_SIZE', 'WORLD_DIFFICULTY', 'WORLD_SEED']);
 const STEAM_PER_PAGE = 12;
 
-// Game category detection based on keywords in name/summary
+
 const STEAM_CATEGORIES = [
   { id: 'all', label: 'All Games', keywords: [] },
   { id: 'survival', label: 'Survival', keywords: ['survival', 'zombie', 'craft', 'rust', 'ark', 'dayz', 'forest', 'valheim', 'conan', 'enshrouded', 'palworld', '7 days', 'scum', 'icarus', 'raft', 'subnautica', 'hurtworld', 'miscreated', 'deadside', 'sunkenland'] },
@@ -89,7 +89,7 @@ export default function TemplatesPage({
   const [steamAllGames, setSteamAllGames] = useState([]);
   const [steamTotalCount, setSteamTotalCount] = useState(0);
 
-  // Load all Steam games once for client-side filtering
+  
   useEffect(() => {
     let cancelled = false;
     async function loadAllSteamGames() {
@@ -124,11 +124,11 @@ export default function TemplatesPage({
     };
   }, [API, safeAuthHeaders]);
 
-  // Filter games based on search and category
+  
   const filteredSteamGames = useMemo(() => {
     let games = steamAllGames;
     
-    // Apply category filter
+    
     if (steamCategory !== 'all') {
       const category = STEAM_CATEGORIES.find(c => c.id === steamCategory);
       if (category && category.keywords.length > 0) {
@@ -139,7 +139,7 @@ export default function TemplatesPage({
       }
     }
     
-    // Apply search filter
+    
     if (steamSearchQuery.trim()) {
       const query = steamSearchQuery.toLowerCase().trim();
       games = games.filter(game => {
@@ -151,7 +151,7 @@ export default function TemplatesPage({
     return games;
   }, [steamAllGames, steamSearchQuery, steamCategory]);
 
-  // Paginate filtered games
+  
   useEffect(() => {
     const startIdx = steamPage * STEAM_PER_PAGE;
     const endIdx = startIdx + STEAM_PER_PAGE;
@@ -160,7 +160,7 @@ export default function TemplatesPage({
     setSteamHasMore(endIdx < filteredSteamGames.length);
   }, [filteredSteamGames, steamPage]);
 
-  // Reset page when filters change
+  
   useEffect(() => {
     setSteamPage(0);
   }, [steamSearchQuery, steamCategory]);
@@ -288,9 +288,9 @@ export default function TemplatesPage({
   const [installEvents, setInstallEvents] = useState([]);
   const [installWorking, setInstallWorking] = useState(false);
 
-  // Provider list is fixed (Modrinth & CurseForge), no curated marketplace.
+  
 
-  // Suggest a free host port for the create-server form when none is set yet.
+  
   useEffect(() => {
     const controller = new AbortController();
     async function suggest() {
@@ -426,14 +426,14 @@ export default function TemplatesPage({
             setInstallWorking(false);
           }
         } catch {
-          // Ignore malformed event payloads
+          
         }
       };
       es.onerror = () => {
         try {
           es.close();
         } catch {
-          // noop
+          
         }
         setInstallWorking(false);
       };

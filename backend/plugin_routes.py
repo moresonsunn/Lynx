@@ -65,7 +65,7 @@ async def upload_plugin(
         raise HTTPException(status_code=400, detail="No file provided")
     if not (file.filename and file.filename.lower().endswith(".jar")):
         raise HTTPException(status_code=400, detail="Only .jar files are allowed")
-    # Reuse file manager to handle safe write
+    
     fm_upload_file(server_name, "plugins", file)
     return {"ok": True}
 
@@ -77,7 +77,7 @@ async def delete_plugin(
     current_user: User = Depends(require_moderator),
 ):
     """Delete a plugin JAR from the plugins directory."""
-    # Prevent path traversal
+    
     if "/" in plugin_file or ".." in plugin_file:
         raise HTTPException(status_code=400, detail="Invalid plugin file")
     path = f"plugins/{plugin_file}"
@@ -100,7 +100,7 @@ async def reload_plugins(
             break
     if not container_id:
         raise HTTPException(status_code=404, detail="Server container not found")
-    # Paper supports `reload confirm`; fallback to `reload`
+    
     resp = dm.send_command(container_id, "reload confirm")
     if resp.get("exit_code", 1) != 0:
         resp = dm.send_command(container_id, "reload")

@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
-// Lazy load pages for code splitting
+
 const DashboardPage = React.lazy(() => import('../pages/DashboardPage'));
 const ServersPage = React.lazy(() => import('../pages/ServersPage'));
 const ServerDetailsPage = React.lazy(() => import('../pages/ServerDetailsPage'));
@@ -11,14 +11,14 @@ const SettingsPage = React.lazy(() => import('../pages/SettingsPage'));
 const LoginPage = React.lazy(() => import('../pages/LoginPage'));
 const MustChangePasswordPage = React.lazy(() => import('../pages/MustChangePasswordPage'));
 
-// Loading fallback component
+
 const PageLoader = () => (
   <div className="flex items-center justify-center h-screen bg-ink">
     <div className="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
   </div>
 );
 
-// Protected route wrapper
+
 export function ProtectedRoute({ children, isAuthenticated, mustChangePassword }) {
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -31,7 +31,7 @@ export function ProtectedRoute({ children, isAuthenticated, mustChangePassword }
   return children;
 }
 
-// Admin-only route wrapper
+
 export function AdminRoute({ children, isAuthenticated, isAdmin }) {
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -44,14 +44,14 @@ export function AdminRoute({ children, isAuthenticated, isAdmin }) {
   return children;
 }
 
-// Main router component
+
 export function AppRouter({ 
   isAuthenticated, 
   isAdmin, 
   mustChangePassword,
   currentUser,
   onLogout,
-  // Pass through any other props needed by child components
+  
   ...appProps 
 }) {
   return (

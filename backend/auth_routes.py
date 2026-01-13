@@ -19,7 +19,7 @@ from user_service import UserService
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
-# Pydantic models
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -105,7 +105,7 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Create a session token and return it
+    
     session = svc.create_user_session(user, ip_address=get_client_ip(request), user_agent=get_user_agent(request))
     logging.info(f"Login success username='{form_data.username}' session_id={session.id} IP={get_client_ip(request)}")
     return {"access_token": session.session_token, "token_type": "bearer"}
@@ -146,7 +146,7 @@ async def logout(
 ):
     """Logout current session by invalidating the bearer token if it is a session token."""
     svc = UserService(db)
-    # Extract token from Authorization header
+    
     auth_header = request.headers.get("authorization", "")
     token = auth_header.split(" ")[-1] if auth_header else None
     if token:
@@ -169,7 +169,7 @@ async def create_user(
     db: Session = Depends(get_db)
 ):
     """Create a new user (permission-based)."""
-    # Check if user already exists
+    
     if db.query(User).filter(User.username == user_data.username).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -182,8 +182,8 @@ async def create_user(
             detail="Email already registered"
         )
     
-    # Validate role
-    # Use roles defined in DB
+    
+    
     valid_roles = [r.name for r in db.query(Role).all()]
     if user_data.role not in valid_roles:
         raise HTTPException(
@@ -191,7 +191,7 @@ async def create_user(
             detail=f"Invalid role. Must be one of: {valid_roles}"
         )
     
-    # Create user
+    
     hashed_password = get_password_hash(user_data.password)
     user = User(
         username=user_data.username,
@@ -223,9 +223,9 @@ async def update_user(
         )
 
     updates = {}
-    # Update fields
+    
     if user_data.email is not None:
-        # Check email uniqueness
+        
         existing_user = db.query(User).filter(
             User.email == user_data.email, User.id != user_id
         ).first()
@@ -243,7 +243,7 @@ async def update_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid role. Must be one of: {valid_roles}"
             )
-        # Prevent demoting the last active admin if this user is currently an admin
+        
         from sqlalchemy import and_
         is_target_user_admin = db.query(User).filter(User.id == user_id, User.role == "admin", User.is_active == True).count() == 1
         if is_target_user_admin and user_data.role != "admin":
@@ -253,7 +253,7 @@ async def update_user(
         updates["role"] = user_data.role
 
     if user_data.is_active is not None:
-        # Prevent deactivating last active admin if this user is admin
+        
         if user_data.is_active is False:
             from sqlalchemy import and_
             is_target_user_admin = db.query(User).filter(User.id == user_id, User.role == "admin", User.is_active == True).count() == 1
@@ -267,7 +267,7 @@ async def update_user(
         db.query(User).filter(User.id == user_id).update(updates)
         db.commit()
     
-    # Return updated user
+    
     user = db.query(User).filter(User.id == user_id).first()
     return user
 
@@ -286,7 +286,7 @@ async def delete_user(
             detail="User not found"
         )
 
-    # Prevent admin from deleting themselves
+    
     if user.id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -370,10 +370,10 @@ async def revoke_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session.user_id != current_user.id:
-        # Check permission: user.sessions.revoke
+        
         if not UserService(db).user_has_permission(current_user, "user.sessions.revoke"):
             raise HTTPException(status_code=403, detail="Not allowed to revoke others' sessions")
-    # Use bulk update to avoid attribute typing issues
+    
     db.query(UserSession).filter(UserSession.id == session_id).update({"is_active": False})
     db.commit()
     return {"message": "Session revoked"}

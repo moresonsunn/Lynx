@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Command Line Interface for AI Error Fixer
 Provides easy access to AI error detection and auto-fix capabilities.
@@ -33,35 +33,35 @@ def main():
     parser = argparse.ArgumentParser(description="AI Error Fixer CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     
-    # Start monitoring
+    
     start_parser = subparsers.add_parser("start", help="Start AI error monitoring")
     start_parser.add_argument("--config", type=str, help="Path to config file")
     
-    # Stop monitoring
+    
     stop_parser = subparsers.add_parser("stop", help="Stop AI error monitoring")
     
-    # Status
+    
     status_parser = subparsers.add_parser("status", help="Show AI error fixer status")
     
-    # Manual fix
+    
     fix_parser = subparsers.add_parser("fix", help="Manually trigger a fix")
     fix_parser.add_argument("error_type", help="Type of error to fix")
     fix_parser.add_argument("--container-id", help="Container ID (optional)")
     
-    # Upload to Docker
+    
     upload_parser = subparsers.add_parser("upload", help="Upload to Docker Hub")
     upload_parser.add_argument("--image-name", default="minecraft-server-manager", help="Docker image name")
     
-    # Rebuild runtime
+    
     rebuild_parser = subparsers.add_parser("rebuild", help="Rebuild runtime image")
     
-    # Restart containers
+    
     restart_parser = subparsers.add_parser("restart", help="Restart all containers")
     
-    # Cleanup
+    
     cleanup_parser = subparsers.add_parser("cleanup", help="Clean up system")
     
-    # Monitor mode
+    
     monitor_parser = subparsers.add_parser("monitor", help="Start monitoring with live updates")
     monitor_parser.add_argument("--interval", type=int, default=30, help="Update interval in seconds")
     
@@ -161,14 +161,14 @@ def main():
                 else:
                     print(f"  ❌ Failed to clean {name}: {result.stderr}")
             
-            # Clean up old log files
+            
             from pathlib import Path
             log_dir = Path("logs")
             if log_dir.exists():
                 print("  Cleaning up old log files...")
                 removed_count = 0
                 for log_file in log_dir.glob("*.log"):
-                    if log_file.stat().st_size > 10 * 1024 * 1024:  # 10MB
+                    if log_file.stat().st_size > 10 * 1024 * 1024:  
                         log_file.unlink()
                         removed_count += 1
                 print(f"  ✅ Removed {removed_count} large log files")

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Crash Log Analyzer for Minecraft Server Manager
 Automatically detects problematic mods from crash reports and server logs.
@@ -18,16 +18,16 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
-# Known client-only mod indicators - extended list
+
 CLIENT_ONLY_INDICATORS = {
-    # Rendering/Graphics mods
+    
     "iris", "oculus", "sodium", "embeddium", "rubidium", "magnesium",
     "optifine", "optifabric", "starlight-fabric", "phosphor", "lambdynamiclights",
     "canvas-renderer", "immediatelyfast", "entityculling", "dynamicfps", "dynamic-fps",
     "dynamic_fps", "fpsreducer", "fps_reducer", "enhancedvisuals", "better-clouds",
     "falling-leaves", "visuality", "cull-less-leaves", "particlerain", "drippyloadingscreen",
     
-    # UI/HUD mods
+    
     "xaero", "xaeros", "journeymap", "voxelmap", "worldmap", "minimap",
     "betterf3", "better-f3", "appleskin", "itemphysic", "jade", "hwyla", "waila",
     "wthit", "emi", "rei", "jei", "roughlyenoughitems", "justmap", "torohealth",
@@ -35,32 +35,32 @@ CLIENT_ONLY_INDICATORS = {
     "smoothboot", "smooth-boot", "loading", "loadingscreen", "mainmenu", "panoramafix",
     "betterthirdperson", "freelook", "cameraoverhaul", "citresewn", "cit-resewn",
     
-    # Audio/Sound mods
+    
     "presence-footsteps", "presencefootsteps", "soundphysics", "ambientsounds",
     "dynamic-music", "music", "extrasounds", "dripsounds", "auditory",
     
-    # Shaders/Resource packs
+    
     "shader", "complementary", "sildurs", "continuum", "bsl", "seus", "kappa",
     
-    # Recording/Streaming
+    
     "replaymod", "replay-mod", "replay_mod", "worldedit-cui", "axiom",
     
-    # Cosmetics
+    
     "capes", "skinlayers3d", "skin-layers", "ears", "figura", "customskinloader",
     "more-player-models", "playeranimator", "emotes", "emotecraft",
     
-    # Client utilities
+    
     "litematica", "minihud", "tweakeroo", "malilib", "itemscroller", "tweakermore",
     "freecam", "flycam", "keystrokes", "betterpvp", "5zig", "labymod",
     "schematica", "worldeditcui", "wecui", "light-overlay", "lightoverlay",
     
-    # Framework/Library (client-specific)
+    
     "fabric-renderer-api", "fabric-rendering", "cloth-config-client",
 }
 
-# Patterns that indicate client-only in crash logs
+
 CLIENT_CRASH_PATTERNS = [
-    # Direct client-only indicators
+    
     r"Caused by:.*Client environment required",
     r"Client environment is required but.*server",
     r"Environment type CLIENT is required",
@@ -68,7 +68,7 @@ CLIENT_CRASH_PATTERNS = [
     r"@OnlyIn\(.*CLIENT\)",
     r"Dist\.CLIENT",
     
-    # Rendering-related crashes
+    
     r"No OpenGL context",
     r"GLFW error",
     r"Display.*not created",
@@ -83,20 +83,20 @@ CLIENT_CRASH_PATTERNS = [
     r"TessellatorImpl",
     r"WorldRenderer",
     
-    # Input-related crashes
+    
     r"GLFW.*keyboard",
     r"InputConstants",
     r"MouseHandler",
     r"KeyMapping",
     
-    # Screen/GUI crashes
+    
     r"Screen.*initialization",
     r"GuiScreen",
     r"ContainerScreen",
     r"InventoryScreen",
 ]
 
-# Patterns to extract mod names from crash logs
+
 MOD_EXTRACTION_PATTERNS = [
     r"Caused by:.*at ([\w.]+)\.",
     r"Mod ID: '?([\w-]+)'?",
@@ -112,7 +112,7 @@ MOD_EXTRACTION_PATTERNS = [
     r"([\w-]+)\.mixins\.json",
 ]
 
-# Common crash signatures and their associated mods
+
 CRASH_SIGNATURES = {
     "iris": ["iris", "irisshaders"],
     "sodium": ["sodium", "sodiumextra", "reeses_sodium_options"],
@@ -155,7 +155,7 @@ class CrashAnalyzer:
         
         content_lower = crash_content.lower()
         
-        # Check for client-only crash patterns
+        
         for pattern in CLIENT_CRASH_PATTERNS:
             if re.search(pattern, crash_content, re.IGNORECASE | re.MULTILINE):
                 result["client_only_detected"] = True
@@ -164,17 +164,17 @@ class CrashAnalyzer:
                 result["details"].append(f"Matched client-crash pattern: {pattern}")
                 break
         
-        # Extract mod names from crash
+        
         found_mods: Set[str] = set()
         for pattern in MOD_EXTRACTION_PATTERNS:
             matches = re.findall(pattern, crash_content, re.IGNORECASE)
             for match in matches:
                 mod_name = match.lower().strip()
-                # Filter out common Java packages
+                
                 if not any(pkg in mod_name for pkg in ["java.", "sun.", "org.apache", "io.netty"]):
                     found_mods.add(mod_name)
         
-        # Check found mods against client-only indicators
+        
         for mod in found_mods:
             mod_clean = re.sub(r'[^a-z0-9]', '', mod)
             for indicator in CLIENT_ONLY_INDICATORS:
@@ -185,7 +185,7 @@ class CrashAnalyzer:
                     result["details"].append(f"Found client-only mod: {mod}")
                     break
         
-        # Check for crash signatures
+        
         for signature, related_mods in CRASH_SIGNATURES.items():
             if signature in content_lower:
                 for mod in related_mods:
@@ -193,7 +193,7 @@ class CrashAnalyzer:
                         result["problematic_mods"].append(mod)
                 result["details"].append(f"Matched crash signature: {signature}")
         
-        # Determine recommendation
+        
         if result["client_only_detected"]:
             result["recommendation"] = "disable_client_mods"
             if result["confidence"] < 0.9:
@@ -212,12 +212,12 @@ class CrashAnalyzer:
         """Find all crash reports in a server directory."""
         crash_files = []
         
-        # Check crash-reports folder
+        
         crash_dir = server_dir / "crash-reports"
         if crash_dir.exists():
             crash_files.extend(crash_dir.glob("crash-*.txt"))
         
-        # Check logs folder for latest.log and debug.log
+        
         logs_dir = server_dir / "logs"
         if logs_dir.exists():
             for log_file in ["latest.log", "debug.log"]:
@@ -225,7 +225,7 @@ class CrashAnalyzer:
                 if log_path.exists():
                     crash_files.append(log_path)
         
-        # Sort by modification time (newest first)
+        
         crash_files.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
         
         return crash_files
@@ -257,7 +257,7 @@ class CrashAnalyzer:
             result["details"].append("No crash reports found")
             return result
         
-        # Analyze the most recent crash report
+        
         latest_crash = crash_files[0]
         try:
             content = latest_crash.read_text(encoding="utf-8", errors="ignore")
@@ -312,7 +312,7 @@ class CrashAnalyzer:
         mods_to_disable = set(analysis.get("mods_to_disable", []))
         
         if not mods_to_disable:
-            # Fallback: scan all mods for client-only indicators
+            
             for jar in mods_dir.glob("*.jar"):
                 jar_lower = jar.name.lower()
                 for indicator in CLIENT_ONLY_INDICATORS:
@@ -327,12 +327,12 @@ class CrashAnalyzer:
         if not dry_run:
             disabled_dir.mkdir(parents=True, exist_ok=True)
         
-        # Find and disable matching mods
+        
         for jar in mods_dir.glob("*.jar"):
             jar_lower = jar.name.lower()
             should_disable = False
             
-            # Check against analysis results
+            
             for mod_pattern in mods_to_disable:
                 pattern_clean = re.sub(r'[^a-z0-9]', '', mod_pattern.lower())
                 jar_clean = re.sub(r'[^a-z0-9]', '', jar_lower)
@@ -340,7 +340,7 @@ class CrashAnalyzer:
                     should_disable = True
                     break
             
-            # Also check jar metadata for client-only environment
+            
             if not should_disable:
                 should_disable = self._is_client_only_jar(jar)
             
@@ -369,7 +369,7 @@ class CrashAnalyzer:
             with zipfile.ZipFile(jar_path, 'r') as zf:
                 namelist = zf.namelist()
                 
-                # Check Fabric/Quilt metadata
+                
                 for meta_file in ['fabric.mod.json', 'quilt.mod.json']:
                     if meta_file in namelist:
                         try:
@@ -380,7 +380,7 @@ class CrashAnalyzer:
                         except Exception:
                             pass
                 
-                # Check Forge metadata
+                
                 if 'META-INF/mods.toml' in namelist:
                     try:
                         content = zf.read('META-INF/mods.toml').decode('utf-8', errors='ignore').lower()
@@ -405,7 +405,7 @@ class CrashAnalyzer:
             self.analysis_cache.clear()
 
 
-# Global instance
+
 crash_analyzer = CrashAnalyzer()
 
 
@@ -418,7 +418,7 @@ def auto_fix_server_crashes(server_name: str, dry_run: bool = False) -> Dict[str
     """Automatically fix detected crash issues for a server."""
     result = crash_analyzer.auto_fix_server(server_name, dry_run=dry_run)
     
-    # Send crash notification if issues were detected
+    
     if not dry_run and result.get("issues_found"):
         try:
             from settings_routes import send_notification
@@ -429,7 +429,7 @@ def auto_fix_server_crashes(server_name: str, dry_run: bool = False) -> Dict[str
                 f"⚠️ Server Crash Detected: {server_name}",
                 f"Detected **{issues_count}** issue(s) on server **{server_name}**. "
                 + (f"Auto-disabled **{mods_disabled}** problematic mod(s)." if mods_disabled else "Manual intervention may be required."),
-                color=15844367  # Orange/amber
+                color=15844367  
             )
         except Exception:
             pass

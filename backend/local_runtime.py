@@ -233,7 +233,7 @@ class LocalRuntimeManager:
             except Exception:
                 pass
 
-        # Merge and persist env overrides
+        
         stored_overrides = meta.get("env_overrides") or {}
         if not isinstance(stored_overrides, dict):
             stored_overrides = {}
@@ -245,7 +245,7 @@ class LocalRuntimeManager:
         if merged_overrides != stored_overrides:
             meta["env_overrides"] = merged_overrides
 
-        # Respect existing metadata if min/max not provided (preserve on restart)
+        
         min_mb = _ram_to_mb(min_ram, default_mb=int(meta.get("min_ram_mb") or 1024))
         max_mb = _ram_to_mb(max_ram, default_mb=int(meta.get("max_ram_mb") or 2048))
         if max_mb < min_mb:
@@ -332,7 +332,7 @@ class LocalRuntimeManager:
                 except Exception:
                     meta = {}
                 if str(meta.get("server_kind", "")).lower() == "steam":
-                    # Steam servers are managed via Docker, skip local entry
+                    
                     continue
                 host_port = meta.get("host_port") or MINECRAFT_PORT
                 items.append({

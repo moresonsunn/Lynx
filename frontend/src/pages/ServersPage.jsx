@@ -11,7 +11,7 @@ import {
   FaClock,
 } from 'react-icons/fa';
 
-// Format uptime helper
+
 function formatUptime(seconds) {
   if (!seconds || seconds < 0) return '0s';
   const days = Math.floor(seconds / 86400);
@@ -24,12 +24,12 @@ function formatUptime(seconds) {
   return `${secs}s`;
 }
 
-// Server List Card Component - uses preloaded data for instant display
+
 const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
   const globalData = useGlobalData();
   const stats = globalData.serverStats[server.id] || null;
   
-  // Use preloaded server info from global context - NO individual API calls
+  
   const typeVersionData = globalData.serverInfoById?.[server.id] || null;
 
   const normalizeLabel = useCallback((value) => {
@@ -121,7 +121,7 @@ const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
   );
 });
 
-// Main Servers Page
+
 export default function ServersPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();

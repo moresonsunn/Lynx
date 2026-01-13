@@ -26,10 +26,10 @@ def _detect_world_dirs(server_dir: Path) -> List[Path]:
     worlds: List[Path] = []
     for p in server_dir.iterdir():
         if p.is_dir():
-            # A Minecraft world contains level.dat
+            
             if (p / "level.dat").exists():
                 worlds.append(p)
-    # Fallback to known names if not detected
+    
     for name in ["world", "world_nether", "world_the_end"]:
         p = server_dir / name
         if p.is_dir() and p not in worlds:
@@ -92,7 +92,7 @@ async def upload_world(
     low = fname.lower()
     if not (low.endswith('.zip') or low.endswith('.tar') or low.endswith('.tar.gz')):
         raise HTTPException(status_code=400, detail="Only .zip/.tar(.gz) archives are allowed")
-    # Ensure safe world name
+    
     import re
     if not re.fullmatch(r"[A-Za-z0-9_-]+", world_name):
         raise HTTPException(status_code=400, detail="Invalid world name")
@@ -103,7 +103,7 @@ async def upload_world(
         raise HTTPException(status_code=400, detail="Invalid target path")
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save upload to temp and extract
+    
     tmpdir = Path(tempfile.mkdtemp(prefix="worldup_"))
     tmpfile = tmpdir / fname
     with tmpfile.open('wb') as f:

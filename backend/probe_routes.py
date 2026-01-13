@@ -20,7 +20,7 @@ def probe_paper(
     """
     base = "https://api.papermc.io/v2/projects/paper"
     try:
-        # Resolve build and jar name
+        
         if build is None:
             vr = requests.get(f"{base}/versions/{version}", timeout=15)
             if vr.status_code == 404:
@@ -40,13 +40,13 @@ def probe_paper(
         jar_name = downloads.get("name") or f"paper-{version}-{build}.jar"
         url = f"{base}/versions/{version}/builds/{build}/downloads/{jar_name}"
 
-        # Try a HEAD request first to get headers quickly
+        
         head_info: dict[str, object] = {}
         first_bytes_hex = None
         first_bytes_ascii = None
         try:
             h = requests.head(url, allow_redirects=True, timeout=15)
-            # Some CDNs might not support HEAD reliably; tolerate non-200
+            
             clen = h.headers.get("content-length")
             head_info = {
                 "status_code": int(h.status_code),
@@ -56,7 +56,7 @@ def probe_paper(
         except Exception:
             head_info = {"error": "HEAD request failed"}
 
-        # Optionally sample first bytes using Range GET
+        
         if sample_bytes and sample_bytes > 0:
             try:
                 rg = requests.get(url, headers={"Range": f"bytes=0-{sample_bytes-1}"}, stream=True, timeout=20)
@@ -70,20 +70,20 @@ def probe_paper(
                         break
                 first_bytes_hex = data[:sample_bytes].hex()
                 first_bytes_ascii = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in data[:sample_bytes])
-                # Infer full size from Content-Range if present
+                
                 cr = rg.headers.get("Content-Range") or ""
-                # Example: bytes 0-1023/1234567
+                
                 if cr.startswith("bytes") and "/" in cr:
                     try:
                         total = cr.split("/")[-1]
                         if total.isdigit():
-                            # Only set if not already present
+                            
                             if "content_length" not in head_info or head_info.get("content_length") in (None, 0):
                                 head_info["content_length"] = int(total)
                     except Exception:
                         pass
             except Exception as e:
-                # Non-fatal: continue without sample
+                
                 first_bytes_hex = None
                 first_bytes_ascii = None
 

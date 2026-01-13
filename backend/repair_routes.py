@@ -15,7 +15,7 @@ def _detect_type_version(server_dir: Path) -> tuple[str | None, str | None]:
     stype = None
     sver = None
     try:
-        # Check server_meta.json first
+        
         meta_path = server_dir / "server_meta.json"
         if meta_path.exists():
             try:
@@ -24,9 +24,9 @@ def _detect_type_version(server_dir: Path) -> tuple[str | None, str | None]:
                 sver = meta.get("detected_version") or meta.get("server_version") or meta.get("version") or sver
             except Exception:
                 pass
-        # Inspect jars
+        
         jar_files = [p for p in server_dir.glob("*.jar") if p.is_file()]
-        # Prefer server.jar
+        
         jar_files.sort(key=lambda p: (p.name != "server.jar", -p.stat().st_size))
         import re
         patterns = [
@@ -48,7 +48,7 @@ def _detect_type_version(server_dir: Path) -> tuple[str | None, str | None]:
                     break
             if stype:
                 break
-        # Fallback vanilla if jar exists and no type detected
+        
         if not stype and (server_dir / "server.jar").exists() and (server_dir / "server.jar").stat().st_size > 50_000:
             stype = "vanilla"
     except Exception:
@@ -87,7 +87,7 @@ def repair_server_jar(server_name: str, current_user: User = Depends(require_mod
     if not jar_path.exists() or jar_path.stat().st_size < 100*1024:
         raise HTTPException(status_code=500, detail="Repaired jar still invalid (size below threshold)")
 
-    # Update meta
+    
     meta_path = server_dir / "server_meta.json"
     meta = {}
     if meta_path.exists():
@@ -118,7 +118,7 @@ def repair_server_jar(server_name: str, current_user: User = Depends(require_mod
     }
 
 
-# ======================== Crash Analysis & Auto-Fix Endpoints ========================
+
 
 class AutoFixRequest(BaseModel):
     dry_run: bool = False
@@ -208,7 +208,7 @@ def purge_client_only_mods(
         return {"message": "No mods directory found", "mods_disabled": []}
     
     try:
-        # Import and use the purge function from modpack_routes
+        
         from modpack_routes import _purge_client_only_mods
         
         disabled = []
@@ -219,7 +219,7 @@ def purge_client_only_mods(
         
         _purge_client_only_mods(server_dir, push_event=capture_event)
         
-        # Count actually moved mods
+        
         disabled_dir = server_dir / "mods-disabled-client"
         moved_count = len(list(disabled_dir.glob("*.jar"))) if disabled_dir.exists() else 0
         
@@ -277,7 +277,7 @@ def restore_disabled_mod(
     mods_dir = server_dir / "mods"
     mods_dir.mkdir(parents=True, exist_ok=True)
     
-    # Check all disabled directories
+    
     for folder in ["mods-disabled-client", "mods-disabled-crash", "mods-disabled-incompatible"]:
         disabled_dir = server_dir / folder
         mod_path = disabled_dir / mod_name

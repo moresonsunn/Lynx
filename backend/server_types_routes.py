@@ -23,7 +23,7 @@ def list_server_type_versions(server_type: str):
     try:
         provider = get_provider(server_type)
         versions = provider.list_versions()
-        # Limit extremely long lists to something reasonable but include total count
+        
         truncated = versions[:500]
         return {"type": server_type, "count": len(versions), "versions": truncated, "truncated": len(truncated) < len(versions)}
     except ValueError as ve:
@@ -48,7 +48,7 @@ def list_loader_versions(
     try:
         provider = get_provider(server_type)
         
-        # Check if provider supports loader versions
+        
         if not hasattr(provider, 'list_loader_versions'):
             raise HTTPException(
                 status_code=400, 
@@ -64,20 +64,20 @@ def list_loader_versions(
             "count": len(loader_versions),
         }
         
-        # For Fabric, also include installer versions
+        
         if server_type == "fabric" and hasattr(provider, 'get_installer_versions'):
             try:
                 installers = provider.get_installer_versions()
                 installer_versions = [i.get("version") for i in installers if i.get("version")]
                 result["installer_versions"] = installer_versions
                 
-                # Get latest stable installer
+                
                 if hasattr(provider, 'get_latest_installer_version'):
                     result["latest_installer_version"] = provider.get_latest_installer_version()
             except Exception as e:
                 logger.warning(f"Could not fetch installer versions: {e}")
         
-        # For Forge, mark recommended/latest versions
+        
         if server_type == "forge":
             try:
                 if hasattr(provider, 'get_recommended_forge_version'):
@@ -87,7 +87,7 @@ def list_loader_versions(
             except Exception as e:
                 logger.warning(f"Could not fetch Forge promotions: {e}")
         
-        # For NeoForge, mark latest version
+        
         if server_type == "neoforge":
             try:
                 if hasattr(provider, 'get_latest_neoforge_version'):
@@ -106,7 +106,7 @@ def list_loader_versions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- Alias endpoints under /api prefix to mitigate aggressive browser extensions blocking plain paths ---
+
 @router.get("/api/server-types")
 def list_server_types_api():
     return list_server_types()

@@ -16,9 +16,9 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 SETTINGS_FILE = SERVERS_ROOT.parent / "lynx_settings.json"
 
-# Default settings
+
 DEFAULT_SETTINGS = {
-    # Backup settings
+    
     "backup": {
         "enabled": True,
         "interval_hours": 24,
@@ -30,7 +30,7 @@ DEFAULT_SETTINGS = {
         "include_configs": True,
         "max_backup_size_gb": 50
     },
-    # Server defaults
+    
     "server_defaults": {
         "auto_start": False,
         "restart_on_crash": True,
@@ -40,10 +40,10 @@ DEFAULT_SETTINGS = {
         "memory_max_mb": 4096,
         "java_args": "-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200"
     },
-    # Notifications
+    
     "notifications": {
         "webhook_url": "",
-        "webhook_type": "discord",  # discord, slack, generic
+        "webhook_type": "discord",  
         "email_enabled": False,
         "smtp_host": "",
         "smtp_port": 587,
@@ -61,7 +61,7 @@ DEFAULT_SETTINGS = {
         "memory_threshold": 90,
         "disk_threshold": 90
     },
-    # Security
+    
     "security": {
         "session_timeout_hours": 24,
         "max_sessions_per_user": 5,
@@ -71,7 +71,7 @@ DEFAULT_SETTINGS = {
         "lockout_duration_minutes": 15,
         "two_factor_enabled": False
     },
-    # Appearance
+    
     "appearance": {
         "theme": "dark",
         "accent_color": "blue",
@@ -79,7 +79,7 @@ DEFAULT_SETTINGS = {
         "date_format": "YYYY-MM-DD",
         "time_format": "24h"
     },
-    # Performance
+    
     "performance": {
         "api_rate_limit": 100,
         "websocket_enabled": True,
@@ -88,7 +88,7 @@ DEFAULT_SETTINGS = {
         "cache_enabled": True,
         "cache_ttl_seconds": 300
     },
-    # Docker/Container settings
+    
     "docker": {
         "network_mode": "bridge",
         "auto_pull_images": True,
@@ -101,11 +101,11 @@ DEFAULT_SETTINGS = {
 
 def load_settings() -> Dict[str, Any]:
     """Load settings from file, merging with defaults."""
-    settings = json.loads(json.dumps(DEFAULT_SETTINGS))  # Deep copy
+    settings = json.loads(json.dumps(DEFAULT_SETTINGS))  
     try:
         if SETTINGS_FILE.exists():
             saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-            # Merge saved settings into defaults (shallow merge per category)
+            
             for key, value in saved.items():
                 if key in settings and isinstance(settings[key], dict) and isinstance(value, dict):
                     settings[key].update(value)
@@ -140,11 +140,11 @@ def send_notification(event_type: str, title: str, message: str, color: int = 58
     webhook_url = notif.get("webhook_url", "")
     webhook_type = notif.get("webhook_type", "discord")
     
-    # Check if webhook is configured
+    
     if not webhook_url:
         return False
     
-    # Check if this event type is enabled
+    
     alert_key = f"alert_{event_type}"
     if not notif.get(alert_key, False):
         return False
@@ -238,7 +238,7 @@ def export_settings(current_user: User = Depends(require_admin)):
 @router.post("/import")
 def import_settings(settings: Dict[str, Any], current_user: User = Depends(require_admin)):
     """Import settings from JSON."""
-    # Validate structure
+    
     for key in settings:
         if key not in DEFAULT_SETTINGS:
             raise HTTPException(status_code=400, detail=f"Unknown settings category: {key}")
@@ -246,7 +246,7 @@ def import_settings(settings: Dict[str, Any], current_user: User = Depends(requi
     return {"status": "ok", "message": "Settings imported successfully"}
 
 
-# System maintenance endpoints
+
 @router.get("/system/storage")
 def get_storage_info(current_user: User = Depends(require_auth)):
     """Get storage usage information."""
@@ -258,7 +258,7 @@ def get_storage_info(current_user: User = Depends(require_auth)):
         "backups": {}
     }
     
-    # Main disk usage
+    
     try:
         disk = psutil.disk_usage('/')
         result["disk"] = {
@@ -270,7 +270,7 @@ def get_storage_info(current_user: User = Depends(require_auth)):
     except Exception as e:
         result["disk"]["error"] = str(e)
     
-    # Server data usage
+    
     try:
         if SERVERS_ROOT.exists():
             total_size = sum(f.stat().st_size for f in SERVERS_ROOT.rglob('*') if f.is_file())
@@ -282,7 +282,7 @@ def get_storage_info(current_user: User = Depends(require_auth)):
     except Exception as e:
         result["servers"]["error"] = str(e)
     
-    # Backup usage
+    
     settings = load_settings()
     backup_path = Path(settings["backup"]["location"])
     try:
@@ -410,7 +410,7 @@ def get_java_versions(current_user: User = Depends(require_auth)):
     """Get available Java versions on the system."""
     java_versions = []
     
-    # Check common Java locations
+    
     java_paths = [
         "/opt/java/java8/bin/java",
         "/opt/java/java11/bin/java",
@@ -422,7 +422,7 @@ def get_java_versions(current_user: User = Depends(require_auth)):
         "/usr/lib/jvm/java-21-openjdk/bin/java",
     ]
     
-    # Also check JAVA_HOME
+    
     java_home = os.environ.get("JAVA_HOME")
     if java_home:
         java_paths.insert(0, f"{java_home}/bin/java")

@@ -51,7 +51,7 @@ class ServerTemplateManager:
     def _load_default_templates(self):
         """Load predefined server templates"""
         
-        # Vanilla Templates
+        
         self.add_template(ServerTemplate(
             id="vanilla_latest",
             name="Vanilla Latest",
@@ -79,7 +79,7 @@ class ServerTemplateManager:
             tags=["vanilla", "stable", "survival"]
         ))
 
-        # Paper Templates
+        
         self.add_template(ServerTemplate(
             id="paper_performance",
             name="Paper Performance",
@@ -107,7 +107,7 @@ class ServerTemplateManager:
             tags=["paper", "community", "plugins"]
         ))
 
-        # Fabric Templates
+        
         self.add_template(ServerTemplate(
             id="fabric_modded",
             name="Fabric Modded",
@@ -137,7 +137,7 @@ class ServerTemplateManager:
             tags=["fabric", "technical", "carpet", "redstone"]
         ))
 
-        # Forge Templates
+        
         self.add_template(ServerTemplate(
             id="forge_kitchen_sink",
             name="Forge All The Mods",
@@ -167,7 +167,7 @@ class ServerTemplateManager:
             tags=["forge", "create", "automation", "tech"]
         ))
 
-        # Specialized Templates
+        
         self.add_template(ServerTemplate(
             id="creative_build",
             name="Creative Build Server",
@@ -251,7 +251,7 @@ class ServerTemplateManager:
         if popular_only:
             templates = [t for t in templates if t.popular]
         
-        # Sort by popularity first, then alphabetically
+        
         templates.sort(key=lambda t: (not t.popular, t.name))
         
         return [t.to_dict() for t in templates]
@@ -293,7 +293,7 @@ class ServerTemplateManager:
         except Exception as e:
             print(f"Failed to save custom templates: {e}")
 
-# Global template manager instance
+
 _template_manager = None
 
 def get_template_manager() -> ServerTemplateManager:

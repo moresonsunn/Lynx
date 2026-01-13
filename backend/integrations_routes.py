@@ -47,13 +47,13 @@ async def test_curseforge_connectivity(current_user: User = Depends(require_admi
             "status": r.status_code,
         }
         if not r.ok:
-            # Try to extract error body and include response headers for diagnostics
+            
             try:
                 info["error"] = r.json()
             except Exception:
                 info["error_text"] = (r.text or '')[:500]
             try:
-                # Include a truncated set of response headers to surface hints (rate limits, messages)
+                
                 hdrs = {k: (v if len(v) < 200 else v[:200] + '...') for k, v in r.headers.items()} if r.headers else {}
                 info["response_headers"] = hdrs
             except Exception:
@@ -78,7 +78,7 @@ async def curseforge_info(current_user: User = Depends(require_admin)):
     configured = bool(key)
     masked = None
     if configured:
-        # show only last 4 chars and length
+        
         masked = f"{'*' * max(0, len(key) - 4)}{key[-4:]}"
     try:
         path = str(STORE_PATH)

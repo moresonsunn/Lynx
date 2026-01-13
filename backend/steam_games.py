@@ -609,7 +609,7 @@ def _load_additional_catalog() -> dict[str, dict]:
                     if isinstance(slug, str) and isinstance(meta, dict):
                         merged[slug.lower()] = meta
         except Exception:
-            # Ignore bad files but keep loading the rest.
+            
             continue
     return merged
 

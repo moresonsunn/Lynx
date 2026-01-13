@@ -13,10 +13,10 @@ import os, json, re, gzip, datetime as _dt
 
 router = APIRouter(prefix="/players", tags=["player_management"])
 
-# Pydantic models
+
 class PlayerActionCreate(BaseModel):
     player_name: str
-    action_type: str  # whitelist, ban, kick, op, deop
+    action_type: str  
     reason: Optional[str] = None
 
 class PlayerActionResponse(BaseModel):
@@ -78,7 +78,7 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
     hist: dict[str, dict] = {}
     if not base:
         return hist
-    # 1) usercache.json
+    
     try:
         uc = base / "usercache.json"
         if uc.exists():
@@ -92,7 +92,7 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
                 rec["sources"].add("usercache")
     except Exception:
         pass
-    # 2) logs: latest.log and logs/*.log(.gz)
+    
     try:
         candidates = []
         latest = base / "logs" / "latest.log"
@@ -105,7 +105,7 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
                     continue
                 if p.suffix in (".log", ".gz"):
                     candidates.append(p)
-        # sort by mtime desc and cap
+        
         candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
         candidates = candidates[:limit_files]
         total_lines = 0
@@ -116,7 +116,7 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
                 fallback_date = _dt.date.fromtimestamp(p.stat().st_mtime)
             except Exception:
                 fallback_date = None
-            # open file (support gz)
+            
             lines: list[str] = []
             try:
                 if p.suffix == ".gz":
@@ -127,7 +127,7 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
                         lines = f.readlines()
             except Exception:
                 continue
-            # iterate from end for recency
+            
             for line in reversed(lines):
                 if total_lines >= limit_lines:
                     break
@@ -144,7 +144,7 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
                 rec["sources"].add("logs")
     except Exception:
         pass
-    # finalize sets to lists
+    
     for v in hist.values():
         if isinstance(v.get("sources"), set):
             v["sources"] = sorted(list(v["sources"]))
@@ -156,7 +156,7 @@ async def get_player_roster(server_name: str, current_user: User = Depends(requi
     online: list of names (authoritative if available)
     offline: list of {name, last_seen} sorted by recency
     """
-    # online via runtime manager (mcstatus/RCON/etc.)
+    
     online_names: list[str] = []
     method = None
     try:
@@ -177,7 +177,7 @@ async def get_player_roster(server_name: str, current_user: User = Depends(requi
         online_names = []
         method = "error"
 
-    # history from logs/usercache
+    
     hist = _collect_history(server_name)
     online_set = {n.lower() for n in online_names}
     offline: list[dict] = []
@@ -185,7 +185,7 @@ async def get_player_roster(server_name: str, current_user: User = Depends(requi
         if k in online_set:
             continue
         offline.append({"name": rec.get("name"), "last_seen": rec.get("last_seen")})
-    # sort by last_seen desc (unknown last)
+    
     offline.sort(key=lambda x: (x.get("last_seen") or 0), reverse=True)
     return {"online": online_names, "offline": offline, "method": method}
 
@@ -214,7 +214,7 @@ async def whitelist_player(
         action_data.action_type = "whitelist"
     
     try:
-        # Execute whitelist command
+        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -237,11 +237,11 @@ async def whitelist_player(
                 detail="Server container not found"
             )
         
-        # Send whitelist command
+        
         command = f"whitelist add {action_data.player_name}"
         docker_manager.send_command(container_id, command)
         
-        # Record action in database
+        
         player_action = PlayerAction(
             server_name=server_name,
             player_name=action_data.player_name,
@@ -272,7 +272,7 @@ async def remove_from_whitelist(
 ):
     """Remove a player from the whitelist."""
     try:
-        # Execute whitelist remove command
+        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -295,11 +295,11 @@ async def remove_from_whitelist(
                 detail="Server container not found"
             )
         
-        # Send whitelist remove command
+        
         command = f"whitelist remove {player_name}"
         docker_manager.send_command(container_id, command)
         
-        # Update database - mark as inactive
+        
         player_action = db.query(PlayerAction).filter(
             PlayerAction.server_name == server_name,
             PlayerAction.player_name == player_name,
@@ -309,7 +309,7 @@ async def remove_from_whitelist(
         
         if player_action:
             try:
-                # SQLAlchemy model attribute assignment guarded for linters
+                
                 setattr(player_action, 'is_active', False)
                 db.commit()
             except Exception:
@@ -335,7 +335,7 @@ async def ban_player(
         action_data.action_type = "ban"
     
     try:
-        # Execute ban command
+        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -358,14 +358,14 @@ async def ban_player(
                 detail="Server container not found"
             )
         
-        # Send ban command
+        
         if action_data.reason:
             command = f"ban {action_data.player_name} {action_data.reason}"
         else:
             command = f"ban {action_data.player_name}"
         docker_manager.send_command(container_id, command)
         
-        # Record action in database
+        
         player_action = PlayerAction(
             server_name=server_name,
             player_name=action_data.player_name,
@@ -396,7 +396,7 @@ async def unban_player(
 ):
     """Unban a player from the server."""
     try:
-        # Execute pardon command
+        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -419,11 +419,11 @@ async def unban_player(
                 detail="Server container not found"
             )
         
-        # Send pardon command
+        
         command = f"pardon {player_name}"
         docker_manager.send_command(container_id, command)
         
-        # Update database - mark ban as inactive
+        
         player_action = db.query(PlayerAction).filter(
             PlayerAction.server_name == server_name,
             PlayerAction.player_name == player_name,
@@ -458,7 +458,7 @@ async def kick_player(
         action_data.action_type = "kick"
     
     try:
-        # Execute kick command
+        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -481,14 +481,14 @@ async def kick_player(
                 detail="Server container not found"
             )
         
-        # Send kick command
+        
         if action_data.reason:
             command = f"kick {action_data.player_name} {action_data.reason}"
         else:
             command = f"kick {action_data.player_name}"
         docker_manager.send_command(container_id, command)
         
-        # Record action in database
+        
         player_action = PlayerAction(
             server_name=server_name,
             player_name=action_data.player_name,
@@ -522,7 +522,7 @@ async def op_player(
         action_data.action_type = "op"
     
     try:
-        # Execute op command
+        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -545,11 +545,11 @@ async def op_player(
                 detail="Server container not found"
             )
         
-        # Send op command
+        
         command = f"op {action_data.player_name}"
         docker_manager.send_command(container_id, command)
         
-        # Record action in database
+        
         player_action = PlayerAction(
             server_name=server_name,
             player_name=action_data.player_name,
@@ -580,7 +580,7 @@ async def deop_player(
 ):
     """Remove operator privileges from a player."""
     try:
-        # Execute deop command
+        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -603,11 +603,11 @@ async def deop_player(
                 detail="Server container not found"
             )
         
-        # Send deop command
+        
         command = f"deop {player_name}"
         docker_manager.send_command(container_id, command)
         
-        # Update database - mark OP as inactive
+        
         player_action = db.query(PlayerAction).filter(
             PlayerAction.server_name == server_name,
             PlayerAction.player_name == player_name,
@@ -637,7 +637,7 @@ async def get_online_players(
 ):
     """Get list of currently online players."""
     try:
-        # Execute list command to get online players
+        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -660,8 +660,8 @@ async def get_online_players(
                 detail="Server container not found"
             )
         
-        # Send list command
-        # Prefer authoritative player info from the runtime manager (RCON-backed)
+        
+        
         try:
             info = docker_manager.get_player_info(container_id)
             names = info.get('names') or []
@@ -670,9 +670,9 @@ async def get_online_players(
             method = info.get('method') or 'none'
             return {"players": names, "count": online, "max": maxp, "method": method}
         except Exception:
-            # Fallback: attempt to send a 'list' command via the manager which may write to console
+            
             result = docker_manager.send_command(container_id, "list")
-            # Best-effort: parse the result if available
+            
             try:
                 text = result if isinstance(result, str) else (result.get('output') if isinstance(result, dict) else '')
                 import re as _re

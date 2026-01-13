@@ -1,6 +1,6 @@
-// RAM normalization utility extracted for reuse across forms.
-// Converts inputs like "2048M", "2G", "2GB", "2048" into canonical MB string e.g. "2048M".
-// Returns empty string on invalid input.
+
+
+
 export function normalizeRamInput(value, { defaultUnit = 'M', clampMin = 16, clampMax = 1048576 } = {}) {
   if (value == null) return '';
   let raw = String(value).trim();
@@ -25,7 +25,7 @@ export function normalizeRamInput(value, { defaultUnit = 'M', clampMin = 16, cla
   return mb + 'M';
 }
 
-// Simple validator that ensures min <= max
+
 export function validateRamRange(minValue, maxValue) {
   const min = normalizeRamInput(minValue);
   const max = normalizeRamInput(maxValue);

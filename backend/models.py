@@ -7,19 +7,19 @@ class Permission(Base):
     __tablename__ = "permissions"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)  # e.g., "server.create", "user.delete"
+    name = Column(String, unique=True, nullable=False)  
     description = Column(String, nullable=True)
-    category = Column(String, nullable=False)  # "server", "user", "system", etc.
+    category = Column(String, nullable=False)  
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Role(Base):
     __tablename__ = "roles"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)  # admin, moderator, user
+    name = Column(String, unique=True, nullable=False)  
     description = Column(String, nullable=True)
-    permissions = Column(JSON, default=list)  # List of permission names
-    is_system = Column(Boolean, default=False)  # Cannot be deleted
+    permissions = Column(JSON, default=list)  
+    is_system = Column(Boolean, default=False)  
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class User(Base):
@@ -29,7 +29,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(String, default="user")  # References Role.name
+    role = Column(String, default="user")  
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
@@ -38,16 +38,16 @@ class User(Base):
     locked_until = Column(DateTime, nullable=True)
     must_change_password = Column(Boolean, default=False)
     
-    # Profile information
+    
     full_name = Column(String, nullable=True)
     avatar_url = Column(String, nullable=True)
     timezone = Column(String, default="UTC")
     language = Column(String, default="en")
     
-    # Settings as JSON
+    
     preferences = Column(JSON, default=dict)
     
-    # Relationships
+    
     scheduled_tasks = relationship("ScheduledTask", back_populates="created_by_user")
     audit_logs = relationship("AuditLog", back_populates="user")
     user_sessions = relationship("UserSession", back_populates="user")
@@ -64,7 +64,7 @@ class UserSession(Base):
     expires_at = Column(DateTime, nullable=False)
     is_active = Column(Boolean, default=True)
     
-    # Relationship
+    
     user = relationship("User", back_populates="user_sessions")
 
 class AuditLog(Base):
@@ -72,15 +72,15 @@ class AuditLog(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    action = Column(String, nullable=False)  # "user.create", "server.start", etc.
-    resource_type = Column(String, nullable=True)  # "user", "server", "backup"
-    resource_id = Column(String, nullable=True)  # ID of the affected resource
-    details = Column(JSON, nullable=True)  # Additional context
+    action = Column(String, nullable=False)  
+    resource_type = Column(String, nullable=True)  
+    resource_id = Column(String, nullable=True)  
+    details = Column(JSON, nullable=True)  
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
     
-    # Relationship
+    
     user = relationship("User", back_populates="audit_logs")
 
 class ScheduledTask(Base):
@@ -88,22 +88,22 @@ class ScheduledTask(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    task_type = Column(String, nullable=False)  # backup, restart, command, cleanup
-    server_name = Column(String, nullable=True)  # null for global tasks
-    cron_expression = Column(String, nullable=False)  # cron format
-    command = Column(String, nullable=True)  # for command tasks
+    task_type = Column(String, nullable=False)  
+    server_name = Column(String, nullable=True)  
+    cron_expression = Column(String, nullable=False)  
+    command = Column(String, nullable=True)  
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_run = Column(DateTime, nullable=True)
     next_run = Column(DateTime, nullable=True)
     
-    # Foreign key to user
+    
     created_by = Column(Integer, ForeignKey("users.id"))
     created_by_user = relationship("User", back_populates="scheduled_tasks")
     integrity_reports = relationship("IntegrityReport", back_populates="task", cascade="all, delete-orphan")
 
-## Legacy note: ServerTemplate model removed as curated templates feature was dropped.
-## Existing databases will be cleaned up by init_db() dropping the legacy table if present.
+
+
 
 class BackupTask(Base):
     __tablename__ = "backup_tasks"
@@ -116,7 +116,7 @@ class BackupTask(Base):
     retention_days = Column(Integer, default=30)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    # Auto-cleanup based on retention
+    
     is_auto_created = Column(Boolean, default=False)
 
 class IntegrityReport(Base):
@@ -142,14 +142,14 @@ class ServerPerformance(Base):
     server_name = Column(String, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     
-    # Performance metrics
-    tps = Column(String, nullable=True)  # Ticks per second
+    
+    tps = Column(String, nullable=True)  
     cpu_usage = Column(String, nullable=True)
     memory_usage = Column(String, nullable=True)
     memory_total = Column(String, nullable=True)
     player_count = Column(Integer, default=0)
     
-    # Additional metrics as JSON
+    
     metrics = Column(JSON, nullable=True)
 
 class PlayerAction(Base):
@@ -158,11 +158,11 @@ class PlayerAction(Base):
     id = Column(Integer, primary_key=True, index=True)
     server_name = Column(String, nullable=False)
     player_name = Column(String, nullable=False)
-    action_type = Column(String, nullable=False)  # whitelist, ban, kick, op, deop
+    action_type = Column(String, nullable=False)  
     reason = Column(String, nullable=True)
     performed_by = Column(Integer, ForeignKey("users.id"))
     performed_at = Column(DateTime, default=datetime.utcnow)
-    is_active = Column(Boolean, default=True)  # for bans/whitelist status
+    is_active = Column(Boolean, default=True)  
 
 
 class UserAPIKey(Base):
@@ -171,17 +171,17 @@ class UserAPIKey(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    name = Column(String, nullable=False)  # User-friendly name for the key
-    key_hash = Column(String, nullable=False)  # Hashed API key (never store raw)
-    key_prefix = Column(String, nullable=False)  # First 8 chars for identification
-    permissions = Column(JSON, default=list)  # Optional: subset of user's permissions
-    expires_at = Column(DateTime, nullable=True)  # Optional expiration
+    name = Column(String, nullable=False)  
+    key_hash = Column(String, nullable=False)  
+    key_prefix = Column(String, nullable=False)  
+    permissions = Column(JSON, default=list)  
+    expires_at = Column(DateTime, nullable=True)  
     last_used_at = Column(DateTime, nullable=True)
     last_used_ip = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    # Relationship
+    
     user = relationship("User", backref="api_keys")
 
 
@@ -191,13 +191,13 @@ class UserTwoFactor(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    secret = Column(String, nullable=False)  # TOTP secret (encrypted)
-    is_enabled = Column(Boolean, default=False)  # Only enabled after verification
-    backup_codes = Column(JSON, default=list)  # One-time backup codes (hashed)
+    secret = Column(String, nullable=False)  
+    is_enabled = Column(Boolean, default=False)  
+    backup_codes = Column(JSON, default=list)  
     created_at = Column(DateTime, default=datetime.utcnow)
     verified_at = Column(DateTime, nullable=True)
     
-    # Relationship
+    
     user = relationship("User", backref="two_factor")
 
 
@@ -206,14 +206,14 @@ class LoginHistory(Base):
     __tablename__ = "login_history"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Null for unknown users
-    username = Column(String, nullable=False)  # Store attempted username
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  
+    username = Column(String, nullable=False)  
     success = Column(Boolean, nullable=False)
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
-    failure_reason = Column(String, nullable=True)  # "invalid_password", "2fa_failed", "locked", etc.
-    location = Column(String, nullable=True)  # GeoIP location if available
+    failure_reason = Column(String, nullable=True)  
+    location = Column(String, nullable=True)  
     timestamp = Column(DateTime, default=datetime.utcnow)
     
-    # Relationship
+    
     user = relationship("User", backref="login_history")

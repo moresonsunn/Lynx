@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Test script to verify all Java versions are available and working.
 """
@@ -18,7 +18,7 @@ def test_java_version(java_bin, version_name):
         )
         if result.returncode == 0:
             print(f"✅ {version_name} ({java_bin}): Available")
-            # Extract version info from stderr (Java prints version to stderr)
+            
             version_info = result.stderr.strip().split('\n')[0]
             print(f"   Version: {version_info}")
             return True
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     print("Java Version and AI Monitoring Test")
     print("=" * 50)
     
-    # Test Java versions
+    
     java_success = test_java_versions()
     
     

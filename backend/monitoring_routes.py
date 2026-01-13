@@ -37,10 +37,10 @@ class SystemHealth(BaseModel):
 class AlertRule(BaseModel):
     id: Optional[int]
     name: str
-    server_name: Optional[str]  # None for global rules
-    metric_type: str  # cpu, memory, tps, player_count
+    server_name: Optional[str]  
+    metric_type: str  
     threshold_value: float
-    comparison: str  # greater_than, less_than, equals
+    comparison: str  
     is_active: bool
     created_at: Optional[datetime]
 
@@ -129,7 +129,7 @@ async def get_system_health(
         running_servers = len([s for s in servers if s.get("status") == "running"])
         stopped_servers = total_servers - running_servers
         
-        # Calculate memory usage across all servers
+        
         total_memory_gb = 0.0
         used_memory_gb = 0.0
         cpu_usage_total = 0.0
@@ -150,11 +150,11 @@ async def get_system_health(
                     server_count_with_stats += 1
                     
             except Exception:
-                continue  # Skip servers that can't provide stats
+                continue  
         
         avg_cpu_usage = cpu_usage_total / server_count_with_stats if server_count_with_stats > 0 else 0.0
         
-        # Get system disk usage (simplified)
+        
         import shutil
         try:
             disk_usage = shutil.disk_usage("/")
@@ -170,7 +170,7 @@ async def get_system_health(
             used_memory_gb=round(used_memory_gb, 2),
             cpu_usage_percent=round(avg_cpu_usage, 2),
             disk_usage_percent=round(disk_usage_percent, 2) if disk_usage_percent else None,
-            uptime_hours=None  # Could be implemented with system uptime
+            uptime_hours=None  
         )
         
     except Exception as e:
@@ -187,12 +187,12 @@ async def get_dashboard_data(
     and a small alerts summary. Lightweight and permission-guarded.
     """
     try:
-        # Reuse system health
+        
         health = await get_system_health(current_user=current_user)
 
         dm = get_docker_manager()
         servers = dm.list_servers()
-        # Provide a small set of server fields for the dashboard
+        
         servers_summary = [
             {
                 "id": s.get("id"),
@@ -204,7 +204,7 @@ async def get_dashboard_data(
             for s in servers
         ]
 
-        # Lightweight alerts summary derived from simple heuristics
+        
         total = len(servers_summary)
         running = len([s for s in servers_summary if s.get("status") == "running"])
         stopped = total - running
@@ -239,7 +239,7 @@ async def get_alerts(
         alerts: List[Dict[str, Any]] = []
         alert_id = 1
 
-        # System-level alert: too many servers down
+        
         total = len(servers)
         running = len([s for s in servers if s.get("status") == "running"])
         if total > 0 and running / total < 0.5:
@@ -255,7 +255,7 @@ async def get_alerts(
             })
             alert_id += 1
 
-        # Add a simple healthy summary alert
+        
         if running > 0:
             alerts.append({
                 "id": alert_id,
@@ -392,14 +392,14 @@ async def record_server_metrics(
 ):
     """Record new metrics for a server."""
     try:
-        # Extract key metrics
+        
         tps = str(metrics_data.get("tps", "")) if metrics_data.get("tps") else None
         cpu_usage = str(metrics_data.get("cpu_usage", "")) if metrics_data.get("cpu_usage") else None
         memory_usage = str(metrics_data.get("memory_usage", "")) if metrics_data.get("memory_usage") else None
         memory_total = str(metrics_data.get("memory_total", "")) if metrics_data.get("memory_total") else None
         player_count = int(metrics_data.get("player_count", 0))
         
-        # Store metrics
+        
         performance_record = ServerPerformance(
             server_name=server_name,
             timestamp=datetime.utcnow(),
@@ -487,12 +487,12 @@ async def stream_events(
     (useful for browsers' EventSource which cannot set headers).
     If `container_id` is provided, streams that server's resources; otherwise streams system health summary.
     """
-    # Extract token from Authorization header if present
+    
     auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
     if auth_header and auth_header.lower().startswith("bearer "):
         token = auth_header.split(" ", 1)[1].strip()
 
-    # Validate token -> resolve user
+    
     user: User | None = None
     if token:
         try:
@@ -508,8 +508,8 @@ async def stream_events(
                     user = None
         if user is None:
             try:
-                # Fallback: treat token as session token
-                from user_service import UserService  # local import to avoid circular
+                
+                from user_service import UserService  
                 user_service = UserService(db)
                 user = user_service.get_user_by_session_token(token)
             except Exception:
@@ -518,7 +518,7 @@ async def stream_events(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    # Permission check
+    
     perms = get_user_permissions(user, db)
     role_val = str(getattr(user, "role", "") or "")
     if not (role_val == "admin" or "*" in perms or "system.monitoring.view" in perms):
@@ -556,7 +556,7 @@ async def stream_events(
         except Exception:
             return
 
-    # Return a proper StreamingResponse so EventSource sees correct Content-Type
+    
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @router.delete("/metrics/cleanup")

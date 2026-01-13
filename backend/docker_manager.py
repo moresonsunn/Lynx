@@ -11,14 +11,14 @@ import time
 import logging
 from mcrcon import MCRcon
 
-import requests  # For direct jar download fallback
+import requests  
 
 logger = logging.getLogger(__name__)
 
 MINECRAFT_LABEL = "minecraft_server_manager"
-# CasaOS application id to associate child runtime containers with the main app.
-# IMPORTANT: CasaOS usually assigns its own internal app ID when installing apps.
-# Hardcoding an ID can cause child containers to be shown as "Legacy App" in some CasaOS setups.
+
+
+
 DEFAULT_CASAOS_APP_ID = "lynx"
 _CASAOS_APP_ID_ENV = (os.getenv("CASAOS_APP_ID") or "").strip()
 CASAOS_CATEGORY = os.getenv("CASAOS_CATEGORY", "Games")
@@ -28,8 +28,8 @@ def _is_unified_image_name(image: str | None) -> bool:
     s = (image or "").strip().lower()
     if not s:
         return False
-    # Treat the single DockerHub repo (moresonsun/lynx) as the unified image.
-    # Match both namespaced and local tags, but avoid matching other helper images.
+    
+    
     base = s.split("@", 1)[0]
     repo = base.split(":", 1)[0]
     return repo == "lynx" or repo.endswith("/lynx")
@@ -63,7 +63,7 @@ def _detect_self_container_id() -> str | None:
 
     return None
 
-# Compose grouping detection: try to read the current controller container's labels and networks
+
 def _detect_compose_context() -> tuple[str | None, str | None]:
     try:
         _client = docker.from_env()
@@ -73,16 +73,16 @@ def _detect_compose_context() -> tuple[str | None, str | None]:
         _self = _client.containers.get(_self_id)
         _labels = (_self.attrs.get("Config", {}) or {}).get("Labels", {}) or {}
         compose_project = _labels.get("com.docker.compose.project")
-        # Pick any attached network that looks like a compose default network
+        
         networks = (_self.attrs.get("NetworkSettings", {}) or {}).get("Networks", {}) or {}
         compose_net = None
         if compose_project and networks:
-            # Common default network suffix "_default"
+            
             preferred = f"{compose_project}_default"
             if preferred in networks:
                 compose_net = preferred
             else:
-                # Fallback to the first network name
+                
                 compose_net = next(iter(networks.keys())) if networks else None
         return compose_project, compose_net
     except Exception:
@@ -98,13 +98,13 @@ RUNTIME_IMAGE = f"{_runtime_image}:{_runtime_tag}" if _runtime_image else "mc-ru
 MINECRAFT_PORT = 25565
 DEFAULT_STEAM_PORT_START = 20000
 
-# CasaOS AppManagement (compose apps) integration for Steam servers.
-# When configured, Steam servers can be installed as CasaOS v2 compose apps to avoid the
-# "Legacy-App" section in CasaOS.
+
+
+
 CASAOS_API_BASE = (os.getenv("CASAOS_API_BASE") or "").strip()
 CASAOS_API_TOKEN = (os.getenv("CASAOS_API_TOKEN") or "").strip()
 
-# --- Helper functions for direct jar download fallback ---
+
 
 def download_file(url: str, dest: Path, min_size: int = 1024 * 100, max_retries: int = 3, diagnostics: list | None = None):
     """
@@ -121,11 +121,11 @@ def download_file(url: str, dest: Path, min_size: int = 1024 * 100, max_retries:
                 content_type = r.headers.get("content-type", "").lower()
                 status_code = r.status_code
 
-                # Read the first few bytes to check if it's a valid file
+                
                 first_chunk = next(r.iter_content(chunk_size=8192), b'')
-                r.close()  # Close the first request
+                r.close()  
                 size_header = r.headers.get("content-length")
-                # Record attempt diagnostics
+                
                 if diagnostics is not None:
                     diagnostics.append({
                         "attempt": attempt + 1,
@@ -137,18 +137,18 @@ def download_file(url: str, dest: Path, min_size: int = 1024 * 100, max_retries:
                         "url": url,
                     })
 
-                # Check for valid file signatures
-                is_jar = first_chunk.startswith(b'PK')  # ZIP/JAR signature
-                is_gzip = first_chunk.startswith(b'\x1f\x8b')  # GZIP signature
                 
-                # Only reject if we're sure it's not a valid file
+                is_jar = first_chunk.startswith(b'PK')  
+                is_gzip = first_chunk.startswith(b'\x1f\x8b')  
+                
+                
                 if not is_jar and not is_gzip and ("text/html" in content_type or ("application/json" in content_type and len(first_chunk) > 0 and not first_chunk.startswith(b'{') and not first_chunk.startswith(b'['))): 
                     logger.warning(
                         f"Invalid file type for JAR download: {content_type}. First bytes: {first_chunk[:50]!r}"
                     )
                     raise ValueError(f"Invalid file type for JAR download: {content_type}")
                 
-                # Re-open the request for actual download
+                
                 with requests.get(url, stream=True, timeout=30) as r2:
                     r2.raise_for_status()
                     with open(dest, "wb") as f:
@@ -156,7 +156,7 @@ def download_file(url: str, dest: Path, min_size: int = 1024 * 100, max_retries:
                             if chunk:
                                 f.write(chunk)
             if dest.exists() and dest.stat().st_size >= min_size:
-                # Validate ZIP/JAR magic 'PK\x03\x04'
+                
                 try:
                     with open(dest, "rb") as f:
                         magic = f.read(4)
@@ -164,7 +164,7 @@ def download_file(url: str, dest: Path, min_size: int = 1024 * 100, max_retries:
                         raise ValueError(f"Downloaded file does not appear to be a JAR (missing PK header): {magic!r}")
                 except Exception as magic_err:
                     logger.warning(f"Validation failed for downloaded file {dest}: {magic_err}")
-                    # Remove invalid file and retry
+                    
                     try:
                         dest.unlink()
                     except Exception:
@@ -190,7 +190,7 @@ def download_file(url: str, dest: Path, min_size: int = 1024 * 100, max_retries:
                     "url": url,
                     "success": False,
                 })
-        # Remove incomplete file
+        
         if dest.exists():
             try:
                 dest.unlink()
@@ -210,7 +210,7 @@ def get_paper_download_url(version: str) -> Optional[str]:
     """
     base = "https://api.papermc.io/v2/projects/paper"
     try:
-        # If version is blank, fetch project info and pick latest version
+        
         if not version:
             proj = requests.get(base, timeout=15)
             proj.raise_for_status()
@@ -243,7 +243,7 @@ def get_paper_download_url(version: str) -> Optional[str]:
         return None
 
 def get_purpur_download_url(version: str) -> Optional[str]:
-    # Purpur API: https://api.purpurmc.org/v2/purpur
+    
     try:
         resp = requests.get(f"https://api.purpurmc.org/v2/purpur/{version}", timeout=10)
         resp.raise_for_status()
@@ -266,7 +266,7 @@ def get_fabric_download_url(version: str, loader_version: Optional[str] = None) 
         try:
             from server_providers.fabric import FabricProvider as _FabricProvider
         except Exception:
-            from backend.server_providers.fabric import FabricProvider as _FabricProvider  # type: ignore
+            from backend.server_providers.fabric import FabricProvider as _FabricProvider  
         provider = _FabricProvider()
         if not loader_version:
             loader_version = provider.get_latest_loader_version(version)
@@ -277,25 +277,25 @@ def get_fabric_download_url(version: str, loader_version: Optional[str] = None) 
         return None
 
 def get_forge_download_url(version: str) -> Optional[str]:
-    # Forge: https://files.minecraftforge.net/net/minecraftforge/forge/
-    # Use https://maven.minecraftforge.net/net/minecraftforge/forge/<mc_version>-<forge_version>/forge-<mc_version>-<forge_version>-installer.jar
-    # But for server, we want the universal/server jar, which is not always available via API.
-    # We'll try to get the recommended installer, then extract/unpack it.
-    # For now, fallback to using the installer jar.
+    
+    
+    
+    
+    
     try:
-        # Get latest forge version for this MC version
+        
         resp = requests.get(f"https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json", timeout=10)
         resp.raise_for_status()
         promos = resp.json().get("promos", {})
         key = f"{version}-latest"
         forge_version = promos.get(key)
         if not forge_version:
-            # Try recommended
+            
             key = f"{version}-recommended"
             forge_version = promos.get(key)
         if not forge_version:
             return None
-        # Compose URL
+        
         url = f"https://maven.minecraftforge.net/net/minecraftforge/forge/{version}-{forge_version}/forge-{version}-{forge_version}-installer.jar"
         return url
     except Exception as e:
@@ -303,21 +303,21 @@ def get_forge_download_url(version: str) -> Optional[str]:
         return None
 
 def get_neoforge_download_url(version: str) -> Optional[str]:
-    # NeoForge: https://maven.neoforged.net/releases/net/neoforged/neoforge/
-    # No public API, so we try to guess the latest version
+    
+    
     try:
-        # Try to get the latest version from the maven metadata
+        
         meta_url = f"https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"
         resp = requests.get(meta_url, timeout=10)
         resp.raise_for_status()
-        # Parse XML for latest version for this MC version
+        
         import xml.etree.ElementTree as ET
         root = ET.fromstring(resp.text)
         versions = [v.text for v in root.findall(".//version")]
-        # Find a version that starts with the MC version
+        
         for v in reversed(versions):
             if v.startswith(version):
-                # Compose jar url
+                
                 url = f"https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar"
                 return url
         return None
@@ -332,13 +332,13 @@ def fix_server_jar(server_dir: Path, server_type: str, version: str, loader_vers
     Supports loader_version for Fabric.
     """
     jar_path = server_dir / "server.jar"
-    min_jar_size = 1024 * 100  # 100KB minimum for a valid jar
+    min_jar_size = 1024 * 100  
 
-    # If the jar does not exist or is too small, try to fix it
+    
     if not jar_path.exists() or jar_path.stat().st_size < min_jar_size:
         logger.warning(f"{server_type} server.jar missing or too small in {server_dir}, attempting to re-download.")
 
-        # Remove the bad/corrupt jar if it exists
+        
         if jar_path.exists():
             try:
                 jar_path.unlink()
@@ -361,7 +361,7 @@ def fix_server_jar(server_dir: Path, server_type: str, version: str, loader_vers
             diag: list = []
             success = download_file(url, jar_path, min_size=min_jar_size, diagnostics=diag)
             if not success:
-                # Persist diagnostics in server_meta.json for post-mortem
+                
                 try:
                     meta_path = server_dir / "server_meta.json"
                     meta = {}
@@ -379,14 +379,14 @@ def fix_server_jar(server_dir: Path, server_type: str, version: str, loader_vers
                     pass
                 raise RuntimeError(f"Failed to download a valid {server_type} server.jar for {server_dir} from {url}.")
         else:
-            # Fallback: try to re-prepare the server files using the download_manager
+            
             try:
-                # Try to pass loader_version if possible
+                
                 prepare_server_files(server_type, version, server_dir, loader_version=loader_version)
             except TypeError:
-                # Fallback to old signature
+                
                 prepare_server_files(server_type, version, server_dir)
-            # Check again
+            
             if not jar_path.exists() or jar_path.stat().st_size < min_jar_size:
                 raise RuntimeError(
                     f"Failed to download a valid {server_type} server.jar for {server_dir}. Please check your network or {server_type} version."
@@ -395,11 +395,11 @@ def fix_server_jar(server_dir: Path, server_type: str, version: str, loader_vers
 class DockerManager:
     def __init__(self):
         self.client = self._init_client()
-        # Simple in-memory caches
+        
         self._stats_cache: dict[str, tuple[float, dict]] = {}
         self._cached_casaos_app_id: str | None = None
-        # Optional: run Steam servers on a separate Docker engine (e.g., remote host or DinD)
-        # so they don't show up in CasaOS (which enumerates the host Docker engine).
+        
+        
         self._steam_docker_host: str | None = (os.getenv("STEAM_DOCKER_HOST") or "").strip() or None
         self._steam_client: docker.DockerClient | None = None
 
@@ -456,7 +456,7 @@ class DockerManager:
                     self._cached_casaos_app_id = detected
                     return detected
 
-                # Secondary fallback: some installs might only expose compose metadata
+                
                 compose_project = (labels.get("com.docker.compose.project") or "").strip()
                 if compose_project:
                     self._cached_casaos_app_id = compose_project
@@ -474,7 +474,7 @@ class DockerManager:
             self.client = self._init_client()
             return
         try:
-            # Ping the daemon to confirm the existing client is still valid.
+            
             self.client.ping()
         except Exception:
             try:
@@ -507,7 +507,7 @@ class DockerManager:
         ) from last_exc
 
     def list_servers(self):
-        # Lightweight 2s cache to avoid hammering Docker for dashboard polling.
+        
         now = time.time()
         cache_entry = getattr(self, "_list_cache", None)
         if cache_entry:
@@ -538,7 +538,7 @@ class DockerManager:
                     attrs = c.attrs or {}
                     config = attrs.get("Config", {})
                     network = attrs.get("NetworkSettings", {})
-                    # Extract server type and version from labels if present
+                    
                     labels = (attrs.get("Config", {}) or {}).get("Labels", {}) or {}
                     is_minecraft = str(labels.get(MINECRAFT_LABEL, "")).lower() == "true"
                     is_steam = str(labels.get("steam.server", "")).lower() == "true"
@@ -553,12 +553,12 @@ class DockerManager:
                         server_type = f"steam:{steam_game}" if steam_game else "steam"
                         server_version = labels.get("steam.version")
                     
-                    # Extract actual host port mappings
+                    
                     port_mappings = {}
                     raw_ports = network.get("Ports", {})
                     for container_port, host_bindings in raw_ports.items():
                         if host_bindings and isinstance(host_bindings, list) and len(host_bindings) > 0:
-                            # Take the first IPv4 binding (0.0.0.0)
+                            
                             for binding in host_bindings:
                                 if binding.get("HostIp") == "0.0.0.0":
                                     port_mappings[container_port] = {
@@ -566,7 +566,7 @@ class DockerManager:
                                         "host_ip": binding.get("HostIp")
                                     }
                                     break
-                            # Fallback to first binding if no 0.0.0.0 found
+                            
                             if container_port not in port_mappings:
                                 port_mappings[container_port] = {
                                     "host_port": host_bindings[0].get("HostPort"),
@@ -634,8 +634,8 @@ class DockerManager:
                         "status": getattr(c, "status", "unknown"),
                         "image": config.get("Image"),
                         "labels": labels,
-                        "ports": raw_ports,  # Keep raw ports for backward compatibility
-                        "port_mappings": port_mappings,  # New field with actual host port mappings
+                        "ports": raw_ports,  
+                        "port_mappings": port_mappings,  
                         "mounts": mounts,
                         "server_type": server_type,
                         "server_version": server_version,
@@ -649,7 +649,7 @@ class DockerManager:
                         "host_port": primary_host_port,
                         "created_at": attrs.get("Created"),
                         "engine": engine,
-                        # Shorthand keys for UI convenience
+                        
                         "type": server_type,
                         "version": server_version,
                     })
@@ -732,7 +732,7 @@ class DockerManager:
                 server_version = labels.get("steam.version")
                 loader_version = None
             
-            # Get server stats if container is running
+            
             stats = None
             if container.status == "running":
                 try:
@@ -740,10 +740,10 @@ class DockerManager:
                 except Exception as e:
                     logger.warning(f"Could not get stats for container {container_id}: {e}")
             
-            # Get Java version from environment variables or labels
+            
             env_vars = config.get("Env", [])
-            java_version = "21"  # Default
-            java_bin = "/usr/local/bin/java21"  # Default
+            java_version = "21"  
+            java_bin = "/usr/local/bin/java21"  
             java_opts = ""
             
             for env_var in env_vars:
@@ -752,27 +752,27 @@ class DockerManager:
                 elif env_var.startswith("JAVA_BIN="):
                     java_bin = env_var.split("=", 1)[1]
                 elif env_var.startswith("JAVA_VERSION_OVERRIDE="):
-                    # Prefer explicit override variable when present
+                    
                     java_version = env_var.split("=", 1)[1]
                 elif env_var.startswith("JAVA_BIN_OVERRIDE="):
                     java_bin = env_var.split("=", 1)[1]
                 elif env_var.startswith("JAVA_OPTS="):
                     java_opts = env_var.split("=", 1)[1]
             
-            # Override with label if present
+            
             if "mc.java_version" in labels:
                 java_version = labels["mc.java_version"]
                 java_bin = f"/usr/local/bin/java{java_version}"
             if "mc.env.JAVA_OPTS" in labels:
                 java_opts = labels["mc.env.JAVA_OPTS"]
             
-            # Extract actual host port mappings
+            
             port_mappings = {}
             steam_ports: List[Dict[str, object]] = []
             raw_ports = network.get("Ports", {})
             for container_port, host_bindings in raw_ports.items():
                 if host_bindings and isinstance(host_bindings, list) and len(host_bindings) > 0:
-                    # Take the first IPv4 binding (0.0.0.0)
+                    
                     for binding in host_bindings:
                         if binding.get("HostIp") == "0.0.0.0":
                             port_mappings[container_port] = {
@@ -780,7 +780,7 @@ class DockerManager:
                                 "host_ip": binding.get("HostIp")
                             }
                             break
-                    # Fallback to first binding if no 0.0.0.0 found
+                    
                     if container_port not in port_mappings:
                         port_mappings[container_port] = {
                             "host_port": host_bindings[0].get("HostPort"),
@@ -871,7 +871,7 @@ class DockerManager:
         """
         Returns a dictionary of available server types and their versions.
         """
-        # Fallback implementation: not available due to missing import
+        
         logger.warning("list_available_server_types_and_versions: Not implemented because get_available_server_types_and_versions is not available.")
         return {"error": "Not implemented: get_available_server_types_and_versions is not available."}
 
@@ -894,7 +894,7 @@ class DockerManager:
         if SERVERS_HOST_ROOT:
             host_path = Path(SERVERS_HOST_ROOT) / server_dir.name
             return {str(host_path): {"bind": "/data", "mode": "rw"}}
-        # Mount the entire servers volume to /data/servers, then the container will look for /data/servers/server_name/
+        
         return {SERVERS_VOLUME_NAME: {"bind": "/data/servers", "mode": "rw"}}
 
     def get_used_host_ports(self, only_minecraft: bool = True, *, client: docker.DockerClient | None = None) -> set:
@@ -1015,12 +1015,12 @@ class DockerManager:
                 return preferred
             if not allow_fallback:
                 raise RuntimeError(f"Host port {preferred} is already in use by another container. Free it or choose a different port.")
-        # If preferred given but used (and fallback allowed), start from preferred+1
+        
         scan_start = max(start, (preferred + 1) if preferred else start)
         for p in range(scan_start, end + 1):
             if p not in used:
                 return p
-        # As a fallback, expand a bit beyond end
+        
         for p in range(end + 1, min(end + 1000, 65535)):
             if p not in used:
                 return p
@@ -1031,7 +1031,7 @@ class DockerManager:
         For Fabric servers, ensure that the correct jar file is present and not corrupt.
         If a corrupt or zero-byte server.jar is found, try to re-download or fix it.
         """
-        # Deprecated: replaced by fix_server_jar for all types
+        
         fix_server_jar(server_dir, server_type, version, loader_version=loader_version)
 
     def _get_java_version(self, container) -> Optional[str]:
@@ -1040,7 +1040,7 @@ class DockerManager:
         Returns None if Java is not found or error occurs.
         """
         try:
-            # First check if the container still exists and is running
+            
             container.reload()
             if container.status != "running":
                 logger.warning(f"Container {container.id} is not running (status: {container.status})")
@@ -1049,14 +1049,14 @@ class DockerManager:
             exit_code, output = container.exec_run("java -version", stderr=True, stdout=False)
             if exit_code != 0:
                 return None
-            # java -version outputs to stderr in most cases, so:
-            # we need to grab stderr
+            
+            
             output_bytes = container.exec_run("java -version", stderr=True, stdout=False)[1]
             output_text = output_bytes.decode(errors="ignore")
-            # Example output lines:
-            # openjdk version "17.0.4" 2022-07-19
-            # openjdk version "1.8.0_292"
-            # We extract version numbers using regex:
+            
+            
+            
+            
             match = re.search(r'version "(.*?)"', output_text)
             if match:
                 return match.group(1)
@@ -1084,7 +1084,7 @@ class DockerManager:
         For demonstration, simple rules are implemented.
         """
         try:
-            # Extract major version as int (handle '1.8.0_292' and '17.0.4' style)
+            
             if java_version.startswith("1."):
                 major = int(java_version.split('.')[1])
             else:
@@ -1092,39 +1092,39 @@ class DockerManager:
 
             server_type = server_type.lower()
             if server_type == "fabric":
-                # Assume Fabric 1.19+ requires Java 17+
-                # For demo: if version >= 1.19, require Java 17+
+                
+                
                 if server_version.startswith("1.19") or server_version > "1.18":
                     return major >= 17
-                # Older Fabric can run on Java 8+
+                
                 return major >= 8
 
             elif server_type == "forge":
-                # Forge 1.12 requires Java 8, newer might require Java 17+
+                
                 if server_version.startswith("1.12"):
                     return major >= 8
                 else:
-                    return major >= 17  # newer versions require Java 17
+                    return major >= 17  
 
             elif server_type == "purple":
-                # Just assume Java 17+ for Purple servers
+                
                 return major >= 17
 
             elif server_type == "neoforge":
-                # NeoForge generally requires Java 17+
+                
                 return major >= 17
 
             elif server_type == "paper":
-                # Paper 1.18+ requires Java 17+
+                
                 if server_version.startswith("1.18") or server_version > "1.17":
                     return major >= 17
                 return major >= 8
 
-            # Default allow Java 8+
+            
             return major >= 8
         except Exception as e:
             logger.warning(f"Error checking Java version compatibility: {e}")
-            # On error, assume incompatible
+            
             return False
 
     def create_server(self, name, server_type, version, host_port=None, loader_version=None, min_ram="1G", max_ram="2G", installer_version=None, extra_labels: dict | None = None):
@@ -1136,7 +1136,7 @@ class DockerManager:
         server_dir: Path = SERVERS_ROOT / name
         server_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1) Prepare server files (download jar/installer)
+        
         try:
             prepare_server_files(
                 server_type,
@@ -1146,12 +1146,12 @@ class DockerManager:
                 installer_version=installer_version,
             )
 
-            # For installer-based servers (forge/neoforge), the installer will run in the runtime container
+            
             if server_type.lower() in ("forge", "neoforge"):
                 logger.info(f"Prepared {server_type} installer for {name}")
             else:
                 jar_path = server_dir / "server.jar"
-                if jar_path.exists() and jar_path.stat().st_size >= 1024 * 100:  # At least 100KB
+                if jar_path.exists() and jar_path.stat().st_size >= 1024 * 100:  
                     logger.info(f"Server jar ready at {jar_path}")
                 else:
                     logger.warning("server.jar missing or too small after prepare_server_files; attempting fix_server_jar")
@@ -1159,19 +1159,19 @@ class DockerManager:
         except Exception as e:
             logger.warning(f"prepare_server_files failed: {e}; attempting fix_server_jar where applicable")
             if server_type.lower() not in ("forge", "neoforge"):
-                # Only non-installer types can be fixed with a direct jar download
+                
                 fix_server_jar(server_dir, server_type, version, loader_version=loader_version)
             else:
-                # For installer-based servers, we cannot recover here
+                
                 raise
 
-        # 2) Ensure EULA is accepted
+        
         try:
             (server_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
         except Exception:
             pass
 
-        # 3) Configure port binding (choose available host port if not provided)
+        
         selected_host_port: int | None = None
         try:
             if host_port is not None:
@@ -1179,11 +1179,11 @@ class DockerManager:
             else:
                 selected_host_port = self.pick_available_port(start=MINECRAFT_PORT, end=25999)
         except Exception:
-            # Fallback to docker-assigned ephemeral mapping
+            
             selected_host_port = None
         port_binding = {f"{MINECRAFT_PORT}/tcp": selected_host_port}
 
-        # 4) Environment variables for runtime
+        
         env_vars = {
             "SERVER_DIR_NAME": name,
             "MIN_RAM": min_ram,
@@ -1192,7 +1192,7 @@ class DockerManager:
             "SERVER_TYPE": server_type,
             "SERVER_VERSION": version,
         }
-        # If a jar exists now, expose it so the runtime can prefer it
+        
         try:
             preferred_names = ["server.jar", "fabric-server-launch.jar"] if server_type.lower() == "fabric" else ["server.jar"]
             for fname in preferred_names:
@@ -1205,16 +1205,16 @@ class DockerManager:
 
         casaos_app_id = self._resolve_casaos_app_id()
 
-        # 5) Labels for metadata
+        
         labels = {
             MINECRAFT_LABEL: "true",
             "mc.type": server_type,
             "mc.version": version,
-            # Compose-equivalent grouping for UIs that rely on compose metadata
+            
             "com.docker.compose.project": COMPOSE_PROJECT,
             "com.docker.compose.service": COMPOSE_RUNTIME_SERVICE,
             "com.docker.compose.version": "2",
-            # CasaOS grouping to avoid Legacy App classification
+            
             "io.casaos.app": casaos_app_id,
             "io.casaos.parent": casaos_app_id,
             "io.casaos.managed": "true",
@@ -1226,7 +1226,7 @@ class DockerManager:
             "name": name,
             "custom_id": f"{casaos_app_id}-{name}",
             "protocol": "tcp",
-            # Optional: generic metadata that some dashboards honor
+            
             "org.opencontainers.image.title": "Lynx Runtime",
             "org.opencontainers.image.description": "Minecraft server runtime container managed by Lynx",
         }
@@ -1242,30 +1242,30 @@ class DockerManager:
         else:
             labels.setdefault("web", "")
 
-        # 6) Memory limits
+        
         def ram_to_bytes(ram_str):
             if isinstance(ram_str, int):
-                return ram_str * 1024 * 1024  # Assume MB
+                return ram_str * 1024 * 1024  
             s = str(ram_str).strip().upper()
             if s.endswith('G'):
                 return int(s[:-1]) * 1024 * 1024 * 1024
             elif s.endswith('M'):
                 return int(s[:-1]) * 1024 * 1024
             else:
-                # Interpret as MB
+                
                 return int(s) * 1024 * 1024
 
         memory_limit = ram_to_bytes(max_ram)
 
-        # 7) Create the container
-        # 7) Create the container (retry on host port conflicts)
+        
+        
         max_retries = 10
         attempt = 0
         last_err: Exception | None = None
         while attempt < max_retries:
             try:
-                # If we are using the unified image (which has a default CMD that starts uvicorn),
-                # override the entrypoint so the container runs the runtime script instead.
+                
+                
                 run_kwargs = {}
                 if (
                     os.getenv("LYNX_UNIFIED_IMAGE")
@@ -1274,7 +1274,7 @@ class DockerManager:
                     or _is_unified_image_name(os.getenv("LYNX_RUNTIME_IMAGE", ""))
                     or _is_unified_image_name(os.getenv("BLOCKPANEL_RUNTIME_IMAGE", ""))
                 ):
-                    # Only set entrypoint if the script exists in the image; if missing, let it fail visibly.
+                    
                     run_kwargs["entrypoint"] = ["/usr/local/bin/runtime-entrypoint.sh"]
                 container = self.client.containers.run(
                     RUNTIME_IMAGE,
@@ -1295,7 +1295,7 @@ class DockerManager:
                 break
             except docker.errors.APIError as e:
                 msg = str(e).lower()
-                # Retry if port is already allocated; pick next available and retry
+                
                 if "port is already allocated" in msg or "address already in use" in msg:
                     attempt += 1
                     try:
@@ -1319,7 +1319,7 @@ class DockerManager:
             logger.error(f"Failed to create container for server {name}: {last_err}")
             raise RuntimeError(f"Failed to create Docker container for server {name}: {last_err}")
 
-        # 8) Optional: check Java version compatibility
+        
         java_version = self._get_java_version(container)
         if java_version is None:
             logger.warning(
@@ -1344,7 +1344,7 @@ class DockerManager:
         if not server_dir.exists() or not server_dir.is_dir():
             raise RuntimeError(f"Server directory {server_dir} does not exist")
 
-        # Choose available host port for existing server if not provided
+        
         try:
             if host_port is not None:
                 selected_host_port = self.pick_available_port(preferred=int(host_port), start=MINECRAFT_PORT, end=25999, allow_fallback=False)
@@ -1358,8 +1358,8 @@ class DockerManager:
             "SERVER_DIR_NAME": name,
             "MIN_RAM": min_ram,
             "MAX_RAM": max_ram,
-            # Keep the runtime container's Minecraft port stable.
-            # The entrypoint will normalize server.properties to this value.
+            
+            
             "SERVER_PORT": str(MINECRAFT_PORT),
         }
         if extra_env:
@@ -1381,7 +1381,7 @@ class DockerManager:
             ):
                 run_kwargs["entrypoint"] = ["/usr/local/bin/runtime-entrypoint.sh"]
 
-            # Load existing metadata (if any) and merge extra_env to build env_overrides
+            
             meta_path = SERVERS_ROOT / name / "server_meta.json"
             meta = {}
             if meta_path.exists():
@@ -1479,11 +1479,11 @@ class DockerManager:
             labels = {
                 MINECRAFT_LABEL: "true",
                 "mc.type": resolved_label_type,
-                # Group with controller using compose-style labels only
+                
                 "com.docker.compose.project": COMPOSE_PROJECT,
                 "com.docker.compose.service": COMPOSE_RUNTIME_SERVICE,
                 "com.docker.compose.version": "2",
-                # CasaOS grouping to avoid Legacy App classification
+                
                 "io.casaos.app": casaos_app_id,
                 "io.casaos.parent": casaos_app_id,
                 "io.casaos.managed": "true",
@@ -1514,7 +1514,7 @@ class DockerManager:
             else:
                 labels.setdefault("web", "")
 
-            # Determine numeric RAM values if provided (best-effort parsing)
+            
             def _parse_mb(s):
                 try:
                     if isinstance(s, str) and re.search(r"\d", s):
@@ -1526,10 +1526,10 @@ class DockerManager:
             min_mb = _parse_mb(min_ram) or meta.get("min_ram_mb")
             max_mb = _parse_mb(max_ram) or meta.get("max_ram_mb")
 
-            # Compute top-level java_version
+            
             java_ver = merged_env.get("JAVA_VERSION_OVERRIDE") or merged_env.get("JAVA_VERSION") or meta.get("java_version")
 
-            # Attempt an auto-repair of a missing/corrupt server.jar when we have enough context
+            
             try:
                 jar_path = server_dir / "server.jar"
                 min_jar_size = 1024 * 100
@@ -1544,13 +1544,13 @@ class DockerManager:
             except Exception as auto_rep_err:
                 logger.warning(f"Auto-repair check failed for {name}: {auto_rep_err}")
 
-            # Persist merged metadata so UI/LocalAdapter can read it immediately
+            
             new_meta = dict(meta or {})
-            # Set creation timestamp if not already present
+            
             if "created_ts" not in new_meta:
                 import time, datetime
                 now_ts = int(time.time())
-                new_meta["created_ts"] = now_ts  # seconds since epoch
+                new_meta["created_ts"] = now_ts  
                 try:
                     new_meta["created_iso"] = datetime.datetime.utcfromtimestamp(now_ts).isoformat() + "Z"
                 except Exception:
@@ -1591,7 +1591,7 @@ class DockerManager:
             except Exception:
                 pass
 
-            # Reflect java override in container labels for quick discovery
+            
             try:
                 if merged_env:
                     jver = merged_env.get("JAVA_VERSION_OVERRIDE") or merged_env.get("JAVA_VERSION")
@@ -1617,10 +1617,10 @@ class DockerManager:
             )
             logger.info(f"Container {container.id} created from existing dir for server {name}")
             try:
-                # Augment meta with container creation time if available
+                
                 c_created = getattr(container, 'attrs', {}).get('Created') if hasattr(container, 'attrs') else None
                 if c_created:
-                    # Store raw string for debugging and parsed epoch
+                    
                     new_meta = json.loads((SERVERS_ROOT / name / 'server_meta.json').read_text(encoding='utf-8'))
                     new_meta.setdefault('container_created_raw', c_created)
                     from datetime import datetime, timezone
@@ -1662,19 +1662,19 @@ class DockerManager:
         """
         self._ensure_client()
 
-        # Prefer a dedicated Docker engine for Steam when configured.
-        # This allows hiding Steam containers from CasaOS by not creating them
-        # on the host Docker engine CasaOS enumerates.
+        
+        
+        
         client = self._get_steam_client() or self.client
 
-        # Resolve host port bindings (deterministic; never ask Docker for ephemeral ports)
-        # IMPORTANT: Many Steam dedicated servers require related/consecutive ports.
-        # Bind ports as a single block (preserving offsets from the first port) so choosing a
-        # custom host port doesn't break the rest of the required ports.
+        
+        
+        
+        
         port_binding: dict[str, int] = {}
         used_by_proto = self._get_used_host_ports_by_protocol(only_minecraft=False, client=client)
-        # If Steam runs on a different engine but still binds ports on the same host network
-        # (e.g., Docker-in-Docker with network_mode: host), also avoid collisions with host-engine ports.
+        
+        
         if client is not self.client:
             try:
                 host_used = self._get_used_host_ports_by_protocol(only_minecraft=False, client=self.client)
@@ -1707,8 +1707,8 @@ class DockerManager:
                 logger.warning(f"Failed to parse Steam port config {p}: {e}")
                 raise
 
-        # If someone supplied explicit host ports for multiple entries (not just the primary),
-        # keep the older per-port behavior to respect those overrides.
+        
+        
         explicit_host_count = sum(1 for item in normalized_ports if (item.get("preferred") or 0) > 0)
         has_non_primary_explicit = any(
             (item.get("preferred") or 0) > 0 and idx != 0 for idx, item in enumerate(normalized_ports)
@@ -1735,7 +1735,7 @@ class DockerManager:
                 host_val = _bind_single_port(cport, proto, (preferred if preferred and preferred > 0 else cport), allow_fallback=allow_fallback)
                 port_binding[f"{cport}/{proto}"] = host_val
         else:
-            # Block allocation: preserve offsets from the primary port.
+            
             base_cport = int(normalized_ports[0]["cport"]) if normalized_ports else 0
             requested_base = normalized_ports[0].get("preferred")
             strict_base = bool(requested_base and int(requested_base) > 0)
@@ -1774,7 +1774,7 @@ class DockerManager:
                         f"Requested host port {chosen_base} cannot be used for '{name}' (conflicts: {', '.join(conflicts)})."
                     )
             else:
-                # Find the next base where the whole block fits.
+                
                 start_base = max(chosen_base, candidate_min)
                 b = start_base
                 while b <= candidate_max and not _block_is_free(b):
@@ -1796,9 +1796,9 @@ class DockerManager:
             "steam.name": name,
             "origin": "lynx",
         }
-        # CasaOS: group Steam child containers under the Lynx app so they don't
-        # appear as standalone "Legacy Apps". Keep this minimal (no web/custom_id/name)
-        # to avoid creating app tiles.
+        
+        
+        
         try:
             if casaos_app_id:
                 labels.update(
@@ -1815,8 +1815,8 @@ class DockerManager:
             pass
         if first_protocol:
             labels["protocol"] = first_protocol
-        # Intentionally omit CasaOS-facing "web" metadata; this helps avoid the container
-        # being surfaced as a first-class CasaOS app tile.
+        
+        
 
         if extra_labels:
             for label_key, label_value in extra_labels.items():
@@ -1852,7 +1852,7 @@ class DockerManager:
             **run_kwargs,
         )
 
-        # Refresh the container to gather dynamically assigned host ports.
+        
         try:
             container.reload()
         except Exception:
@@ -1880,7 +1880,7 @@ class DockerManager:
         except Exception as inspect_err:
             logger.warning(f"Failed to inspect assigned ports for {name}: {inspect_err}")
 
-        # Do not update container labels with resolved ports; Lynx reads ports directly.
+        
 
         return {
             "id": container.id,
@@ -2083,10 +2083,10 @@ class DockerManager:
         if token_stripped and not token_stripped.lower().startswith("bearer "):
             auth_values.append(f"Bearer {token_stripped}")
 
-        # Compute port bindings.
+        
         port_binding = self._resolve_steam_port_binding(ports)
 
-        # Compose ports list.
+        
         compose_ports: list[str] = []
         first_host_port: str | None = None
         first_protocol: str | None = None
@@ -2100,7 +2100,7 @@ class DockerManager:
 
         casaos_app_id = self._resolve_casaos_app_id()
 
-        # Labels for Lynx discovery.
+        
         labels = {
             "steam.server": "true",
             "steam.name": name,
@@ -2118,18 +2118,18 @@ class DockerManager:
                 except Exception:
                     pass
 
-        # Volumes.
+        
         compose_volumes: list[str] = []
         if volume and volume.get("host") and volume.get("container"):
             host_path = str(volume["host"])
             container_path = str(volume["container"])
-            # Default to rw.
+            
             compose_volumes.append(f"{host_path}:{container_path}:rw")
 
-        # Environment.
+        
         env_map = {str(k): str(v) for k, v in (env or {}).items() if v is not None}
 
-        # Compose app id / project name. Keep it deterministic and CasaOS-friendly.
+        
         def _slugify(raw: str) -> str:
             raw = (raw or "").strip().lower()
             out = []
@@ -2146,8 +2146,8 @@ class DockerManager:
         app_id = _slugify(f"steam-{name}")
         service_name = "server"
 
-        # Minimal Compose YAML with x-casaos.
-        # Use YAML-friendly indentation and avoid external deps.
+        
+        
         yaml_lines: list[str] = []
         yaml_lines.append(f"name: {app_id}")
         yaml_lines.append("x-casaos:")
@@ -2169,7 +2169,7 @@ class DockerManager:
         if env_map:
             yaml_lines.append("    environment:")
             for k, v in env_map.items():
-                # Quote values to avoid YAML parsing surprises.
+                
                 vv = v.replace('"', '\\"')
                 yaml_lines.append(f"      {k}: \"{vv}\"")
         if compose_volumes:
@@ -2188,8 +2188,8 @@ class DockerManager:
 
         compose_yaml = "\n".join(yaml_lines) + "\n"
 
-        # Install the compose app.
-        # CasaOS AppManagement v2 expects raw compose YAML in the request body.
+        
+        
         url = f"{base}/compose?check_port_conflict=true"
         resp = None
         last_exc: Exception | None = None
@@ -2216,7 +2216,7 @@ class DockerManager:
                 f"Response: {body[:2000]}"
             )
 
-        # Best-effort: wait briefly for the container to appear.
+        
         self._ensure_client()
         container = None
         deadline = time.time() + 10
@@ -2269,17 +2269,17 @@ class DockerManager:
         server_name = container.name
         try:
             container.start()
-            # Briefly wait and refresh status
+            
             time.sleep(0.5)
             container.reload()
-            # Send notification if enabled
+            
             try:
                 from settings_routes import send_notification
                 send_notification(
                     "server_start",
                     f"🟢 Server Started: {server_name}",
                     f"Server **{server_name}** has been started successfully.",
-                    color=3066993  # Green
+                    color=3066993  
                 )
             except Exception:
                 pass
@@ -2308,30 +2308,30 @@ class DockerManager:
         except Exception as e:
             logger.warning(f"Failed to send graceful stop to {container_id}: {e}")
 
-        # Wait for graceful shutdown
+        
         deadline = time.time() + max(1, int(timeout))
         while time.time() < deadline:
             try:
                 container.reload()
                 if container.status != "running":
-                    # Send notification if enabled
+                    
                     try:
                         from settings_routes import send_notification
                         send_notification(
                             "server_stop",
                             f"🔴 Server Stopped: {server_name}",
                             f"Server **{server_name}** has been stopped.",
-                            color=15158332  # Red
+                            color=15158332  
                         )
                     except Exception:
                         pass
                     return {"id": container.id, "status": container.status, "method": method_used or "graceful"}
             except Exception:
-                # If reload fails, assume it may be stopping; keep waiting a bit
+                
                 pass
             time.sleep(1)
 
-        # Fallback to Docker stop/kill
+        
         try:
             if force:
                 container.kill()
@@ -2345,14 +2345,14 @@ class DockerManager:
         except Exception:
             pass
         
-        # Send notification for forced stop
+        
         try:
             from settings_routes import send_notification
             send_notification(
                 "server_stop",
                 f"🔴 Server Stopped: {server_name}",
                 f"Server **{server_name}** has been stopped (forced).",
-                color=15158332  # Red
+                color=15158332  
             )
         except Exception:
             pass
@@ -2365,7 +2365,7 @@ class DockerManager:
             self.stop_server(container_id, timeout=stop_timeout, force=False)
         except Exception as e:
             logger.warning(f"Graceful stop failed during restart for {container_id}: {e}")
-        # Start again
+        
         return self.start_server(container_id)
 
     def kill_server(self, container_id):
@@ -2382,7 +2382,7 @@ class DockerManager:
         container_removed = False
         remove_error = None
         
-        # Remove container first
+        
         try:
             container = self._get_container_any(container_id)
             try:
@@ -2390,7 +2390,7 @@ class DockerManager:
             except Exception:
                 pass
             try:
-                # Stop the container first if it's running
+                
                 try:
                     if container.status in ('running', 'restarting'):
                         container.stop(timeout=10)
@@ -2402,24 +2402,24 @@ class DockerManager:
                 remove_error = str(rm_err)
                 logger.error(f"Failed to remove container {container_id}: {rm_err}")
         except docker.errors.NotFound:
-            # Container doesn't exist, that's okay - just remove directory
+            
             container_removed = True
             logger.info(f"Container {container_id} not found, will just remove directory")
         except Exception as e:
             remove_error = str(e)
             logger.error(f"Error finding container {container_id}: {e}")
             
-        # Invalidate the list cache immediately
+        
         self._list_cache = None
         
-        # Remove directory (prefer using name)
+        
         removed_dir = False
         try:
             server_dir = SERVERS_ROOT / name_hint
             target_removed = False
             if server_dir.exists():
                 import shutil
-                # Handle symlinked Steam directories without wiping shared targets unexpectedly
+                
                 if server_dir.is_symlink():
                     try:
                         target = server_dir.resolve()
@@ -2434,7 +2434,7 @@ class DockerManager:
                     shutil.rmtree(server_dir, ignore_errors=True)
                     target_removed = not server_dir.exists()
             if not target_removed:
-                # Fallback: if name_hint was an ID but directory uses container name, try to list possible match
+                
                 alt_dir = SERVERS_ROOT / str(container_id)
                 if alt_dir.exists():
                     import shutil
@@ -2484,14 +2484,14 @@ class DockerManager:
             min_ram = env_map.get("MIN_RAM", "1G")
             max_ram = env_map.get("MAX_RAM", "2G")
 
-            # Detect host port for 25565/tcp
+            
             host_port = None
             ports = (attrs.get("NetworkSettings", {}) or {}).get("Ports", {}) or {}
             mapping = ports.get(f"{MINECRAFT_PORT}/tcp")
             if mapping and isinstance(mapping, list) and len(mapping) > 0:
                 host_port = int(mapping[0].get("HostPort")) if mapping[0].get("HostPort") else None
 
-            # Stop and remove existing
+            
             try:
                 container.stop(timeout=5)
             except Exception:
@@ -2501,7 +2501,7 @@ class DockerManager:
             except Exception:
                 pass
 
-            # Recreate with overrides
+            
             extra_env = env_overrides or {}
             return self.create_server_from_existing(name=name, host_port=host_port, min_ram=min_ram, max_ram=max_ram, extra_env=extra_env)
         except docker.errors.NotFound:
@@ -2526,7 +2526,7 @@ class DockerManager:
         if new_dir.exists():
             raise RuntimeError(f"Target server directory {new_dir} already exists")
 
-        # Extract metadata
+        
         meta_path = old_dir / "server_meta.json"
         meta = {}
         if meta_path.exists():
@@ -2540,7 +2540,7 @@ class DockerManager:
         if not isinstance(env_overrides, dict):
             env_overrides = {}
 
-        # Try to capture host port from existing container
+        
         host_port: int | None = None
         container = None
         try:
@@ -2569,10 +2569,10 @@ class DockerManager:
             except Exception:
                 pass
 
-        # Rename directory
+        
         old_dir.rename(new_dir)
 
-        # Update metadata name/history
+        
         try:
             new_meta = dict(meta or {})
             prev = new_meta.get("previous_names") or []
@@ -2585,7 +2585,7 @@ class DockerManager:
         except Exception:
             pass
 
-        # Recreate container with preserved settings
+        
         result = self.create_server_from_existing(
             name=new_name,
             host_port=host_port,
@@ -2608,14 +2608,14 @@ class DockerManager:
         container = self._get_container_any(container_id)
 
         try:
-            # --- 1️⃣ RCON versuchen ---
+            
             env_vars = container.attrs.get("Config", {}).get("Env", [])
             env_dict = dict(var.split("=", 1) for var in env_vars if "=" in var)
 
             rcon_enabled = env_dict.get("ENABLE_RCON", "false").lower() == "true"
             rcon_password = env_dict.get("RCON_PASSWORD", "")
 
-            # Host & Port aus Port-Mapping ermitteln
+            
             network_settings = container.attrs.get("NetworkSettings", {}).get("Ports", {})
             rcon_port = None
             rcon_host = "localhost"
@@ -2623,7 +2623,7 @@ class DockerManager:
                 if port.endswith("/tcp") and mappings:
                     for mapping in mappings:
                         if "HostPort" in mapping and mapping["HostPort"].isdigit():
-                            # RCON-Standardport oder ENV-Match
+                            
                             if port.startswith("25575") or str(env_dict.get("RCON_PORT", "25575")) in port:
                                 rcon_port = int(mapping["HostPort"])
 
@@ -2635,7 +2635,7 @@ class DockerManager:
                 except Exception as rcon_err:
                     logger.warning(f"RCON fehlgeschlagen für Container {container_id}: {rcon_err}")
 
-            # --- 2️⃣ attach_socket versuchen ---
+            
             try:
                 sock = container.attach_socket(params={
                     "stdin": True,
@@ -2645,7 +2645,7 @@ class DockerManager:
                 })
                 sock._sock.setblocking(True)
 
-                # In der Konsole von MC kein "/" nötig
+                
                 cmd_with_newline = command.lstrip("/").strip() + "\n"
                 sock._sock.send(cmd_with_newline.encode("utf-8"))
 
@@ -2660,7 +2660,7 @@ class DockerManager:
             except Exception as attach_err:
                 logger.warning(f"attach_socket fehlgeschlagen für Container {container_id}: {attach_err}")
 
-            # --- 3️⃣ STDIN-Fallback ---
+            
             safe_command = command.rstrip('\n') + '\n'
             exec_cmd = [
                 "sh", "-c",
@@ -2670,7 +2670,7 @@ class DockerManager:
             if exit_code == 0:
                 return {"exit_code": exit_code, "output": f"Command sent via stdin: {command}", "method": "stdin"}
 
-            # --- 4️⃣ Java-PID-Fallback ---
+            
             exec_cmd_find_java = [
                 "sh", "-c",
                 "ps -eo pid,comm | grep java | awk '{print $1}' | head -n 1"
@@ -2705,7 +2705,7 @@ class DockerManager:
             attrs = container.attrs or {}
             state = attrs.get("State", {})
             
-            # Extract uptime and restart info
+            
             started_at = state.get("StartedAt", "")
             finished_at = state.get("FinishedAt", "")
             restart_count = attrs.get("RestartCount", 0)
@@ -2713,15 +2713,15 @@ class DockerManager:
             if "Health" in state:
                 health_status = state["Health"].get("Status", "unknown")
             
-            # Calculate uptime in seconds
+            
             uptime_seconds = 0
             if container.status == "running" and started_at:
                 try:
                     from datetime import datetime, timezone
-                    # Docker timestamps are in ISO format with optional microseconds
+                    
                     started_str = started_at.replace("Z", "+00:00")
                     if "." in started_str:
-                        # Truncate microseconds to 6 digits if longer
+                        
                         parts = started_str.split(".")
                         fraction_and_tz = parts[1]
                         if "+" in fraction_and_tz:
@@ -2754,7 +2754,7 @@ class DockerManager:
                     "started_at": started_at,
                     "finished_at": finished_at,
                 }
-            # Single-sample CPU calculation using precpu_stats to avoid delay
+            
             stats_now = container.stats(stream=False)
             cpu_stats = stats_now.get("cpu_stats", {}) or {}
             precpu_stats = stats_now.get("precpu_stats", {}) or {}
@@ -2772,9 +2772,9 @@ class DockerManager:
             if system_delta > 0 and cpu_delta > 0:
                 cpu_percent = (cpu_delta / system_delta) * online_cpus * 100.0
 
-            # RAM calculation
+            
             mem_usage = stats_now["memory_stats"].get("usage", 0)
-            # Remove cache from memory usage if present (for more accurate "used" memory)
+            
             if "stats" in stats_now["memory_stats"] and "cache" in stats_now["memory_stats"]["stats"]:
                 mem_usage -= stats_now["memory_stats"]["stats"]["cache"]
             mem_limit = stats_now["memory_stats"].get("limit", 1)
@@ -2782,7 +2782,7 @@ class DockerManager:
             mem_usage_mb = mem_usage / (1024 * 1024)
             mem_limit_mb = mem_limit / (1024 * 1024)
 
-            # Network calculation
+            
             net_stats = stats_now.get("networks", {})
             rx_bytes = sum(net.get("rx_bytes", 0) for net in net_stats.values())
             tx_bytes = sum(net.get("tx_bytes", 0) for net in net_stats.values())
@@ -2873,7 +2873,7 @@ class DockerManager:
 
             network_settings = container.attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
 
-            # --- 1️⃣ Try mcstatus JavaServer.status on mapped Minecraft port (non-intrusive) ---
+            
             try:
                 primary = network_settings.get("25565/tcp") if isinstance(network_settings, dict) else None
                 host_port = None
@@ -2911,7 +2911,7 @@ class DockerManager:
             except Exception as mc_err:
                 logger.debug(f"mcstatus failed for {container_id}: {mc_err}")
 
-            # --- 2️⃣ Try RCON if enabled ---
+            
             try:
                 from mcrcon import MCRcon
 
@@ -2952,9 +2952,9 @@ class DockerManager:
             except Exception as rcon_err:
                 logger.debug(f"RCON list failed for {container_id}: {rcon_err}")
 
-            # --- 3️⃣ Try non-RCON console methods (attach_socket / stdin) for a 'list' command ---
+            
             try:
-                # attach_socket attempt
+                
                 try:
                     sock = container.attach_socket(params={
                         "stdin": True,
@@ -2989,7 +2989,7 @@ class DockerManager:
                 except Exception:
                     pass
 
-                # stdin fallback
+                
                 try:
                     safe_command = "list\n"
                     exec_cmd = ["sh", "-c", f'echo {shlex.quote(safe_command)} > /proc/1/fd/0']
@@ -3001,7 +3001,7 @@ class DockerManager:
             except Exception:
                 pass
 
-            # --- 4️⃣ If nothing worked, return none/empty ---
+            
             return {"online": 0, "max": 0, "names": [], "method": "none"}
         except Exception as e:
             logger.warning(f"Failed to get player info for container {container_id}: {e}")
@@ -3030,16 +3030,16 @@ class DockerManager:
         try:
             container = self.client.containers.get(container_id)
             
-            # Validate Java version
+            
             if java_version not in ["8", "11", "17", "21"]:
                 raise ValueError(f"Invalid Java version: {java_version}. Must be 8, 11, 17, or 21")
             
-            # Get current container info
+            
             attrs = container.attrs or {}
             config = attrs.get("Config", {})
             env_vars = config.get("Env", [])
             
-            # Update environment variables
+            
             new_env_vars = []
             java_version_updated = False
             java_bin_updated = False
@@ -3054,13 +3054,13 @@ class DockerManager:
                 else:
                     new_env_vars.append(env_var)
             
-            # Add new environment variables if they didn't exist
+            
             if not java_version_updated:
                 new_env_vars.append(f"JAVA_VERSION={java_version}")
             if not java_bin_updated:
                 new_env_vars.append(f"JAVA_BIN=/usr/local/bin/java{java_version}")
             
-            # Update container labels (keep labels up-to-date)
+            
             current_labels = (container.attrs.get("Config", {}) or {}).get("Labels", {}) or {}
             current_labels["mc.java_version"] = java_version
             current_labels["mc.java_bin"] = f"/usr/local/bin/java{java_version}"
@@ -3070,16 +3070,16 @@ class DockerManager:
             try:
                 container.update(labels=current_labels)
             except Exception:
-                # Non-fatal: continue to recreate below
+                
                 pass
 
-            # Now recreate the container with the updated environment so the change actually takes effect
+            
             try:
                 env_overrides = {
-                    # Override-style names expected by runtime-entrypoint
+                    
                     "JAVA_VERSION_OVERRIDE": java_version,
                     "JAVA_BIN_OVERRIDE": f"/usr/local/bin/java{java_version}",
-                    # Also include legacy names for backward compatibility
+                    
                     "JAVA_VERSION": java_version,
                     "JAVA_BIN": f"/usr/local/bin/java{java_version}",
                 }
@@ -3121,7 +3121,7 @@ class DockerManager:
             if len(normalized) > 4096:
                 raise ValueError("java_args too long (max 4096 characters when normalized)")
 
-            # Load and update metadata env_overrides
+            
             meta_path = SERVERS_ROOT / server_name / "server_meta.json"
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}") if meta_path.exists() else {}
@@ -3144,7 +3144,7 @@ class DockerManager:
             except Exception:
                 pass
 
-            # Update labels to reflect the new value (best effort)
+            
             current_labels = (container.attrs.get("Config", {}) or {}).get("Labels", {}) or {}
             if normalized:
                 current_labels["mc.env.JAVA_OPTS"] = normalized
@@ -3155,7 +3155,7 @@ class DockerManager:
             except Exception:
                 pass
 
-            # Recreate container with updated env overrides so runtime-entrypoint sees the change
+            
             recreate_result = self.recreate_server_with_env(container_id, env_overrides=merged or None)
             return {
                 "success": True,

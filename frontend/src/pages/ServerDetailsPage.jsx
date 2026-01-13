@@ -19,7 +19,7 @@ import {
   FaTerminal,
 } from 'react-icons/fa';
 
-// Import subpanels
+
 import TerminalPanel from '../components/TerminalPanel';
 import BackupsPanel from '../components/server-details/BackupsPanel';
 import ConfigPanel from '../components/server-details/ConfigPanel';
@@ -29,13 +29,13 @@ import PlayersPanel from '../components/server-details/PlayersPanel';
 import FilesPanelWrapper from '../components/server-details/FilesPanelWrapper';
 import EditingPanel from '../components/server-details/EditingPanel';
 
-// Server stats hook
+
 function useServerStats(serverId) {
   const globalData = useGlobalData();
   return globalData.serverStats[serverId] || null;
 }
 
-// Format uptime helper
+
 function formatUptime(seconds) {
   if (!seconds || seconds < 0) return '0s';
   const days = Math.floor(seconds / 86400);
@@ -54,7 +54,7 @@ export default function ServerDetailsPage() {
   const { t } = useTranslation();
   const globalData = useGlobalData();
   
-  // Find server from global data
+  
   const server = useMemo(() => {
     return globalData.servers.find(s => s.id === serverId) || null;
   }, [globalData.servers, serverId]);
@@ -69,12 +69,12 @@ export default function ServerDetailsPage() {
 
   const stats = useServerStats(serverId);
 
-  // Sync tab from URL
+  
   useEffect(() => {
     setActiveTab(urlTab);
   }, [urlTab]);
 
-  // Update URL when tab changes
+  
   const handleTabChange = useCallback((newTab) => {
     setActiveTab(newTab);
     navigate(`/servers/${serverId}/${newTab}`, { replace: true });
@@ -90,7 +90,7 @@ export default function ServerDetailsPage() {
       .join(' ');
   }, []);
 
-  // Server info
+  
   const preloadedInfo = globalData.serverInfoById?.[serverId] || null;
   const { data: fetchedInfo } = useFetch(
     !preloadedInfo && serverId ? `${API}/servers/${serverId}/info` : null,
@@ -100,7 +100,7 @@ export default function ServerDetailsPage() {
   const runtimeKind = (typeVersionData?.server_kind || server?.server_kind || '').toLowerCase();
   const isSteam = runtimeKind === 'steam';
 
-  // Tabs configuration
+  
   const tabs = useMemo(() => {
     const base = [
       { id: 'overview', label: t('tabs.overview'), icon: FaServer },
@@ -119,7 +119,7 @@ export default function ServerDetailsPage() {
     return base;
   }, [isSteam, t]);
 
-  // Server actions
+  
   const handleAction = useCallback(async (action) => {
     if (!serverId || actionLoading) return;
     setActionLoading(action);
@@ -133,11 +133,11 @@ export default function ServerDetailsPage() {
         const d = await r.json().catch(() => ({}));
         throw new Error(d.detail || `Action failed: ${r.status}`);
       }
-      // Refresh servers list
+      
       if (globalData.__refreshServers) {
         globalData.__refreshServers();
       }
-      // Optimistic update
+      
       if (globalData.__updateServerStatus) {
         const statusMap = { start: 'running', stop: 'stopped', restart: 'running' };
         if (statusMap[action]) {
@@ -185,7 +185,7 @@ export default function ServerDetailsPage() {
     setFilesEditing(true);
   }, []);
 
-  // Loading state
+  
   if (!server) {
     return (
       <div className="p-6">

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 AI-Powered Error Detection and Auto-Fix System for Minecraft Server Manager
 Monitors logs, detects issues, and automatically resolves them using Docker and file system access.
@@ -28,7 +28,7 @@ class AIErrorFixer:
     
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {
-            "monitor_interval": 30,  # seconds
+            "monitor_interval": 30,  
             "log_tail_lines": 100,
             "max_retry_attempts": 3,
             "backup_before_fix": True,
@@ -49,7 +49,7 @@ class AIErrorFixer:
         self.lock = Lock()
         self.error_queue = queue.Queue()
         
-        # Initialize Docker client
+        
         try:
             self.docker_client = docker.from_env()
             logger.info("Docker client initialized successfully")
@@ -311,7 +311,7 @@ class AIErrorFixer:
         self.monitoring = True
         logger.info("Starting AI error monitoring system")
         
-        # Start monitoring threads
+        
         Thread(target=self._monitor_containers, daemon=True).start()
         Thread(target=self._monitor_logs, daemon=True).start()
         Thread(target=self._process_error_queue, daemon=True).start()
@@ -335,12 +335,12 @@ class AIErrorFixer:
                 
                 for container in containers:
                     try:
-                        # Check container status
+                        
                         container.reload()
                         status = container.status
                         
                         if status == "exited":
-                            # Get exit code and logs
+                            
                             exit_code = container.attrs.get("State", {}).get("ExitCode", 0)
                             logs = container.logs(tail=50).decode(errors="ignore")
                             
@@ -357,7 +357,7 @@ class AIErrorFixer:
                             self.error_queue.put(error_info)
                         
                         elif status == "running":
-                            # Check for resource issues
+                            
                             try:
                                 stats = container.stats(stream=False)
                                 memory_usage = stats.get("memory_stats", {}).get("usage", 0)
@@ -391,7 +391,7 @@ class AIErrorFixer:
         """Monitor application logs for errors."""
         while self.monitoring:
             try:
-                # Monitor backend logs
+                
                 log_file = Path("logs/app.log")
                 if log_file.exists():
                     with open(log_file, "r", encoding="utf-8") as f:
@@ -427,19 +427,19 @@ class AIErrorFixer:
                 except queue.Empty:
                     continue
                 
-                # Check if we've already handled this error recently
+                
                 if self._is_recent_error(error_info):
                     continue
                 
                 logger.info(f"Processing error: {error_info['type']} (severity: {error_info['severity']})")
                 
-                # Apply fixes based on error type
+                
                 self._apply_fixes(error_info)
                 
-                # Record the error
+                
                 with self.lock:
                     self.error_history.append(error_info)
-                    # Keep only last 100 errors
+                    
                     if len(self.error_history) > 100:
                         self.error_history = self.error_history[-100:]
                 
@@ -452,7 +452,7 @@ class AIErrorFixer:
             recent_errors = [
                 e for e in self.error_history[-10:]
                 if e.get("type") == error_info.get("type") and
-                (datetime.now() - e.get("timestamp", datetime.now())).seconds < 300  # 5 minutes
+                (datetime.now() - e.get("timestamp", datetime.now())).seconds < 300  
             ]
         return len(recent_errors) > 0
     
@@ -470,17 +470,17 @@ class AIErrorFixer:
             try:
                 logger.info(f"Applying fix: {strategy['name']} - {strategy['description']}")
                 
-                # Create backup if enabled
+                
                 if self.config["backup_before_fix"]:
                     self._create_backup(error_info)
                 
-                # Apply the fix
+                
                 result = strategy["function"](error_info)
                 
                 if result.get("success"):
                     logger.info(f"Fix {strategy['name']} applied successfully")
                     
-                    # Record the fix
+                    
                     fix_record = {
                         "error_info": error_info,
                         "strategy": strategy["name"],
@@ -493,7 +493,7 @@ class AIErrorFixer:
                         if len(self.fix_history) > 50:
                             self.fix_history = self.fix_history[-50:]
                     
-                    # Send notification if configured
+                    
                     self._send_notification(f"Fixed {error_type} using {strategy['name']}", result)
                     
                     break
@@ -509,12 +509,12 @@ class AIErrorFixer:
             backup_dir = Path("backups") / datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_dir.mkdir(parents=True, exist_ok=True)
             
-            # Backup server data
+            
             data_dir = Path("data")
             if data_dir.exists():
                 shutil.copytree(data_dir, backup_dir / "data", dirs_exist_ok=True)
             
-            # Backup logs
+            
             logs_dir = Path("logs")
             if logs_dir.exists():
                 shutil.copytree(logs_dir, backup_dir / "logs", dirs_exist_ok=True)
@@ -533,7 +533,7 @@ class AIErrorFixer:
             if not container_id and not container_name:
                 return {"success": False, "error": "No container ID or name provided"}
             
-            # Get server name from container
+            
             server_name = container_name
             if container_id and self.docker_client:
                 try:
@@ -545,14 +545,14 @@ class AIErrorFixer:
             if not server_name:
                 return {"success": False, "error": "Could not determine server name"}
             
-            # Use crash analyzer to fix the issue
+            
             from crash_analyzer import auto_fix_server_crashes
             result = auto_fix_server_crashes(server_name)
             
             if result.get("mods_disabled"):
                 logger.info(f"Disabled {len(result['mods_disabled'])} client-only mods for {server_name}")
                 
-                # Restart the container
+                
                 if container_id and self.docker_client:
                     try:
                         container = self.docker_client.containers.get(container_id)
@@ -581,7 +581,7 @@ class AIErrorFixer:
             if not container_name:
                 return {"success": False, "error": "No container name provided"}
             
-            # Use crash analyzer
+            
             from crash_analyzer import crash_analyzer, analyze_crash_log
             
             analysis = analyze_crash_log(logs)
@@ -605,7 +605,7 @@ class AIErrorFixer:
     def _fix_mixin_crash(self, error_info: Dict[str, Any]) -> Dict[str, Any]:
         """Fix mixin injection failures."""
         try:
-            # Mixin crashes often involve incompatible mods
+            
             return self._analyze_and_fix_crash(error_info)
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -617,7 +617,7 @@ class AIErrorFixer:
             if not container_name:
                 return {"success": False, "error": "No container name provided"}
             
-            # Use crash analyzer for incompatibility
+            
             from crash_analyzer import auto_fix_server_crashes
             result = auto_fix_server_crashes(container_name)
             
@@ -642,7 +642,7 @@ class AIErrorFixer:
             
             container = self.docker_client.containers.get(container_id)
             
-            # Get server information from container labels
+            
             labels = container.labels
             server_type = labels.get("mc.type")
             server_version = labels.get("mc.version")
@@ -651,23 +651,23 @@ class AIErrorFixer:
             if not server_type or not server_version:
                 return {"success": False, "error": "Missing server type or version"}
             
-            # Stop the container
+            
             container.stop()
             
-            # Re-download server files
+            
             from download_manager import prepare_server_files
             server_dir = Path("data/servers") / container.name
             
             if server_dir.exists():
-                # Remove corrupted JAR
+                
                 jar_path = server_dir / "server.jar"
                 if jar_path.exists():
                     jar_path.unlink()
                 
-                # Re-download
+                
                 prepare_server_files(server_type, server_version, server_dir, loader_version)
             
-            # Restart the container
+            
             container.start()
             
             return {"success": True, "message": "JAR file re-downloaded and container restarted"}
@@ -678,7 +678,7 @@ class AIErrorFixer:
     def _fix_java_version_mismatch(self, error_info: Dict[str, Any]) -> Dict[str, Any]:
         """Fix Java version mismatch issues."""
         try:
-            # Rebuild Docker image with correct Java version
+            
             return self._rebuild_docker_image(error_info)
         
         except Exception as e:
@@ -690,7 +690,7 @@ class AIErrorFixer:
             if not self.config["enable_docker_commands"]:
                 return {"success": False, "error": "Docker commands disabled"}
             
-            # Run docker build command
+            
             cmd = [
                 "docker", "build", "-t", "mc-runtime:latest", 
                 "-f", "docker/runtime.Dockerfile", "docker"
@@ -736,7 +736,7 @@ class AIErrorFixer:
             
             container = self.docker_client.containers.get(container_id)
             
-            # Get container configuration
+            
             name = container.name
             image = container.image.tags[0] if container.image.tags else "mc-runtime:latest"
             env_vars = container.attrs.get("Config", {}).get("Env", [])
@@ -744,11 +744,11 @@ class AIErrorFixer:
             ports = container.attrs.get("NetworkSettings", {}).get("Ports", {})
             volumes = container.attrs.get("Mounts", [])
             
-            # Stop and remove the container
+            
             container.stop()
             container.remove()
             
-            # Recreate the container
+            
             volume_binds = {}
             for volume in volumes:
                 source = volume.get("Source")
@@ -781,12 +781,12 @@ class AIErrorFixer:
     def _fix_network_connectivity(self, error_info: Dict[str, Any]) -> Dict[str, Any]:
         """Fix network connectivity issues."""
         try:
-            # Check if Docker daemon is running
+            
             result = subprocess.run(["docker", "info"], capture_output=True, text=True)
             if result.returncode != 0:
                 return {"success": False, "error": "Docker daemon not accessible"}
             
-            # Check network connectivity
+            
             result = subprocess.run(["ping", "-c", "1", "8.8.8.8"], capture_output=True, text=True)
             if result.returncode != 0:
                 return {"success": False, "error": "No internet connectivity"}
@@ -805,13 +805,13 @@ class AIErrorFixer:
             
             container = self.docker_client.containers.get(container_id)
             
-            # Get current memory limit
+            
             current_memory = container.attrs.get("HostConfig", {}).get("Memory", 0)
             
-            # Increase memory limit by 50%
-            new_memory = int(current_memory * 1.5) if current_memory > 0 else 3 * 1024 * 1024 * 1024  # 3GB default
             
-            # Update container with new memory limit
+            new_memory = int(current_memory * 1.5) if current_memory > 0 else 3 * 1024 * 1024 * 1024  
+            
+            
             container.update(mem_limit=new_memory)
             
             return {"success": True, "message": f"Memory limit increased to {new_memory / (1024**3):.1f}GB"}
@@ -828,10 +828,10 @@ class AIErrorFixer:
             
             container = self.docker_client.containers.get(container_id)
             
-            # Find an available port
+            
             import socket
             available_port = None
-            for port in range(25566, 25665):  # Try ports 25566-25664
+            for port in range(25566, 25665):  
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 try:
                     sock.bind(('localhost', port))
@@ -844,11 +844,11 @@ class AIErrorFixer:
             if not available_port:
                 return {"success": False, "error": "No available ports found"}
             
-            # Stop container and restart with new port
+            
             container.stop()
             container.remove()
             
-            # Recreate with new port (this would need the original creation parameters)
+            
             return {"success": True, "message": f"Port changed to {available_port}"}
         
         except Exception as e:
@@ -860,7 +860,7 @@ class AIErrorFixer:
             if not self.config["enable_file_operations"]:
                 return {"success": False, "error": "File operations disabled"}
             
-            # Fix permissions for data directory
+            
             data_dir = Path("data")
             if data_dir.exists():
                 for root, dirs, files in os.walk(data_dir):
@@ -877,8 +877,8 @@ class AIErrorFixer:
     def _fix_download_failures(self, error_info: Dict[str, Any]) -> Dict[str, Any]:
         """Fix download failures."""
         try:
-            # This would need to be implemented based on the specific download that failed
-            # For now, we'll just retry the server creation process
+            
+            
             return {"success": True, "message": "Download retry initiated"}
         
         except Exception as e:
@@ -935,7 +935,7 @@ class AIErrorFixer:
             if not self.config["enable_docker_commands"]:
                 return {"success": False, "error": "Docker commands disabled"}
             
-            # Build the application image
+            
             build_cmd = [
                 "docker", "build", "-t", f"{image_name}:latest", "."
             ]
@@ -950,7 +950,7 @@ class AIErrorFixer:
             if result.returncode != 0:
                 return {"success": False, "error": f"Build failed: {result.stderr}"}
             
-            # Push to Docker Hub
+            
             push_cmd = ["docker", "push", f"{image_name}:latest"]
             
             result = subprocess.run(
@@ -968,7 +968,7 @@ class AIErrorFixer:
             return {"success": False, "error": str(e)}
 
 
-# Global instance
+
 ai_fixer = AIErrorFixer()
 
 
@@ -998,13 +998,13 @@ def upload_to_docker(image_name: str = "minecraft-server-manager"):
 
 
 if __name__ == "__main__":
-    # Test the AI error fixer
+    
     logging.basicConfig(level=logging.INFO)
     
     print("🤖 AI Error Fixer for Minecraft Server Manager")
     print("=" * 50)
     
-    # Start monitoring
+    
     ai_fixer.start_monitoring()
     
     try:

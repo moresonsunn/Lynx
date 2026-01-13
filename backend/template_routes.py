@@ -11,7 +11,7 @@ from runtime_adapter import get_runtime_manager_or_docker
 
 router = APIRouter(prefix="/templates", tags=["server_templates"])
 
-# Pydantic models
+
 class ServerTemplateCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -81,7 +81,7 @@ async def create_template(
     db: Session = Depends(get_db)
 ):
     """Create a new server template."""
-    # Validate server type
+    
     from server_providers.providers import get_provider_names
     valid_types = get_provider_names()
     if template_data.server_type not in valid_types:
@@ -90,7 +90,7 @@ async def create_template(
             detail=f"Invalid server type. Must be one of: {valid_types}"
         )
     
-    # Validate Java version
+    
     valid_java_versions = ["8", "11", "17", "21"]
     if template_data.java_version not in valid_java_versions:
         raise HTTPException(
@@ -98,7 +98,7 @@ async def create_template(
             detail=f"Invalid Java version. Must be one of: {valid_java_versions}"
         )
     
-    # Check if template name already exists
+    
     existing_template = db.query(ServerTemplate).filter(
         ServerTemplate.name == template_data.name
     ).first()
@@ -108,7 +108,7 @@ async def create_template(
             detail="Template name already exists"
         )
     
-    # Create template
+    
     template = ServerTemplate(
         name=template_data.name,
         description=template_data.description,
@@ -159,9 +159,9 @@ async def update_template(
             detail="Template not found"
         )
     
-    # Update fields
+    
     if template_data.name is not None:
-        # Check for name conflicts
+        
         existing_template = db.query(ServerTemplate).filter(
             ServerTemplate.name == template_data.name,
             ServerTemplate.id != template_id
@@ -250,15 +250,15 @@ async def create_server_from_template(
         )
     
     try:
-        # Get Docker manager
+        
         docker_manager = get_docker_manager()
         
-        # Merge template config with override config
+        
         final_config = template.config.copy() if template.config else {}
         if server_data.override_config:
             final_config.update(server_data.override_config)
         
-        # Create server using template parameters
+        
         result = docker_manager.create_server(
             name=server_data.server_name,
             server_type=template.server_type,
@@ -269,7 +269,7 @@ async def create_server_from_template(
             max_ram=template.max_ram
         )
         
-        # If server creation was successful, apply Java version from template
+        
         if result.get("id"):
             try:
                 docker_manager.update_server_java_version(
@@ -277,11 +277,11 @@ async def create_server_from_template(
                     template.java_version
                 )
             except Exception as e:
-                # Log but don't fail if Java version update fails
+                
                 import logging
                 logging.warning(f"Failed to set Java version from template: {e}")
         
-        # Add template info to result
+        
         result["created_from_template"] = {
             "template_id": template.id,
             "template_name": template.name,
@@ -303,7 +303,7 @@ async def get_popular_templates(
     db: Session = Depends(get_db)
 ):
     """Get popular/recommended server templates."""
-    # This could be expanded to track usage and popularity
+    
     popular_templates = [
         {
             "name": "Vanilla Latest",
@@ -355,7 +355,7 @@ async def import_template_from_server(
 ):
     """Create a template from an existing server configuration."""
     try:
-        # Get server information
+        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -371,10 +371,10 @@ async def import_template_from_server(
                 detail="Server not found"
             )
         
-        # Get server info and configuration
+        
         server_info = docker_manager.get_server_info(target_server["id"])
         
-        # Extract template data from server
+        
         template_data = {
             "name": template_name,
             "description": description or f"Template created from server {server_name}",
@@ -382,7 +382,7 @@ async def import_template_from_server(
             "minecraft_version": server_info.get("server_version", "1.21"),
             "loader_version": server_info.get("loader_version"),
             "java_version": server_info.get("java_version", "21"),
-            "min_ram": "1024M",  # Default values - could be extracted from container
+            "min_ram": "1024M",  
             "max_ram": "2048M",
             "config": {
                 "imported_from": server_name,
@@ -390,7 +390,7 @@ async def import_template_from_server(
             }
         }
         
-        # Create template
+        
         template = ServerTemplate(
             name=template_data["name"],
             description=template_data["description"],

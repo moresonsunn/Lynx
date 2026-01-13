@@ -16,7 +16,7 @@ import {
   FaForward,
 } from 'react-icons/fa';
 
-// Import existing pages
+
 import LoginPage from './pages/LoginPage';
 import MustChangePasswordPage from './pages/MustChangePasswordPage';
 import DashboardPage from './pages/DashboardPage';
@@ -25,13 +25,13 @@ import ServerDetailsPage from './pages/ServerDetailsPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 
-// Import GlobalSearchBar for header
+
 import GlobalSearchBar from './components/GlobalSearchBar';
 
-// Lazy load heavy pages
+
 const TemplatesPageLazy = React.lazy(() => import('./pages/TemplatesPage'));
 
-// Loading fallback
+
 const PageLoader = () => (
   <div className="flex items-center justify-center h-screen bg-ink">
     <div className="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
@@ -40,14 +40,14 @@ const PageLoader = () => (
 
 const APP_NAME = 'Lynx';
 
-// Layout wrapper with sidebar and header - matching original App.js exactly
+
 function AppLayout({ children }) {
   const { currentUser, isAdmin, logout } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Initialize sidebar open state based on screen width (closed on small screens)
+  
   const [sidebarOpen, setSidebarOpen] = useState(() => 
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
   );
@@ -55,7 +55,7 @@ function AppLayout({ children }) {
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
 
-  // Update isMobile on resize and auto-close sidebar on mobile
+  
   useEffect(() => {
     function handleResize() {
       const mobile = window.innerWidth < 768;
@@ -66,7 +66,7 @@ function AppLayout({ children }) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Navigation items
+  
   const sidebarItems = useMemo(() => {
     const items = [
       { id: 'dashboard', path: '/', label: t('nav.dashboard'), icon: FaHome, end: true },
@@ -83,7 +83,7 @@ function AppLayout({ children }) {
     return items;
   }, [isAdmin, t]);
 
-  // Get current page label for header
+  
   const currentPageLabel = useMemo(() => {
     const currentPath = location.pathname;
     const item = sidebarItems.find(i => 
@@ -92,11 +92,11 @@ function AppLayout({ children }) {
     return item?.label || t('nav.dashboard');
   }, [location.pathname, sidebarItems, t]);
 
-  // Handle global search navigation
+  
   const handleGlobalNavigate = useCallback((target) => {
     if (!target) return;
     
-    // Handle navigation from search
+    
     if (target.type === 'server' && target.id) {
       navigate(`/servers/${target.id}`);
     } else if (target.type === 'player' && target.serverId) {
@@ -108,7 +108,7 @@ function AppLayout({ children }) {
     }
   }, [navigate]);
 
-  // Sidebar content - reused for desktop and mobile
+  
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Sidebar Header */}
@@ -251,7 +251,7 @@ function AppLayout({ children }) {
   );
 }
 
-// Protected route wrapper
+
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading, mustChangePassword } = useAuth();
   const location = useLocation();
@@ -271,7 +271,7 @@ function ProtectedRoute({ children }) {
   return <AppLayout>{children}</AppLayout>;
 }
 
-// Admin route wrapper
+
 function AdminRoute({ children }) {
   const { isAuthenticated, isAdmin, loading } = useAuth();
   
@@ -290,7 +290,7 @@ function AdminRoute({ children }) {
   return <AppLayout>{children}</AppLayout>;
 }
 
-// Login page wrapper
+
 function LoginPageWrapper() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -335,7 +335,7 @@ function LoginPageWrapper() {
   );
 }
 
-// Templates page wrapper with all required props
+
 function TemplatesPageWrapper() {
   const globalData = useGlobalData();
   const navigate = useNavigate();
@@ -353,7 +353,7 @@ function TemplatesPageWrapper() {
   
   const types = globalData?.serverTypes || [];
 
-  // Fetch versions when type changes
+  
   useEffect(() => {
     if (!selectedType) return;
     let cancelled = false;
@@ -375,7 +375,7 @@ function TemplatesPageWrapper() {
     return () => { cancelled = true; };
   }, [selectedType]);
 
-  // Create server handler with toast and redirect
+  
   const createServer = useCallback(async () => {
     const serverName = name.trim();
     if (!serverName) {
@@ -408,7 +408,7 @@ function TemplatesPageWrapper() {
         throw new Error(err.detail || `HTTP ${r.status}`);
       }
       
-      // Poll for the new server to appear
+      
       const startTime = Date.now();
       const timeoutMs = 15000;
       const intervalMs = 500;
@@ -421,7 +421,7 @@ function TemplatesPageWrapper() {
             const servers = await serversRes.json();
             foundServer = Array.isArray(servers) ? servers.find(s => s && s.name === serverName) : null;
             
-            // Update global data
+            
             if (globalData?.__setGlobalData) {
               globalData.__setGlobalData(cur => ({ ...cur, servers: Array.isArray(servers) ? servers : cur.servers }));
             }
@@ -432,16 +432,16 @@ function TemplatesPageWrapper() {
         await new Promise(res => setTimeout(res, intervalMs));
       }
       
-      // Reset form
+      
       setName('');
       
       if (foundServer) {
         showToast('success', `Server "${serverName}" created successfully!`);
-        // Navigate to the new server
+        
         navigate(`/servers/${foundServer.id}`);
       } else {
         showToast('info', `Server "${serverName}" is being created. It will appear shortly.`);
-        // Refresh servers and go to servers list
+        
         if (globalData?.__refreshServers) {
           globalData.__refreshServers();
         }
@@ -482,7 +482,7 @@ function TemplatesPageWrapper() {
   );
 }
 
-// Main App Router
+
 function AppRoutes() {
   return (
     <Routes>
@@ -507,7 +507,7 @@ function AppRoutes() {
   );
 }
 
-// Root App component with all providers
+
 export function AppWithRouter() {
   return (
     <BrowserRouter>

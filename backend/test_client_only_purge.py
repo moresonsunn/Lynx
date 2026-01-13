@@ -3,7 +3,7 @@ from pathlib import Path
 import importlib
 import sys
 
-# Ensure import path works whether running from repo root or backend cwd
+
 here = Path(__file__).resolve()
 repo_root = here.parent.parent
 backend_dir = here.parent
@@ -18,7 +18,7 @@ def test_purge_moves_known_client_only(tmp_path: Path):
     mods_dir = target / 'mods'
     mods_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create a mix of client-only and server-safe jars
+    
     client_only = [
         'oculus-1.6.9.jar',
         'iris-mc1.21.1-1.7.2.jar',
@@ -44,7 +44,7 @@ def test_purge_moves_known_client_only(tmp_path: Path):
     for name in client_only + server_ok:
         (mods_dir / name).write_text('x', encoding='utf-8')
 
-    # Run purge
+    
     moved = []
     def capture(ev):
         if isinstance(ev, dict) and ev.get('type') == 'progress' and 'Moved client-only mod' in ev.get('message', ''):
@@ -52,7 +52,7 @@ def test_purge_moves_known_client_only(tmp_path: Path):
 
     modpack_routes._purge_client_only_mods(target, push_event=capture)
 
-    # Verify moved files are no longer in mods/ but present in mods-disabled-client/
+    
     disabled = target / 'mods-disabled-client'
     assert disabled.is_dir()
 

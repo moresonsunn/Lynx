@@ -5,7 +5,7 @@ from typing import List
 from fastapi import HTTPException
 from config import SERVERS_ROOT
 
-# Default backup location if settings not available
+
 DEFAULT_BACKUPS_ROOT = SERVERS_ROOT.parent / "backups"
 DEFAULT_BACKUPS_ROOT.mkdir(parents=True, exist_ok=True)
 
@@ -40,7 +40,7 @@ def list_backups(name: str) -> List[dict]:
             "size": p.stat().st_size,
             "modified": int(p.stat().st_mtime),
         })
-    # Also check for tar.gz backups
+    
     for p in sorted(dest_dir.glob("*.tar.gz")):
         items.append({
             "file": p.name,
@@ -62,7 +62,7 @@ def create_backup(name: str, compression: str = 'zip') -> dict:
     dest_dir.mkdir(parents=True, exist_ok=True)
     archive_base = dest_dir / f"{name}-{ts}"
     
-    # Use compression setting or provided parameter
+    
     compress = backup_settings.get("compress", True)
     fmt = compression if compression in {"zip", "gztar", "bztar", "tar"} else ('zip' if compress else 'tar')
     
@@ -77,7 +77,7 @@ def restore_backup(name: str, backup_file: str) -> None:
     archive = (dest_dir / backup_file).resolve()
     if not str(archive).startswith(str(dest_dir)) or not archive.exists():
         raise HTTPException(status_code=404, detail="Backup not found")
-    # Extract into server directory (overwrite)
+    
     shutil.unpack_archive(str(archive), str(server_dir))
 
 

@@ -30,7 +30,7 @@ class TaskScheduler:
             self.scheduler.start()
             logger.info("Task scheduler started")
             
-            # Load existing tasks from database
+            
             self.load_scheduled_tasks()
     
     def stop(self):
@@ -63,11 +63,11 @@ class TaskScheduler:
         """Add a scheduled task to the scheduler."""
         job_id = f"task_{task.id}"
         
-        # Remove existing job if it exists
+        
         if self.scheduler.get_job(job_id):
             self.scheduler.remove_job(job_id)
         
-        # Parse cron expression
+        
         cron_expression = cast(str, task.cron_expression)
         cron_parts = cron_expression.split()
         if len(cron_parts) != 5:
@@ -75,7 +75,7 @@ class TaskScheduler:
         
         minute, hour, day, month, day_of_week = cron_parts
         
-        # Create trigger
+        
         trigger = CronTrigger(
             minute=minute,
             hour=hour,
@@ -87,7 +87,7 @@ class TaskScheduler:
         
         task_type = cast(str, task.task_type)
 
-        # Add job based on task type
+        
         if task_type == "backup":
             self.scheduler.add_job(
                 self.execute_backup_task,
@@ -174,18 +174,18 @@ class TaskScheduler:
             
             logger.info(f"Executing backup task: {self._task_label(task, task_id)}")
             
-            # Update last run time
+            
             setattr(task, "last_run", datetime.utcnow())
             
             try:
-                # Create backup
+                
                 server_name = cast(Optional[str], getattr(task, "server_name", None))
                 if not server_name:
                     raise ValueError("Backup task has no server_name configured")
 
                 result = create_backup(server_name)
                 
-                # Record backup in database
+                
                 backup_record = BackupTask(
                     server_name=server_name,
                     backup_file=result["file"],
@@ -214,14 +214,14 @@ class TaskScheduler:
             
                 logger.info(f"Executing restart task: {self._task_label(task, task_id)}")
             
-            # Update last run time
+            
             setattr(task, "last_run", datetime.utcnow())
             
             try:
                 docker_manager = self.get_docker_manager()
                 servers = docker_manager.list_servers()
                 
-                # Find server by name
+                
                 target_server = None
                 server_name = cast(Optional[str], getattr(task, "server_name", None))
                 for server in servers:
@@ -232,9 +232,9 @@ class TaskScheduler:
                 if target_server:
                     container_id = target_server.get("id")
                     if container_id:
-                        # Stop and start server
+                        
                         docker_manager.stop_server(container_id)
-                        await asyncio.sleep(5)  # Wait for graceful shutdown
+                        await asyncio.sleep(5)  
                         docker_manager.start_server(container_id)
                         if server_name:
                             logger.info(f"Restarted server: {server_name}")
@@ -262,14 +262,14 @@ class TaskScheduler:
             task_name = cast(Optional[str], getattr(task, "name", None))
             logger.info(f"Executing command task: {task_name or task_id}")
             
-            # Update last run time
+            
             setattr(task, "last_run", datetime.utcnow())
             
             try:
                 docker_manager = self.get_docker_manager()
                 servers = docker_manager.list_servers()
                 
-                # Find server by name
+                
                 target_server = None
                 server_name = cast(Optional[str], getattr(task, "server_name", None))
                 for server in servers:
@@ -281,7 +281,7 @@ class TaskScheduler:
                     container_id = target_server.get("id")
                     command = cast(Optional[str], getattr(task, "command", None))
                     if container_id and command:
-                        # Send command to server
+                        
                         docker_manager.send_command(container_id, command)
                         logger.info(f"Executed command '{command}' on {server_name}")
                     else:
@@ -308,12 +308,12 @@ class TaskScheduler:
             task_name = cast(Optional[str], getattr(task, "name", None))
             logger.info(f"Executing cleanup task: {task_name or task_id}")
             
-            # Update last run time
+            
             setattr(task, "last_run", datetime.utcnow())
             
             try:
-                # Clean up old backups based on retention policy
-                # Parse retention_days from command if provided (e.g., "retention_days=14")
+                
+                
                 retention_days = 30
                 try:
                     command_str = cast(Optional[str], getattr(task, "command", None))
@@ -338,12 +338,12 @@ class TaskScheduler:
                 
                 for backup in old_backups:
                     try:
-                        # Delete backup file
+                        
                         backup_path = Path("backups") / backup.server_name / backup.backup_file
                         if backup_path.exists():
                             backup_path.unlink()
                         
-                        # Remove from database
+                        
                         db.delete(backup)
                         logger.info(f"Cleaned up old backup: {backup.backup_file}")
                         
@@ -507,7 +507,7 @@ class TaskScheduler:
             logger.error(f"Failed to calculate next run time: {e}")
             return None
 
-# Global scheduler instance
+
 task_scheduler = TaskScheduler()
 
 def get_scheduler() -> TaskScheduler:

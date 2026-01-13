@@ -13,9 +13,9 @@ def stream_download(url: str, dest_file: Path):
     dest_file.parent.mkdir(parents=True, exist_ok=True)
 
     headers = {
-        # Some hosts require a UA; also helps avoid being flagged as a bot
+        
         "User-Agent": "Lynx/1.0 (+https://github.com/moresonsunn/Lynx)",
-        # Be explicit we expect a binary JAR but accept common fallbacks
+        
         "Accept": "application/java-archive, application/octet-stream, */*",
     }
 
@@ -23,9 +23,9 @@ def stream_download(url: str, dest_file: Path):
         with requests.get(url, headers=headers, stream=True, timeout=120, allow_redirects=True) as r:
             r.raise_for_status()
 
-            # Ensure gzip transfer-encoding is handled when reading raw
+            
             try:
-                r.raw.decode_content = True  # type: ignore[attr-defined]
+                r.raw.decode_content = True  
             except Exception:
                 pass
 
@@ -37,18 +37,18 @@ def stream_download(url: str, dest_file: Path):
                     return True
                 if 'filename=' in content_disp and '.jar' in content_disp.lower():
                     return True
-                # URL itself may end with .jar
+                
                 if url.lower().endswith('.jar'):
                     return True
                 return False
 
-            # Check if content-disposition indicates a JAR file (even if content-type is wrong)
+            
             is_jar_disposition = 'filename=' in content_disp and '.jar' in content_disp.lower()
             
-            # If server returns JSON/HTML, read a small portion to decide if it's actually a JAR (mis-labeled) or a real error
+            
             initial_chunk: Optional[bytes] = None
             if ('application/json' in content_type or 'text/html' in content_type) and not is_jar_disposition:
-                # Peek the first chunk
+                
                 try:
                     initial_chunk = next(r.iter_content(chunk_size=1024))
                 except StopIteration:
@@ -60,16 +60,16 @@ def stream_download(url: str, dest_file: Path):
                     if not b or len(b) < 4:
                         return False
                     sig = b[:4]
-                    # Valid ZIP local/header signatures
+                    
                     return sig in (b'PK\x03\x04', b'PK\x05\x06', b'PK\x07\x08') or b.startswith(b'PK')
 
                 if initial_chunk and _is_zip_header(initial_chunk):
                     logger.warning(
                         f"Content-Type {content_type!r} claims JSON/HTML but body looks like a JAR (ZIP header detected). Proceeding with download."
                     )
-                    # fall-through to streaming, but ensure we write the peeked bytes first
+                    
                 else:
-                    # Try to parse JSON to surface error details
+                    
                     preview_text = ''
                     try:
                         preview_text = (initial_chunk or b'')[:2048].decode('utf-8', errors='replace')
@@ -95,7 +95,7 @@ def stream_download(url: str, dest_file: Path):
             else:
                 logger.warning(f"Ambiguous content-type for JAR download: {content_type!r}; proceeding to stream data")
 
-            # Stream to disk (include any initial peeked bytes first when present)
+            
             with open(dest_file, "wb") as f:
                 if initial_chunk:
                     f.write(initial_chunk)
@@ -107,7 +107,7 @@ def stream_download(url: str, dest_file: Path):
         file_size = dest_file.stat().st_size
         logger.info(f"Download complete, size: {file_size} bytes")
 
-        # Basic sanity checks
+        
         if file_size < 1024 * 5:
             logger.error(f"Downloaded file is too small ({file_size} bytes), likely corrupted")
             raise ValueError(f"Downloaded file is too small ({file_size} bytes), expected at least 5KB")
@@ -145,7 +145,7 @@ def _update_meta(dest_dir: Path, updates: dict):
             data = json.loads(meta_path.read_text(encoding='utf-8') or '{}')
         except Exception:
             data = {}
-    # Initial creation timestamp if absent
+    
     if 'created_ts' not in data:
         data['created_ts'] = int(time.time())
     for k, v in updates.items():
@@ -164,7 +164,7 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
         paper_build = None
         purpur_build = None
         if server_type.lower() == 'paper':
-            # Query Paper API for builds
+            
             base = "https://api.papermc.io/v2/projects/paper"
             try:
                 v_resp = requests.get(f"{base}/versions/{version}", timeout=15)
@@ -185,7 +185,7 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
                 logger.warning(f"Failed to fetch Purpur builds for {version}: {e}")
 
         if hasattr(provider, 'get_download_url_with_loader'):
-            # Try signature with installer_version
+            
             try:
                 url = provider.get_download_url_with_loader(version, loader_version, installer_version)
             except TypeError:
@@ -194,13 +194,13 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
             url = provider.get_download_url(version)
         logger.info(f"Download URL: {url}")
         build_number = None
-        # Prefer API build number if present
+        
         if paper_build is not None:
             build_number = str(paper_build)
         elif purpur_build is not None:
             build_number = str(purpur_build)
         else:
-            # Attempt to extract build number for paper/purpur via filename pattern
+            
             if server_type.lower() in ('paper','purpur'):
                 m = re.search(rf"{server_type.lower()}-{re.escape(version)}-(\d+)\.jar", url.lower())
                 if m:
@@ -238,12 +238,12 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
             return installer_path
         elif server_type == "fabric":
 
-            # Download to the canonical launcher filename and also create server.jar alias for compatibility
+            
             launcher_path = dest_dir / "fabric-server-launch.jar"
             logger.info(f"Downloading Fabric server launcher from {url}")
             stream_download(url, launcher_path)
 
-            # Create/refresh server.jar alias for any tooling that expects it
+            
             jar_path = dest_dir / "server.jar"
             try:
                 if jar_path.exists():
@@ -253,9 +253,9 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
             except Exception as e:
                 logger.warning(f"Could not create server.jar alias for Fabric launcher: {e}")
 
-            # Simple run helper
+            
             launcher_script = dest_dir / "run.sh"
-            launcher_content = f"""#!/bin/bash
+            launcher_content = f"""
 cd "$(dirname "$0")"
 java -jar fabric-server-launch.jar server
 """
@@ -265,7 +265,7 @@ java -jar fabric-server-launch.jar server
             except Exception as e:
                 logger.warning(f"Could not set executable permission on run.sh: {e}")
 
-            # Validate
+            
             jar_size = launcher_path.stat().st_size
             if jar_size < 1024 * 5:  
                 logger.error(f"Fabric JAR is too small ({jar_size} bytes), likely corrupted")

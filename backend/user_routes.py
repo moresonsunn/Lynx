@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, validator
 import re
 
-# Custom email validation that allows localhost domains for development
+
 def validate_email(email: str) -> str:
     """Custom email validator that allows localhost domains."""
-    # Basic email format validation
+    
     email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     localhost_pattern = r'^[a-zA-Z0-9._%+-]+@localhost$'
     
@@ -28,7 +28,7 @@ class UserStats(BaseModel):
     active_users: int
     admin_users: int
     moderator_users: int
-    recent_logins: int  # Users who logged in within last 24 hours
+    recent_logins: int  
 
 class UserActivity(BaseModel):
     id: int
@@ -79,7 +79,7 @@ async def get_user_stats(
     admin_users = db.query(User).filter(User.role == "admin").count()
     moderator_users = db.query(User).filter(User.role == "moderator").count()
     
-    # Users who logged in within last 24 hours
+    
     yesterday = datetime.utcnow() - timedelta(days=1)
     recent_logins = db.query(User).filter(
         User.last_login >= yesterday,
@@ -123,7 +123,7 @@ async def reset_user_password(
             detail="User not found"
         )
     
-    # Hash the new password
+    
     user.hashed_password = get_password_hash(request.new_password)
     db.commit()
     
@@ -143,7 +143,7 @@ async def toggle_user_status(
             detail="User not found"
         )
     
-    # Prevent self-deactivation
+    
     if user.id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -165,10 +165,10 @@ async def get_active_sessions(
     """Get information about active user sessions (admin only)."""
     from datetime import timedelta
     
-    # Users with recent activity (last 30 minutes)
+    
     recent_activity = datetime.utcnow() - timedelta(minutes=30)
     
-    # This is a simplified version - in a real app you'd track sessions properly
+    
     active_users = db.query(User).filter(
         User.last_login >= recent_activity,
         User.is_active == True
@@ -200,7 +200,7 @@ async def bulk_user_action(
             detail="Invalid action. Must be 'activate', 'deactivate', or 'delete'"
         )
     
-    # Get users
+    
     users = db.query(User).filter(User.id.in_(user_ids)).all()
     
     if not users:
@@ -209,7 +209,7 @@ async def bulk_user_action(
             detail="No users found with provided IDs"
         )
     
-    # Prevent self-action
+    
     if current_user.id in user_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

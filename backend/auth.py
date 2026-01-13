@@ -16,22 +16,22 @@ import secrets
 
 logger = logging.getLogger(__name__)
 
-# Configuration
+
 _raw_secret = os.getenv("SECRET_KEY")
 if not _raw_secret or _raw_secret == "your-secret-key-change-this-in-production":
-    # Generate an ephemeral secret so deployments without SECRET_KEY do not share a predictable token key.
+    
     _raw_secret = secrets.token_urlsafe(64)
     logging.warning("SECRET_KEY was not set; generated a temporary secret. Configure SECRET_KEY for stable auth tokens.")
 
 SECRET_KEY = _raw_secret
 ALGORITHM = "HS256"
-# Keep JWT access tokens short-lived; session tokens are now authoritative.
+
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
-# Password hashing
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Token authentication
+
 security = HTTPBearer(auto_error=False)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -62,9 +62,9 @@ def verify_token(token: str) -> Optional[dict]:
     except JWTError:
         return None
 
-# Cache for user lookups to reduce database hits
+
 _user_cache = {}
-_cache_ttl = 60  # Cache TTL in seconds
+_cache_ttl = 60  
 
 def _get_cache_key(prefix: str, value: str) -> str:
     return f"{prefix}:{value}"
@@ -76,15 +76,15 @@ def get_user_by_username(db: Session, username: str) -> Optional[User]:
     """Get user by username with caching to reduce database load."""
     cache_key = _get_cache_key("username", username)
     
-    # Check cache first
+    
     if cache_key in _user_cache and _is_cache_valid(_user_cache[cache_key]):
         return _user_cache[cache_key]['user']
     
     try:
-        # Use optimized query with explicit session management
+        
         user = db.query(User).filter(User.username == username).first()
         
-        # Cache the result (including None results)
+        
         _user_cache[cache_key] = {
             'user': user,
             'timestamp': time.time()
@@ -93,7 +93,7 @@ def get_user_by_username(db: Session, username: str) -> Optional[User]:
         return user
     except Exception as e:
         logger.error(f"Error querying user by username {username}: {e}")
-        # Clear cache entry on error
+        
         _user_cache.pop(cache_key, None)
         raise
 
@@ -101,15 +101,15 @@ def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
     """Get user by ID with caching to reduce database load."""
     cache_key = _get_cache_key("user_id", str(user_id))
     
-    # Check cache first
+    
     if cache_key in _user_cache and _is_cache_valid(_user_cache[cache_key]):
         return _user_cache[cache_key]['user']
     
     try:
-        # Use optimized query with explicit session management
+        
         user = db.query(User).filter(User.id == user_id).first()
         
-        # Cache the result
+        
         _user_cache[cache_key] = {
             'user': user,
             'timestamp': time.time()
@@ -118,7 +118,7 @@ def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
         return user
     except Exception as e:
         logger.error(f"Error querying user by ID {user_id}: {e}")
-        # Clear cache entry on error
+        
         _user_cache.pop(cache_key, None)
         raise
 
@@ -158,7 +158,7 @@ def get_current_user(
     if not credentials:
         return None
     
-    # Try JWT token first for backward compatibility
+    
     payload = verify_token(credentials.credentials)
     if payload is not None:
         username = payload.get("sub")
@@ -167,9 +167,9 @@ def get_current_user(
             if user:
                 return user
     
-    # Try session token
+    
     try:
-        # Import here to avoid circular import
+        
         from user_service import UserService
         user_service = UserService(db)
         user = user_service.get_user_by_session_token(credentials.credentials, refresh_expiry=True)
@@ -204,12 +204,12 @@ def require_auth(
 def get_user_permissions(user: User, db: Session) -> List[str]:
     """Get permissions for a user based on their role."""
     try:
-        # Import here to avoid circular import
+        
         from user_service import UserService
         user_service = UserService(db)
         return user_service.get_user_permissions(user)
     except ImportError:
-        # Fallback to basic role-based permissions if UserService not available
+        
         if user.role in ("admin", "owner"):
             return ["*"]
         elif user.role == "moderator":
@@ -225,7 +225,7 @@ def require_permission(permission: str):
     ) -> User:
         permissions = get_user_permissions(user, db)
         
-        # Admin/Owner have all permissions
+        
         if user.role in ("admin", "owner") or "*" in permissions:
             return user
             
@@ -247,7 +247,7 @@ def require_any_permission(permissions: List[str]):
     ) -> User:
         user_permissions = get_user_permissions(user, db)
         
-        # Admin/Owner have all permissions
+        
         if user.role in ("admin", "owner") or "*" in user_permissions:
             return user
             
@@ -279,13 +279,13 @@ def require_role(required_role: str):
             )
         return user
     return role_dependency
-# Convenience role dependencies
+
 require_admin = require_role("admin")
 require_moderator = require_role("moderator")
-# Require either server.config.edit or system.backup for moderator-or-admin convenience
+
 require_moderator_or_admin = lambda: require_any_permission(["server.config.edit", "system.backup"]) 
 
-# Convenience permission dependencies
+
 require_server_view = require_permission("server.view")
 require_server_create = require_permission("server.create")
 require_server_start = require_permission("server.start")
@@ -299,7 +299,7 @@ require_user_view = require_permission("user.view")
 require_user_create = require_permission("user.create")
 require_user_edit = require_permission("user.edit")
 require_user_delete = require_permission("user.delete")
-# Use role.view for viewing roles
+
 require_user_manage_roles = require_permission("role.view")
 
 require_system_backup = require_permission("system.backup")
@@ -317,7 +317,7 @@ def log_user_action(user: User, action: str, resource_type: Optional[str] = None
         return
     
     try:
-        # Import here to avoid circular import
+        
         from user_service import UserService
         user_service = UserService(db)
         

@@ -9,7 +9,7 @@ import re
 from typing import Optional
 import shutil
 
-# Optional Pillow import (installed via requirements). Import lazily in function to avoid module load cost.
+
 
 
 def _server_path(name: str) -> Path:
@@ -33,7 +33,7 @@ def _invalidate_cache(name: str, rel: str | None = None) -> None:
     if rel is None:
         keys = [k for k in _DIR_CACHE.keys() if k[0] == name]
     else:
-        # Invalidate all cached entries for this server; simple and safe
+        
         keys = [k for k in _DIR_CACHE.keys() if k[0] == name]
     for k in keys:
         _DIR_CACHE.pop(k, None)
@@ -44,7 +44,7 @@ def list_dir(name: str, rel: str = ".") -> List[dict]:
     target = _safe_join(base, rel)
     if not target.exists():
         raise HTTPException(status_code=404, detail="Path not found")
-    # Cache by (server, rel) and dir mtime; refresh if TTL expired or mtime changed
+    
     try:
         st = target.stat()
         mtime = st.st_mtime
@@ -81,7 +81,7 @@ def list_dir(name: str, rel: str = ".") -> List[dict]:
             except Exception:
                 continue
     except Exception:
-        # Fallback to pathlib if scandir fails
+        
         for p in sorted(target.iterdir(), key=lambda x: x.name.lower()):
             items.append({
                 "name": p.name,
@@ -114,7 +114,7 @@ def delete_path(name: str, rel: str) -> None:
     target = _safe_join(base, rel)
 
     def _handle_remove_readonly(func, path, exc):
-        # On Windows, files can be read-only; try to chmod and retry
+        
         try:
             os.chmod(path, 0o666)
             func(path)
@@ -123,14 +123,14 @@ def delete_path(name: str, rel: str) -> None:
 
     try:
         if target.is_dir():
-            # Robust recursive removal
+            
             shutil.rmtree(target, onerror=_handle_remove_readonly)
         elif target.exists():
             try:
                 target.unlink()
             except PermissionError:
                 _handle_remove_readonly(os.unlink, str(target), None)
-        # else: nothing to do
+        
     finally:
         _invalidate_cache(name)
 
@@ -140,13 +140,13 @@ def upload_file(name: str, rel_dir: str, up: UploadFile) -> None:
     target_dir = _safe_join(base, rel_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     filename = up.filename or "uploaded"
-    # Sanitize filename: strip path components and allow safe chars only
+    
     filename = Path(filename).name
     filename = re.sub(r"[^A-Za-z0-9._\- ]+", "_", filename)
     if not filename:
         filename = "uploaded"
     dest = target_dir / filename
-    # Stream to disk in chunks to avoid loading entire file in memory
+    
     with dest.open("wb") as f:
         while True:
             chunk = up.file.read(1024 * 1024)
@@ -175,7 +175,7 @@ def _is_server_icon_candidate(filename: str) -> bool:
     base = Path(filename).name
     if _ICON_CANDIDATE_RE.match(base):
         return True
-    # Also accept exact 'server-icon.png'
+    
     return base.lower() == 'server-icon.png'
 
 def maybe_process_server_icon(name: str, saved_path: Path, original_filename: str) -> bool:
@@ -183,7 +183,7 @@ def maybe_process_server_icon(name: str, saved_path: Path, original_filename: st
     and save as server-icon.png in the server root. Returns True if processed.
     """
     try:
-        # Only process image files
+        
         ext = saved_path.suffix.lower()
         if ext not in _IMAGE_EXTS:
             return False
@@ -193,28 +193,28 @@ def maybe_process_server_icon(name: str, saved_path: Path, original_filename: st
         try:
             from PIL import Image
         except Exception:
-            # Pillow not available
+            
             return False
 
         base = _server_path(name)
         dest_path = base / 'server-icon.png'
 
         with Image.open(saved_path) as im:
-            # Convert to RGBA to preserve transparency if present
+            
             if im.mode not in ('RGB', 'RGBA'):
                 im = im.convert('RGBA')
-            # Resize to 64x64 if needed
+            
             if im.size != (64, 64):
                 try:
-                    resample = Image.Resampling.LANCZOS  # Pillow >= 9
+                    resample = Image.Resampling.LANCZOS  
                 except Exception:
                     resample = getattr(Image, 'LANCZOS', getattr(Image, 'BICUBIC', 3))
                 im = im.resize((64, 64), resample)
-            # Save as PNG
+            
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             im.save(dest_path, format='PNG')
 
-        # If uploaded to a different path/name, remove the original to avoid duplicates
+        
         try:
             if saved_path.exists() and saved_path.resolve() != dest_path.resolve():
                 saved_path.unlink(missing_ok=True)
@@ -224,7 +224,7 @@ def maybe_process_server_icon(name: str, saved_path: Path, original_filename: st
         _invalidate_cache(name)
         return True
     except Exception:
-        # On any processing error, leave the original file as-is
+        
         return False
 
 
@@ -258,7 +258,7 @@ def zip_path(name: str, rel: str, dest_rel: str | None = None) -> str:
         raise HTTPException(status_code=404, detail="Path not found")
 
     if dest_rel is None:
-        # Default to current path + .zip
+        
         if target.is_dir():
             dest_rel = f"{rel.rstrip('/')}" + ".zip"
         else:
@@ -270,7 +270,7 @@ def zip_path(name: str, rel: str, dest_rel: str | None = None) -> str:
         if target.is_dir():
             for p in target.rglob('*'):
                 if p.is_file():
-                    # write with relative arcname from target
+                    
                     arcname = p.relative_to(base)
                     zf.write(p, arcname)
         else:
@@ -286,7 +286,7 @@ def unzip_path(name: str, rel: str, dest_rel: str | None = None) -> str:
     if not archive.exists() or not archive.is_file():
         raise HTTPException(status_code=404, detail="Archive not found")
 
-    # Default destination is current directory (same folder as archive) or provided dest
+    
     if dest_rel is None:
         dest_rel = str(Path(rel).with_suffix(''))
     dest_dir = _safe_join(base, dest_rel)
@@ -295,7 +295,7 @@ def unzip_path(name: str, rel: str, dest_rel: str | None = None) -> str:
     def _safe_extract(zipf: zipfile.ZipFile, path: Path):
         for member in zipf.infolist():
             member_path = path / member.filename
-            # Prevent directory traversal
+            
             resolved = member_path.resolve()
             if not str(resolved).startswith(str(path.resolve())):
                 raise HTTPException(status_code=400, detail="Unsafe zip entry path")
