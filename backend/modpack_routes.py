@@ -133,10 +133,10 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
             "enhancedvisuals", "better-clouds", "falling-leaves", "visuality", "cull-less-leaves",
             "particlerain", "drippyloadingscreen", "starlight-fabric", "phosphor",
             
-            # UI/HUD mods
+            # UI/HUD mods (NOTE: jei, rei, emi are dual-sided, NOT client-only)
             "xaero", "xaeros", "journeymap", "voxelmap", "worldmap", "minimap",
             "betterf3", "better-f3", "appleskin", "itemphysic", "jade", "hwyla", "waila",
-            "wthit", "emi", "rei", "jei", "roughlyenoughitems", "justmap", "torohealth",
+            "wthit", "justmap", "torohealth",
             "blur", "tooltip", "controlling", "mod-menu", "modmenu", "configured", "catalogue",
             "smoothboot", "smooth-boot", "loadingscreen", "mainmenu", "panoramafix",
             "betterthirdperson", "freelook", "cameraoverhaul", "citresewn", "cit-resewn",
