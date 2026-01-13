@@ -195,6 +195,7 @@ for _router in [
     probe_router,
     maintenance_router,
     steam_router,
+    settings_router,
 ]:
     try:
         app.include_router(_router, prefix="/api")

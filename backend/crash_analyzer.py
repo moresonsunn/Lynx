@@ -416,7 +416,25 @@ def analyze_server_crashes(server_name: str) -> Dict[str, Any]:
 
 def auto_fix_server_crashes(server_name: str, dry_run: bool = False) -> Dict[str, Any]:
     """Automatically fix detected crash issues for a server."""
-    return crash_analyzer.auto_fix_server(server_name, dry_run=dry_run)
+    result = crash_analyzer.auto_fix_server(server_name, dry_run=dry_run)
+    
+    # Send crash notification if issues were detected
+    if not dry_run and result.get("issues_found"):
+        try:
+            from settings_routes import send_notification
+            issues_count = len(result.get("issues_found", []))
+            mods_disabled = len(result.get("mods_disabled", []))
+            send_notification(
+                "server_crash",
+                f"⚠️ Server Crash Detected: {server_name}",
+                f"Detected **{issues_count}** issue(s) on server **{server_name}**. "
+                + (f"Auto-disabled **{mods_disabled}** problematic mod(s)." if mods_disabled else "Manual intervention may be required."),
+                color=15844367  # Orange/amber
+            )
+        except Exception:
+            pass
+    
+    return result
 
 
 def analyze_crash_log(content: str) -> Dict[str, Any]:

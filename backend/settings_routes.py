@@ -75,7 +75,6 @@ DEFAULT_SETTINGS = {
     "appearance": {
         "theme": "dark",
         "accent_color": "blue",
-        "language": "en",
         "timezone": "UTC",
         "date_format": "YYYY-MM-DD",
         "time_format": "24h"
@@ -124,6 +123,70 @@ def save_settings(settings: Dict[str, Any]) -> None:
         SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save settings: {e}")
+
+
+def send_notification(event_type: str, title: str, message: str, color: int = 5814783) -> bool:
+    """
+    Send a notification via configured webhook if the event type is enabled.
+    
+    event_type: One of 'server_crash', 'server_start', 'server_stop', 'high_cpu', 'high_memory', 'disk_space'
+    Returns True if sent successfully, False otherwise.
+    """
+    import requests
+    import datetime
+    
+    settings = load_settings()
+    notif = settings.get("notifications", {})
+    webhook_url = notif.get("webhook_url", "")
+    webhook_type = notif.get("webhook_type", "discord")
+    
+    # Check if webhook is configured
+    if not webhook_url:
+        return False
+    
+    # Check if this event type is enabled
+    alert_key = f"alert_{event_type}"
+    if not notif.get(alert_key, False):
+        return False
+    
+    try:
+        if webhook_type == "discord":
+            payload = {
+                "embeds": [{
+                    "title": title,
+                    "description": message,
+                    "color": color,
+                    "timestamp": datetime.datetime.utcnow().isoformat()
+                }]
+            }
+        elif webhook_type == "slack":
+            payload = {
+                "text": f"*{title}*\n{message}"
+            }
+        else:
+            payload = {
+                "title": title,
+                "message": message,
+                "type": event_type
+            }
+        
+        r = requests.post(webhook_url, json=payload, timeout=10)
+        return r.ok
+    except Exception as e:
+        print(f"Failed to send notification: {e}")
+        return False
+
+
+def get_server_defaults() -> Dict[str, Any]:
+    """Get server default settings for creating new servers."""
+    settings = load_settings()
+    return settings.get("server_defaults", DEFAULT_SETTINGS["server_defaults"])
+
+
+def get_backup_settings() -> Dict[str, Any]:
+    """Get backup settings."""
+    settings = load_settings()
+    return settings.get("backup", DEFAULT_SETTINGS["backup"])
 
 
 class SettingsUpdate(BaseModel):

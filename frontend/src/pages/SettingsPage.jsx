@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../i18n';
-import { API, authHeaders } from '../context/AppContext';
+import { API, authHeaders, useTheme } from '../context/AppContext';
 import { 
   FaCog, FaSave, FaDatabase, FaBell, FaShieldAlt, FaServer, 
   FaPalette, FaDocker, FaTachometerAlt, FaTrash, FaSync,
@@ -129,6 +129,7 @@ function StorageBar({ label, used, total, unit = 'GB' }) {
 export default function SettingsPage() {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const { themeMode, setThemeMode, accentColor, setAccentColor } = useTheme();
   const [activeTab, setActiveTab] = useState('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -408,37 +409,48 @@ export default function SettingsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <Select
                   label="Theme"
-                  value={settings.appearance?.theme || 'dark'}
-                  onChange={(v) => updateSetting('appearance', 'theme', v)}
+                  value={themeMode}
+                  onChange={(v) => {
+                    setThemeMode(v);
+                    updateSetting('appearance', 'theme', v);
+                  }}
                   options={[
                     { value: 'dark', label: 'Dark' },
                     { value: 'light', label: 'Light' },
                     { value: 'system', label: 'System' }
                   ]}
                 />
-                <Select
-                  label="Accent Color"
-                  value={settings.appearance?.accent_color || 'blue'}
-                  onChange={(v) => updateSetting('appearance', 'accent_color', v)}
-                  options={[
-                    { value: 'blue', label: 'Blue' },
-                    { value: 'purple', label: 'Purple' },
-                    { value: 'green', label: 'Green' },
-                    { value: 'orange', label: 'Orange' },
-                    { value: 'red', label: 'Red' }
-                  ]}
-                />
-                <Select
-                  label="Language"
-                  value={settings.appearance?.language || 'en'}
-                  onChange={(v) => updateSetting('appearance', 'language', v)}
-                  options={[
-                    { value: 'en', label: 'English' },
-                    { value: 'de', label: 'Deutsch' },
-                    { value: 'fr', label: 'Français' },
-                    { value: 'es', label: 'Español' }
-                  ]}
-                />
+                {/* Accent Color Picker with visual swatches */}
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1.5">Accent Color</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: 'blue', color: '#3a86ff' },
+                      { value: 'purple', color: '#8b5cf6' },
+                      { value: 'green', color: '#22c55e' },
+                      { value: 'orange', color: '#f97316' },
+                      { value: 'red', color: '#ef4444' },
+                      { value: 'pink', color: '#ec4899' },
+                      { value: 'cyan', color: '#06b6d4' }
+                    ].map((c) => (
+                      <button
+                        key={c.value}
+                        onClick={() => {
+                          setAccentColor(c.value);
+                          updateSetting('appearance', 'accent_color', c.value);
+                        }}
+                        className={`w-8 h-8 rounded-lg transition-all ${
+                          accentColor === c.value 
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-900 scale-110' 
+                            : 'hover:scale-105'
+                        }`}
+                        style={{ backgroundColor: c.color }}
+                        title={c.value.charAt(0).toUpperCase() + c.value.slice(1)}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-white/40 mt-1">Select your preferred accent color</p>
+                </div>
                 <Select
                   label="Timezone"
                   value={settings.appearance?.timezone || 'UTC'}

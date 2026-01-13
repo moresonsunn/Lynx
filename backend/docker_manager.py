@@ -2266,11 +2266,23 @@ class DockerManager:
         Does not block for long; callers can poll logs/status if needed.
         """
         container = self._get_container_any(container_id)
+        server_name = container.name
         try:
             container.start()
             # Briefly wait and refresh status
             time.sleep(0.5)
             container.reload()
+            # Send notification if enabled
+            try:
+                from settings_routes import send_notification
+                send_notification(
+                    "server_start",
+                    f"🟢 Server Started: {server_name}",
+                    f"Server **{server_name}** has been started successfully.",
+                    color=3066993  # Green
+                )
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"Failed to start container {container_id}: {e}")
         return {"id": container.id, "status": container.status}
@@ -2280,6 +2292,7 @@ class DockerManager:
         Attempts in order: RCON -> attach_socket -> stdin, then Docker stop/kill as fallback.
         """
         container = self._get_container_any(container_id)
+        server_name = container.name
         try:
             container.reload()
         except Exception:
@@ -2301,6 +2314,17 @@ class DockerManager:
             try:
                 container.reload()
                 if container.status != "running":
+                    # Send notification if enabled
+                    try:
+                        from settings_routes import send_notification
+                        send_notification(
+                            "server_stop",
+                            f"🔴 Server Stopped: {server_name}",
+                            f"Server **{server_name}** has been stopped.",
+                            color=15158332  # Red
+                        )
+                    except Exception:
+                        pass
                     return {"id": container.id, "status": container.status, "method": method_used or "graceful"}
             except Exception:
                 # If reload fails, assume it may be stopping; keep waiting a bit
@@ -2320,6 +2344,19 @@ class DockerManager:
             container.reload()
         except Exception:
             pass
+        
+        # Send notification for forced stop
+        try:
+            from settings_routes import send_notification
+            send_notification(
+                "server_stop",
+                f"🔴 Server Stopped: {server_name}",
+                f"Server **{server_name}** has been stopped (forced).",
+                color=15158332  # Red
+            )
+        except Exception:
+            pass
+        
         return {"id": container.id, "status": container.status, "method": method_used or ("kill" if force else "docker-stop")}
 
     def restart_server(self, container_id, stop_timeout: int = 60):

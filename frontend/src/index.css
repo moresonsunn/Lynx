@@ -288,6 +288,57 @@
   --color-border-strong: rgba(15, 23, 42, 0.18);
 }
 
+/* Accent Colors */
+[data-accent="blue"] {
+  --color-brand-400: #5ea9ff;
+  --color-brand-500: #3a86ff;
+  --color-brand-600: #2d67e6;
+  --color-brand-rgb: 58, 134, 255;
+}
+
+[data-accent="purple"] {
+  --color-brand-400: #a78bfa;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-rgb: 139, 92, 246;
+}
+
+[data-accent="green"] {
+  --color-brand-400: #4ade80;
+  --color-brand-500: #22c55e;
+  --color-brand-600: #16a34a;
+  --color-brand-rgb: 34, 197, 94;
+}
+
+[data-accent="orange"] {
+  --color-brand-400: #fb923c;
+  --color-brand-500: #f97316;
+  --color-brand-600: #ea580c;
+  --color-brand-rgb: 249, 115, 22;
+}
+
+[data-accent="red"] {
+  --color-brand-400: #f87171;
+  --color-brand-500: #ef4444;
+  --color-brand-600: #dc2626;
+  --color-brand-rgb: 239, 68, 68;
+}
+
+[data-accent="pink"] {
+  --color-brand-400: #f472b6;
+  --color-brand-500: #ec4899;
+  --color-brand-600: #db2777;
+  --color-brand-rgb: 236, 72, 153;
+}
+
+[data-accent="cyan"] {
+  --color-brand-400: #22d3ee;
+  --color-brand-500: #06b6d4;
+  --color-brand-600: #0891b2;
+  --color-brand-rgb: 6, 182, 212;
+}
+
+/* Colorblind mode overrides accent (accessibility) */
 [data-colorblind="on"] {
   --color-brand-400: #fbbf4a;
   --color-brand-500: #f97316;

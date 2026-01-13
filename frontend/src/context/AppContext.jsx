@@ -174,13 +174,21 @@ export function useAuth() {
 
 // Theme Context
 const ThemeContext = createContext(null);
+const ACCENT_COLOR_KEY = 'lynx_accent_color';
 
 export function ThemeProvider({ children }) {
-  const [themeMode, setThemeMode] = useState(() => {
+  const [themeMode, setThemeModeInternal] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem(THEME_MODE_KEY) || 'dark';
     }
     return 'dark';
+  });
+
+  const [accentColor, setAccentColorInternal] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(ACCENT_COLOR_KEY) || 'blue';
+    }
+    return 'blue';
   });
 
   const [colorblindMode, setColorblindMode] = useState(() => {
@@ -190,16 +198,53 @@ export function ThemeProvider({ children }) {
     return false;
   });
 
+  // Apply theme mode
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', themeMode);
+      let effectiveTheme = themeMode;
+      // Handle system preference
+      if (themeMode === 'system') {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        effectiveTheme = prefersDark ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-theme', effectiveTheme);
       if (document.body) {
-        document.body.setAttribute('data-theme', themeMode);
+        document.body.setAttribute('data-theme', effectiveTheme);
       }
     }
     if (typeof window !== 'undefined') {
       localStorage.setItem(THEME_MODE_KEY, themeMode);
     }
+  }, [themeMode]);
+
+  // Apply accent color
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-accent', accentColor);
+      if (document.body) {
+        document.body.setAttribute('data-accent', accentColor);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(ACCENT_COLOR_KEY, accentColor);
+    }
+  }, [accentColor]);
+
+  // Listen for system theme changes
+  useEffect(() => {
+    if (themeMode !== 'system' || typeof window === 'undefined') return;
+    
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e) => {
+      const effectiveTheme = e.matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', effectiveTheme);
+      if (document.body) {
+        document.body.setAttribute('data-theme', effectiveTheme);
+      }
+    };
+    
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
   }, [themeMode]);
 
   useEffect(() => {
@@ -215,8 +260,16 @@ export function ThemeProvider({ children }) {
     }
   }, [colorblindMode]);
 
+  const setThemeMode = useCallback((mode) => {
+    setThemeModeInternal(mode);
+  }, []);
+
+  const setAccentColor = useCallback((color) => {
+    setAccentColorInternal(color);
+  }, []);
+
   const toggleTheme = useCallback(() => {
-    setThemeMode(prev => prev === 'dark' ? 'light' : 'dark');
+    setThemeModeInternal(prev => prev === 'dark' ? 'light' : 'dark');
   }, []);
 
   const toggleColorblind = useCallback(() => {
@@ -225,10 +278,13 @@ export function ThemeProvider({ children }) {
 
   const value = useMemo(() => ({
     themeMode,
+    accentColor,
     colorblindMode,
+    setThemeMode,
+    setAccentColor,
     toggleTheme,
     toggleColorblind,
-  }), [themeMode, colorblindMode, toggleTheme, toggleColorblind]);
+  }), [themeMode, accentColor, colorblindMode, setThemeMode, setAccentColor, toggleTheme, toggleColorblind]);
 
   return (
     <ThemeContext.Provider value={value}>
