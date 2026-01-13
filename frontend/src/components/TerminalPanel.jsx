@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FaTerminal, FaFilter, FaPlus, FaTimes } from 'react-icons/fa';
 import { API } from '../lib/api';
+import { authHeaders } from '../context/AppContext';
 import { loadMuteConfig, saveMuteConfig, defaultMuteRegexes, defaultMutePatterns } from '../lib/consoleFilters';
 import { ansiToHtml } from '../lib/ansiToHtml';
 
-export default function TerminalPanel({ containerId, resetToken = 0 }) {
+export default function TerminalPanel({ containerId, serverId, resetToken = 0 }) {
+  const container = containerId || serverId;
   const [cmd, setCmd] = useState('');
   const [rawLogs, setRawLogs] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -15,28 +17,28 @@ export default function TerminalPanel({ containerId, resetToken = 0 }) {
 
   // Load persisted config per server (container)
   useEffect(() => {
-    if (!containerId) return;
-    const cfg = loadMuteConfig(containerId);
+    if (!container) return;
+    const cfg = loadMuteConfig(container);
     setMuteEnabled(cfg.enabled);
     setPatternsText(cfg.patterns.join('\n'));
-  }, [containerId]);
+  }, [container]);
 
   // Persist on changes
   useEffect(() => {
-    if (!containerId) return;
+    if (!container) return;
     const patterns = patternsText
       .split(/\r?\n/)
       .map(s => s.trim())
       .filter(Boolean);
-    saveMuteConfig(containerId, { enabled: muteEnabled, patterns });
-  }, [containerId, muteEnabled, patternsText]);
+    saveMuteConfig(container, { enabled: muteEnabled, patterns });
+  }, [container, muteEnabled, patternsText]);
 
   // Initial fetch and fetch on reset (start/stop/restart)
   useEffect(() => {
-    if (!containerId) return;
+    if (!container) return;
     let active = true;
     setRawLogs('');
-    fetch(`${API}/servers/${containerId}/logs?tail=200`)
+    fetch(`${API}/servers/${container}/logs?tail=200`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((d) => {
         if (active && d && typeof d.logs === 'string') setRawLogs(d.logs);
@@ -45,16 +47,16 @@ export default function TerminalPanel({ containerId, resetToken = 0 }) {
         if (active) setRawLogs('');
       });
     return () => { active = false; };
-  }, [containerId, resetToken]);
+  }, [container, resetToken]);
 
   // Polling
   useEffect(() => {
-    if (!containerId) return;
+    if (!container) return;
     let active = true;
     let interval = null;
     async function pollLogs() {
       try {
-        const r = await fetch(`${API}/servers/${containerId}/logs?tail=200`);
+        const r = await fetch(`${API}/servers/${container}/logs?tail=200`, { headers: authHeaders() });
         const d = await r.json();
         if (active && d && typeof d.logs === 'string') setRawLogs(d.logs);
       } catch (e) {
@@ -63,7 +65,7 @@ export default function TerminalPanel({ containerId, resetToken = 0 }) {
     }
     interval = setInterval(pollLogs, 4000);
     return () => { active = false; if (interval) clearInterval(interval); };
-  }, [containerId]);
+  }, [container]);
 
   // Compile regex safely
   const compiledRegexes = useMemo(() => {
@@ -104,9 +106,9 @@ export default function TerminalPanel({ containerId, resetToken = 0 }) {
 
   function send() {
     if (!cmd.trim()) return;
-    fetch(`${API}/servers/${containerId}/command`, {
+    fetch(`${API}/servers/${container}/command`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ command: cmd }),
     });
     setCmd('');

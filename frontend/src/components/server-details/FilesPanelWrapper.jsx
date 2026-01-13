@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FaFolder, FaUpload, FaSave, FaEdit, FaTimes, FaCheck, FaBan, FaArrowUp, FaSyncAlt, FaFolderPlus } from 'react-icons/fa';
 import { API, getStoredToken } from '../../lib/api';
+import { authHeaders } from '../../context/AppContext';
 
-export default function FilesPanelWrapper({ serverName, initialItems = null, isBlockedFile, onEditStart, onBlockedFileError }) {
+export default function FilesPanelWrapper({ serverName, initialItems = null, isBlockedFile, onEditStart, onEdit, onBlockedFileError }) {
+  // Accept both `onEditStart` (old name) and `onEdit` (used by pages)
+  const onEditCallback = onEditStart || onEdit;
   // Defensive alias to avoid accidental ReferenceError when prop is missing
   const sName = serverName || '';
   const [path, setPath] = useState('.');
@@ -74,8 +77,9 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
         setPath(p);
         return;
       }
+      const hdrs = { ...(authHeaders ? authHeaders() : {}), ...headers };
       const r = await withTimeout(
-        fetch(`${API}/servers/${encodeURIComponent(sName)}/files?path=${encodeURIComponent(p)}`, { signal: abortController.signal, headers }),
+        fetch(`${API}/servers/${encodeURIComponent(sName)}/files?path=${encodeURIComponent(p)}`, { signal: abortController.signal, headers: hdrs }),
         8000,
         abortController
       );
@@ -124,7 +128,8 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     const filePath = path === '.' ? name : `${path}/${name}`;
     if (!sName) { setBlockedFileErrorLocal('Server name missing'); onBlockedFileError?.('Server name missing'); return; }
     const r = await fetch(
-      `${API}/servers/${encodeURIComponent(sName)}/file?path=${encodeURIComponent(filePath)}`
+      `${API}/servers/${encodeURIComponent(sName)}/file?path=${encodeURIComponent(filePath)}`,
+      { headers: authHeaders() }
     );
     const d = await r.json();
     if (d && d.error) {
@@ -132,7 +137,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
       onBlockedFileError?.(d.error);
       return;
     }
-    onEditStart?.(filePath, d.content || '');
+    onEditCallback?.(filePath, d.content || '');
   }
 
   async function openDir(name) {
@@ -155,7 +160,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
       if (!sName) throw new Error('Server name missing');
       const r = await fetch(
         `${API}/servers/${encodeURIComponent(sName)}/file?path=${encodeURIComponent(p)}`,
-        { method: 'DELETE' }
+        { method: 'DELETE', headers: authHeaders() }
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
     } catch (e) {
@@ -173,7 +178,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     if (!sName) throw new Error('Server name missing');
     await fetch(`${API}/servers/${encodeURIComponent(sName)}/rename`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ src: p, dest })
     });
     setRenameTarget(null);
@@ -196,7 +201,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     if (!sName) throw new Error('Server name missing');
     await fetch(`${API}/servers/${encodeURIComponent(sName)}/zip`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ path: p })
     });
     loadDir(path, { force: true });
@@ -212,7 +217,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     if (!sName) throw new Error('Server name missing');
     await fetch(`${API}/servers/${encodeURIComponent(sName)}/unzip`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ path: p, dest })
     });
     loadDir(path, { force: true });
@@ -224,7 +229,8 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
   const url = `${API}/servers/${encodeURIComponent(sName)}/download?path=${encodeURIComponent(p)}`;
     try {
       const token = getStoredToken();
-      const r = await fetch(url, { headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : authHeaders();
+      const r = await fetch(url, { headers });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const blob = await r.blob();
       const a = document.createElement('a');
@@ -248,7 +254,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     if (!sName) throw new Error('Server name missing');
     await fetch(`${API}/servers/${encodeURIComponent(sName)}/mkdir`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ path: p })
     });
     loadDir(path, { force: true });
@@ -465,7 +471,8 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     inflightPrefetchRef.current[key] = true;
     try {
       const r = await fetch(
-        `${API}/servers/${encodeURIComponent(serverName)}/files?path=${encodeURIComponent(dirPath)}`
+        `${API}/servers/${encodeURIComponent(serverName)}/files?path=${encodeURIComponent(dirPath)}`,
+        { headers: authHeaders() }
       );
       if (!r.ok) return;
       const d = await r.json();

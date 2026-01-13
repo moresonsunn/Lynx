@@ -741,7 +741,7 @@ export default function TemplatesPage({
                       if (serverType) formData.append('server_type', serverType);
                       if (serverVersion) formData.append('server_version', serverVersion);
                       if (zipFile) formData.append('file', zipFile);
-                      const response = await fetch(`${API}/modpacks/import-upload`, { method: 'POST', body: formData });
+                      const response = await fetch(`${API}/modpacks/import-upload`, { method: 'POST', headers: safeAuthHeaders(), body: formData });
                       const data = await response.json().catch(() => ({}));
                       if (!response.ok) {
                         throw new Error(data?.detail || `HTTP ${response.status}`);
