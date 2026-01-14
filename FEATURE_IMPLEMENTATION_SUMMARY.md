@@ -325,5 +325,3 @@ Lynx is now **enterprise-ready** and suitable for:
 - 💼 **Commercial game server hosting**
 
 ---
-
-**🎉 Congratulations! Lynx is now a professional-grade game server management platform that rivals and exceeds commercial alternatives like Crafty Controller – with the added bonus of supporting Steam games!**
