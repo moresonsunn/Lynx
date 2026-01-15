@@ -370,6 +370,30 @@ load_force_patterns() {
   printf '%s\n' "${out[@]}"
 }
 
+
+# Centralized list of known client-only mod patterns
+# This is shared between purge_mods and crash recovery
+get_known_client_patterns() {
+  local patterns=(
+    "iris" "oculus" "sodium" "embeddium" "rubidium" "optifine" "optifabric"
+    "xaero" "journeymap" "voxelmap" "worldmap" "minimap"
+    "replaymod" "replay" "dynamicfps" "dynamic-fps" "dynamic_fps"
+    "lambdynamiclights" "betterf3" "better-f3" "itemphysic"
+    "particular" "presence-footsteps" "soundphysics" "ambientsounds"
+    "litematica" "minihud" "tweakeroo" "freecam" "flycam"
+    "modmenu" "mod-menu" "controlling" "configured"
+    "canvas-renderer" "immediatelyfast" "entityculling"
+    "fpsreducer" "enhancedvisuals" "visuality" "cull-less-leaves"
+    "skinlayers" "ears" "figura" "emotecraft" "emotes"
+    "appleskin" "jade" "hwyla" "waila" "wthit" "emi" "rei"
+    "blur" "smooth-boot" "smoothboot" "loadingscreen"
+    "torohealth" "betterthirdperson" "cameraoverhaul" "citresewn"
+    "shader" "dripsounds" "auditory" "extrasounds"
+    "fancymenu" "konkrete" "drippyloadingscreen"
+  )
+  printf '%s\n' "${patterns[@]}"
+}
+
 is_client_only_jar() {
   local jar="$1"
   local has_meta=0
@@ -403,21 +427,40 @@ is_client_only_jar() {
       rm -f /tmp/__mt
     fi
   fi
-  # Optional pattern fallback (from env/URL/files only)
+  
   local base lower
   base="$(basename "$jar")"
   lower="${base,,}"
+
+  # Check against centralized known patterns
+  # We check this EVEN IF metadata is present, because sometimes metadata is wrong or missing.
+  # But we should be careful. Usually metadata wins. 
+  # However, for known client-side-only mods like Optifine/Iris, we force it.
+  # If metadata says "server", we trust it? 
+  # Let's keep existing logic: Check metadata match FIRST.
+  # If has_meta is 0, THEN check patterns.
+  # BUT, load_force_patterns always runs.
+  
   if [ "$has_meta" -eq 0 ]; then
+    # Optional pattern fallback (from env/URL/files)
     while read -r pat; do
       [ -z "$pat" ] && continue
       [[ "$lower" == *"$pat"* ]] && return 0
     done < <(load_extra_patterns)
+    
+    # Internal known patterns (fallback)
+    while read -r pat; do
+      [ -z "$pat" ] && continue
+      [[ "$lower" == *"$pat"* ]] && return 0
+    done < <(get_known_client_patterns)
   fi
+
   # Force overrides: always apply
   while read -r fpat; do
     [ -z "$fpat" ] && continue
     [[ "$lower" == *"$fpat"* ]] && return 0
   done < <(load_force_patterns)
+  
   return 1
 }
 
@@ -447,6 +490,17 @@ purge_mods() {
   local disable_client_dir="./mods-disabled-client"
   local disable_incompat_dir="./mods-disabled-incompatible"
   mkdir -p "$disable_client_dir" "$disable_incompat_dir"
+  
+  # Ensure the allowlist file exists so the user knows where to use it
+  if [ ! -f "client-only-allow.txt" ]; then
+    touch "client-only-allow.txt"
+    echo "# Add mod filenames (or parts of them) here to prevent them from being disabled as client-only." >> client-only-allow.txt
+    echo "# Example: tooltipsfix" >> client-only-allow.txt
+    
+    # Also fix permissions if running as root/docker logic allows, though likely user is correct
+    # no specific chown here as we assume container user is correct
+  fi
+
   local moved_client=0
   local moved_incompat=0
   shopt -s nullglob
@@ -482,8 +536,44 @@ purge_mods() {
       fi
     fi
 
+# Allowlist patterns for client purge
+load_client_allowlist() {
+  local out=()
+  if [ -n "${CLIENT_PURGE_ALLOWLIST:-}" ]; then
+    IFS=',' read -ra __tokarr <<< "${CLIENT_PURGE_ALLOWLIST}"
+    for __tok in "${__tokarr[@]}"; do
+      __tok="$(echo "$__tok" | tr '[:upper:]' '[:lower:]' | xargs)"
+      [ -n "$__tok" ] && out+=("$__tok")
+    done
+  fi
+  for cfg in "./client-only-allow.txt" "/data/servers/client-only-allow.txt"; do
+    if [ -f "$cfg" ]; then
+      while IFS= read -r __line || [ -n "$__line" ]; do
+        __line="$(echo "$__line" | tr '[:upper:]' '[:lower:]' | sed 's/^\s\+//;s/\s\+$//')"
+        if [ -n "$__line" ] && ! echo "$__line" | grep -qE '^#'; then
+          out+=("$__line")
+        fi
+      done < "$cfg"
+    fi
+  done
+  printf '%s\n' "${out[@]}"
+}
+
     # Then, purge known client-only jars conservatively
     if [ "$AUTO_CLIENT_PURGE" = "1" ] && is_client_only_jar "$f"; then
+      # Check allowlist
+      base_name="$(basename "$f")"; lower_name="${base_name,,}"
+      allow_match=0
+      while read -r ap; do
+        [ -z "$ap" ] && continue
+        if [[ "$lower_name" == *"$ap"* ]]; then allow_match=1; break; fi
+      done < <(load_client_allowlist)
+      
+      if [ "$allow_match" = "1" ]; then
+        echo "INFO: Allowlisted from client purge: $base_name"
+        continue
+      fi
+
       echo "INFO: Disabling client-only mod: $(basename "$f")"
       mv -f "$f" "$disable_client_dir"/ || true
       moved_client=$((moved_client+1))
@@ -636,24 +726,6 @@ disable_crash_mods() {
   [ -d "$mods_dir" ] || return 0
   mkdir -p "$disable_dir"
   
-  # Extended list of known client-only mod patterns
-  local client_mod_patterns=(
-    "iris" "oculus" "sodium" "embeddium" "rubidium" "optifine" "optifabric"
-    "xaero" "journeymap" "voxelmap" "worldmap" "minimap"
-    "replaymod" "replay" "dynamicfps" "dynamic-fps" "dynamic_fps"
-    "lambdynamiclights" "betterf3" "better-f3" "itemphysic"
-    "particular" "presence-footsteps" "soundphysics" "ambientsounds"
-    "litematica" "minihud" "tweakeroo" "freecam" "flycam"
-    "modmenu" "mod-menu" "controlling" "configured"
-    "canvas-renderer" "immediatelyfast" "entityculling"
-    "fpsreducer" "enhancedvisuals" "visuality" "cull-less-leaves"
-    "skinlayers" "ears" "figura" "emotecraft" "emotes"
-    "appleskin" "jade" "hwyla" "waila" "wthit" "emi" "rei"
-    "blur" "tooltip" "smooth-boot" "smoothboot" "loadingscreen"
-    "torohealth" "betterthirdperson" "cameraoverhaul" "citresewn"
-    "shader" "dripsounds" "auditory" "extrasounds"
-  )
-  
   # First, scan for known client-only mods
   shopt -s nullglob
   for jar in "$mods_dir"/*.jar; do
@@ -675,12 +747,12 @@ disable_crash_mods() {
     
     # Check against known patterns if not already identified
     if [ "$is_client" -eq 0 ]; then
-      for pattern in "${client_mod_patterns[@]}"; do
+      while read -r pattern; do
         if [[ "$lower" == *"$pattern"* ]]; then
           is_client=1
           break
         fi
-      done
+      done < <(get_known_client_patterns)
     fi
     
     if [ "$is_client" -eq 1 ]; then

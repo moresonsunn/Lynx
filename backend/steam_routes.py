@@ -202,6 +202,7 @@ async def list_games(
             "env": env_defaults,
             "volume": meta.get("volume"),
             "default_name": meta.get("default_name") or slug,
+            "category": meta.get("category"),
         })
     return {"games": games}
 
@@ -245,6 +246,18 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
     _make_dir_writable(server_root)
     host_dir = server_root
 
+    # For remote Docker hosts (STEAM_DOCKER_HOST), use STEAM_SERVERS_HOST_ROOT
+    # to specify the correct path on the remote machine where servers are stored.
+    # This allows the Files panel to work correctly by keeping server data
+    # accessible from both the Lynx backend and the Steam container.
+    steam_host_root = (os.getenv("STEAM_SERVERS_HOST_ROOT") or "").strip()
+    if steam_host_root:
+        # Use the remote host path for volume mounting
+        remote_host_dir = Path(steam_host_root) / payload.name
+        volume_host_path = remote_host_dir
+    else:
+        volume_host_path = host_dir
+
     if game == "tmodloader":
         try:
             _prepare_tmodloader_files(host_dir, env, ports, (meta.get("volume") or {}).get("container"))
@@ -254,7 +267,7 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
     volume = None
     if meta.get("volume"):
         volume = {
-            "host": host_dir,
+            "host": volume_host_path,
             "container": meta["volume"].get("container") or "/config",
         }
 

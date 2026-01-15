@@ -268,25 +268,36 @@ async def search_catalog(
             asg = _acronym(slug)
             s = 0.0
             if qn:
+                # Exact match gets highest priority
                 if nn == qn or ns == qn:
-                    s += 10000.0
+                    s += 50000.0
+                # Name/slug starts with query - significantly boosted
                 elif nn.startswith(qn) or ns.startswith(qn):
-                    s += 2500.0
+                    s += 25000.0
+                # First word of name matches query exactly
+                elif nn.split()[0] == qn if nn.split() else False:
+                    s += 20000.0
+                # Query is contained in name/slug
                 elif qn in nn or qn in ns:
-                    s += 1000.0
+                    s += 5000.0
             
+            # Acronym matching
             if qa:
                 if qa == an or qa == asg:
-                    s += 9000.0
+                    s += 40000.0
                 elif an.startswith(qa) or asg.startswith(qa):
-                    s += 2200.0
+                    s += 15000.0
                 elif qa in an or qa in asg:
-                    s += 800.0
+                    s += 3000.0
             
             if item.get("_alias_match"):
-                s += 3000.0
+                s += 10000.0
+            
+            # Downloads add a smaller factor so name matching takes priority
             dl = float(item.get("downloads") or 0)
-            s += min(dl / 1000.0, 1000.0)
+            s += min(dl / 10000.0, 500.0)
+            
+            # Recency bonus
             upd = item.get("updated")
             try:
                 if isinstance(upd, str) and upd:
@@ -376,8 +387,9 @@ async def search_catalog(
                         if not chunk:
                             break
                         acc.extend(chunk)
-                    except Exception:
-                        break
+                    except Exception as e:
+                        log.error(f"CurseForge search error: {e}")
+                        pass
                 
                 import re as _re_alias2
                 alias_patterns = [

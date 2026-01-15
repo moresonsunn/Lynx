@@ -137,7 +137,7 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
             "xaero", "xaeros", "journeymap", "voxelmap", "worldmap", "minimap",
             "betterf3", "better-f3", "appleskin", "itemphysic", "jade", "hwyla", "waila",
             "wthit", "justmap", "torohealth",
-            "blur", "tooltip", "controlling", "mod-menu", "modmenu", "configured", "catalogue",
+            "blur", "controlling", "mod-menu", "modmenu", "configured", "catalogue",
             "smoothboot", "smooth-boot", "loadingscreen", "mainmenu", "panoramafix",
             "betterthirdperson", "freelook", "cameraoverhaul", "citresewn", "cit-resewn",
             
@@ -160,6 +160,7 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
             # Framework keywords (may appear in some client-only libs)
             "particular", "framework",
             "reeses_sodium_options", "rrls", "respackopt",
+            "fancymenu", "konkrete",
         ]
         try:
             extra_env = os.environ.get("CLIENT_ONLY_MOD_PATTERNS", "").strip()

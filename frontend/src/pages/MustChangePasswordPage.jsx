@@ -10,7 +10,7 @@ function validateNewPassword(password, t) {
   return '';
 }
 
-export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete, onLogout }) {
+export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete, onLogout, authHeaders }) {
   const { t } = useTranslation();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -36,9 +36,13 @@ export default function MustChangePasswordPage({ appName, apiBaseUrl, onComplete
 
     setLoading(true);
     try {
+      const headers = typeof authHeaders === 'function' ? authHeaders() : (authHeaders || {});
       const r = await fetch(`${apiBaseUrl}/auth/me/password`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        },
         body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
       });
       if (!r.ok) {

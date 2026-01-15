@@ -14,6 +14,9 @@ import {
   FaArrowLeft,
   FaBackward,
   FaForward,
+  FaSteam,
+  FaDungeon,
+  FaCube,
 } from 'react-icons/fa';
 
 
@@ -23,7 +26,10 @@ import DashboardPage from './pages/DashboardPage';
 import ServersPage from './pages/ServersPage';
 import ServerDetailsPage from './pages/ServerDetailsPage';
 import SettingsPage from './pages/SettingsPage';
+
 import UsersPage from './pages/UsersPage';
+import SteamGamesPage from './pages/SteamGamesPage';
+import HytalePage from './pages/HytalePage';
 
 
 import GlobalSearchBar from './components/GlobalSearchBar';
@@ -47,15 +53,15 @@ function AppLayout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  
-  const [sidebarOpen, setSidebarOpen] = useState(() => 
+
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
   );
-  const [isMobile, setIsMobile] = useState(() => 
+  const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
 
-  
+
   useEffect(() => {
     function handleResize() {
       const mobile = window.innerWidth < 768;
@@ -66,37 +72,40 @@ function AppLayout({ children }) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  
+
   const sidebarItems = useMemo(() => {
     const items = [
       { id: 'dashboard', path: '/', label: t('nav.dashboard'), icon: FaHome, end: true },
       { id: 'servers', path: '/servers', label: t('nav.servers'), icon: FaServer },
-      { id: 'templates', path: '/templates', label: t('nav.templates'), icon: FaLayerGroup },
+
+      { id: 'minecraft', path: '/templates', label: 'Minecraft', icon: FaCube },
+      { id: 'steam', path: '/steam', label: 'Steam', icon: FaSteam },
+      { id: 'hytale', path: '/hytale', label: 'Hytale', icon: FaDungeon },
     ];
-    
+
     if (isAdmin) {
       items.push({ id: 'users', path: '/users', label: t('nav.users'), icon: FaUsers });
     }
-    
+
     items.push({ id: 'settings', path: '/settings', label: t('nav.settings'), icon: FaCog });
-    
+
     return items;
   }, [isAdmin, t]);
 
-  
+
   const currentPageLabel = useMemo(() => {
     const currentPath = location.pathname;
-    const item = sidebarItems.find(i => 
+    const item = sidebarItems.find(i =>
       i.end ? currentPath === i.path : currentPath.startsWith(i.path)
     );
     return item?.label || t('nav.dashboard');
   }, [location.pathname, sidebarItems, t]);
 
-  
+
   const handleGlobalNavigate = useCallback((target) => {
     if (!target) return;
-    
-    
+
+
     if (target.type === 'server' && target.id) {
       navigate(`/servers/${target.id}`);
     } else if (target.type === 'player' && target.serverId) {
@@ -108,7 +117,7 @@ function AppLayout({ children }) {
     }
   }, [navigate]);
 
-  
+
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Sidebar Header */}
@@ -255,38 +264,38 @@ function AppLayout({ children }) {
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading, mustChangePassword } = useAuth();
   const location = useLocation();
-  
+
   if (loading) {
     return <PageLoader />;
   }
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-  
+
   if (mustChangePassword && location.pathname !== '/change-password') {
     return <Navigate to="/change-password" replace />;
   }
-  
+
   return <AppLayout>{children}</AppLayout>;
 }
 
 
 function AdminRoute({ children }) {
   const { isAuthenticated, isAdmin, loading } = useAuth();
-  
+
   if (loading) {
     return <PageLoader />;
   }
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  
+
   if (!isAdmin) {
     return <Navigate to="/" replace />;
   }
-  
+
   return <AppLayout>{children}</AppLayout>;
 }
 
@@ -299,7 +308,7 @@ function LoginPageWrapper() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   useEffect(() => {
     if (isAuthenticated) {
       const from = location.state?.from?.pathname || '/';
@@ -311,7 +320,7 @@ function LoginPageWrapper() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    
+
     try {
       await login(username, password);
     } catch (err) {
@@ -350,14 +359,14 @@ function TemplatesPageWrapper() {
   const [loaderVersionsData, setLoaderVersionsData] = useState(null);
   const [installerVersion, setInstallerVersion] = useState('');
   const [versionsData, setVersionsData] = useState(null);
-  
+
   const types = globalData?.serverTypes || [];
 
-  
+
   useEffect(() => {
     if (!selectedType) return;
     let cancelled = false;
-    
+
     async function fetchVersions() {
       try {
         const r = await fetch(`${API}/server-types/${selectedType}/versions`, { headers: authHeaders() });
@@ -368,23 +377,54 @@ function TemplatesPageWrapper() {
             setVersion(data.versions[0].id || data.versions[0]);
           }
         }
-      } catch {}
+      } catch { }
     }
-    
+
     fetchVersions();
     return () => { cancelled = true; };
   }, [selectedType]);
 
-  
+  useEffect(() => {
+    if (!['fabric', 'forge', 'neoforge'].includes(selectedType) || !version) {
+      setLoaderVersionsData(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function fetchLoaders() {
+      try {
+        const r = await fetch(`${API}/server-types/${selectedType}/loader-versions?version=${version}`, { headers: authHeaders() });
+        if (r.ok && !cancelled) {
+          const data = await r.json();
+          setLoaderVersionsData(data);
+          // Auto-select first loader version if not set
+          if (data?.loader_versions?.length > 0) {
+            setLoaderVersion(data.loader_versions[0]);
+          }
+          // Auto-set installer version for Fabric
+          if (selectedType === 'fabric' && data?.latest_installer_version) {
+            setInstallerVersion(data.latest_installer_version);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch loader versions", e);
+      }
+    }
+
+    fetchLoaders();
+    return () => { cancelled = true; };
+  }, [selectedType, version]);
+
+
   const createServer = useCallback(async () => {
     const serverName = name.trim();
     if (!serverName) {
       showToast('error', 'Please enter a server name');
       return;
     }
-    
+
     showToast('info', `Creating server "${serverName}"...`, 10000);
-    
+
     try {
       const body = {
         name: serverName,
@@ -396,52 +436,52 @@ function TemplatesPageWrapper() {
         loader_version: loaderVersion || null,
         installer_version: installerVersion || null,
       };
-      
+
       const r = await fetch(`${API}/servers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(body)
       });
-      
+
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error(err.detail || `HTTP ${r.status}`);
       }
-      
-      
+
+
       const startTime = Date.now();
       const timeoutMs = 15000;
       const intervalMs = 500;
       let foundServer = null;
-      
+
       while (Date.now() - startTime < timeoutMs) {
         try {
           const serversRes = await fetch(`${API}/servers`, { headers: authHeaders() });
           if (serversRes.ok) {
             const servers = await serversRes.json();
             foundServer = Array.isArray(servers) ? servers.find(s => s && s.name === serverName) : null;
-            
-            
+
+
             if (globalData?.__setGlobalData) {
               globalData.__setGlobalData(cur => ({ ...cur, servers: Array.isArray(servers) ? servers : cur.servers }));
             }
-            
+
             if (foundServer) break;
           }
-        } catch {}
+        } catch { }
         await new Promise(res => setTimeout(res, intervalMs));
       }
-      
-      
+
+
       setName('');
-      
+
       if (foundServer) {
         showToast('success', `Server "${serverName}" created successfully!`);
-        
+
         navigate(`/servers/${foundServer.id}`);
       } else {
         showToast('info', `Server "${serverName}" is being created. It will appear shortly.`);
-        
+
         if (globalData?.__refreshServers) {
           globalData.__refreshServers();
         }
@@ -483,24 +523,47 @@ function TemplatesPageWrapper() {
 }
 
 
+
+function MustChangePasswordWrapper() {
+  const { logout, authHeaders } = useAuth();
+
+  const handleComplete = () => {
+    // Force reload to refresh auth state and redirect to dashboard
+    window.location.href = '/';
+  };
+
+  return (
+    <MustChangePasswordPage
+      appName={APP_NAME}
+      apiBaseUrl={API}
+      onLogout={logout}
+      onComplete={handleComplete}
+      authHeaders={authHeaders}
+    />
+  );
+}
+
 function AppRoutes() {
   return (
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<LoginPageWrapper />} />
-      <Route path="/change-password" element={<MustChangePasswordPage />} />
-      
+      <Route path="/change-password" element={<MustChangePasswordWrapper />} />
+
       {/* Protected routes */}
       <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/servers" element={<ProtectedRoute><ServersPage /></ProtectedRoute>} />
       <Route path="/servers/:serverId" element={<ProtectedRoute><ServerDetailsPage /></ProtectedRoute>} />
       <Route path="/servers/:serverId/:tab" element={<ProtectedRoute><ServerDetailsPage /></ProtectedRoute>} />
+
       <Route path="/templates" element={<ProtectedRoute><TemplatesPageWrapper /></ProtectedRoute>} />
+      <Route path="/steam" element={<ProtectedRoute><SteamGamesPage /></ProtectedRoute>} />
+      <Route path="/hytale" element={<ProtectedRoute><HytalePage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
 
       {/* Admin routes */}
       <Route path="/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
-      
+
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -92,6 +92,8 @@ class CurseForgeProvider:
             "classId": CLASS_ID_MODPACKS,
             "pageSize": page_size,
             "index": item_offset,
+            "sortField": 2, # Popularity
+            "sortOrder": "desc",
         }
         if query:
             params["searchFilter"] = query
