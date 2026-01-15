@@ -53,8 +53,8 @@ export default function ServerDetailsPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const globalData = useGlobalData();
-  
-  
+
+
   const server = useMemo(() => {
     return globalData.servers.find(s => s.id === serverId) || null;
   }, [globalData.servers, serverId]);
@@ -69,12 +69,12 @@ export default function ServerDetailsPage() {
 
   const stats = useServerStats(serverId);
 
-  
+
   useEffect(() => {
     setActiveTab(urlTab);
   }, [urlTab]);
 
-  
+
   const handleTabChange = useCallback((newTab) => {
     setActiveTab(newTab);
     navigate(`/servers/${serverId}/${newTab}`, { replace: true });
@@ -90,7 +90,7 @@ export default function ServerDetailsPage() {
       .join(' ');
   }, []);
 
-  
+
   const preloadedInfo = globalData.serverInfoById?.[serverId] || null;
   const { data: fetchedInfo } = useFetch(
     !preloadedInfo && serverId ? `${API}/servers/${serverId}/info` : null,
@@ -100,7 +100,7 @@ export default function ServerDetailsPage() {
   const runtimeKind = (typeVersionData?.server_kind || server?.server_kind || '').toLowerCase();
   const isSteam = runtimeKind === 'steam';
 
-  
+
   const tabs = useMemo(() => {
     const base = [
       { id: 'overview', label: t('tabs.overview'), icon: FaServer },
@@ -119,7 +119,7 @@ export default function ServerDetailsPage() {
     return base;
   }, [isSteam, t]);
 
-  
+
   const handleAction = useCallback(async (action) => {
     if (!serverId || actionLoading) return;
     setActionLoading(action);
@@ -133,11 +133,11 @@ export default function ServerDetailsPage() {
         const d = await r.json().catch(() => ({}));
         throw new Error(d.detail || `Action failed: ${r.status}`);
       }
-      
+
       if (globalData.__refreshServers) {
         globalData.__refreshServers();
       }
-      
+
       if (globalData.__updateServerStatus) {
         const statusMap = { start: 'running', stop: 'stopped', restart: 'running' };
         if (statusMap[action]) {
@@ -185,11 +185,11 @@ export default function ServerDetailsPage() {
     setFilesEditing(true);
   }, []);
 
-  
+
   if (!server) {
     return (
       <div className="p-6">
-        <button 
+        <button
           onClick={() => navigate('/servers')}
           className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
         >
@@ -211,13 +211,13 @@ export default function ServerDetailsPage() {
       {/* Header */}
       <div className="border-b border-white/10 bg-ink/80 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4">
-          <button 
+          <button
             onClick={() => navigate('/servers')}
             className="flex items-center gap-2 text-white/60 hover:text-white text-sm mb-4"
           >
             <FaArrowLeft /> Back to Servers
           </button>
-          
+
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-lg bg-brand-500/90 ring-4 ring-brand-500/20 flex items-center justify-center text-2xl text-white">
@@ -229,15 +229,14 @@ export default function ServerDetailsPage() {
                   <span>{displayType}</span>
                   <span>•</span>
                   <span>{displayVersion}</span>
-                  <span className={`px-2 py-0.5 rounded text-xs ${
-                    isRunning ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'
-                  }`}>
+                  <span className={`px-2 py-0.5 rounded text-xs ${isRunning ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'
+                    }`}>
                     {server.status}
                   </span>
                 </div>
               </div>
             </div>
-            
+
             {/* Action buttons */}
             <div className="flex items-center gap-2">
               {isRunning ? (
@@ -278,7 +277,7 @@ export default function ServerDetailsPage() {
               </button>
             </div>
           </div>
-          
+
           {/* Stats bar */}
           {stats && !stats.error && isRunning && (
             <div className="flex items-center gap-4 mt-4 text-sm text-white/70">
@@ -289,18 +288,17 @@ export default function ServerDetailsPage() {
               <span>RAM: {Math.round(stats.memory_usage_mb)}/{Math.round(stats.memory_limit_mb)} MB</span>
             </div>
           )}
-          
+
           {/* Tabs */}
           <div className="flex gap-1 mt-4 overflow-x-auto pb-1">
             {tabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${
-                  activeTab === tab.id
+                className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${activeTab === tab.id
                     ? 'bg-white/10 text-white border-b-2 border-brand-500'
                     : 'text-white/60 hover:text-white hover:bg-white/5'
-                }`}
+                  }`}
               >
                 <tab.icon className="text-xs" />
                 {tab.label}
@@ -309,7 +307,7 @@ export default function ServerDetailsPage() {
           </div>
         </div>
       </div>
-      
+
       {/* Tab Content */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
         {activeTab === 'overview' && (
@@ -338,7 +336,7 @@ export default function ServerDetailsPage() {
                   )}
                 </div>
               </div>
-              
+
               <div className="glassmorphism rounded-xl p-4">
                 <h3 className="text-sm font-medium text-white/60 mb-2">Resources</h3>
                 <div className="space-y-2 text-sm">
@@ -367,18 +365,16 @@ export default function ServerDetailsPage() {
             </div>
           </div>
         )}
-        
+
         {activeTab === 'console' && (
           <div className="h-[600px]">
             <TerminalPanel
-              serverName={server.name}
               serverId={server.id}
-              isRunning={isRunning}
-              resetKey={logReset}
+              resetToken={logReset}
             />
           </div>
         )}
-        
+
         {activeTab === 'files' && !isEditing && (
           <FilesPanelWrapper
             serverName={server.name}
@@ -386,7 +382,7 @@ export default function ServerDetailsPage() {
             onEdit={handleEditStart}
           />
         )}
-        
+
         {activeTab === 'files' && isEditing && (
           <EditingPanel
             serverName={server.name}
@@ -399,34 +395,34 @@ export default function ServerDetailsPage() {
             }}
           />
         )}
-        
+
         {activeTab === 'config' && (
           <ConfigPanel
             server={server}
           />
         )}
-        
+
         {activeTab === 'players' && (
           <PlayersPanel
             serverName={server.name}
             serverId={server.id}
           />
         )}
-        
+
         {activeTab === 'worlds' && (
           <WorldsPanel
             serverName={server.name}
             serverId={server.id}
           />
         )}
-        
+
         {activeTab === 'backup' && (
           <BackupsPanel
             serverName={server.name}
             serverId={server.id}
           />
         )}
-        
+
         {activeTab === 'schedule' && (
           <SchedulePanel
             serverName={server.name}

@@ -109,6 +109,7 @@ class CurseForgeProvider:
         arr = r.json().get("data", [])
         out: List[PackSummary] = []
         ql = (query or "").strip().lower()
+        ql_norm = re.sub(r'[^a-z0-9]+', '', ql)  # normalized version without spaces/special chars
 
         def _has_source_link(mod: Dict[str, Any]) -> bool:
             links = mod.get("links") or {}
@@ -137,13 +138,31 @@ class CurseForgeProvider:
             }))
 
         # Sort locally so exact matches float to top; then by downloads
+        # Use improved scoring that also checks normalized versions
         if ql:
-            out.sort(key=lambda x: (
-                3 if (str(x.get("name") or "").lower() == ql or str(x.get("slug") or "").lower() == ql) else 
-                2 if (str(x.get("name") or "").lower().startswith(ql) or str(x.get("slug") or "").lower().startswith(ql)) else 
-                1 if (ql in str(x.get("name") or "").lower() or ql in str(x.get("slug") or "").lower()) else 0,
-                float(x.get("downloads") or 0)
-            ), reverse=True)
+            def score_item(x):
+                name = str(x.get("name") or "").lower()
+                slug = str(x.get("slug") or "").lower()
+                name_norm = re.sub(r'[^a-z0-9]+', '', name)
+                slug_norm = re.sub(r'[^a-z0-9]+', '', slug)
+                
+                # Exact match gets highest priority
+                if name == ql or slug == ql or name_norm == ql_norm or slug_norm == ql_norm:
+                    return (4, float(x.get("downloads") or 0))
+                # Name/slug starts with query
+                if name.startswith(ql) or slug.startswith(ql) or name_norm.startswith(ql_norm) or slug_norm.startswith(ql_norm):
+                    return (3, float(x.get("downloads") or 0))
+                # Query is contained in name/slug
+                if ql in name or ql in slug or ql_norm in name_norm or ql_norm in slug_norm:
+                    return (2, float(x.get("downloads") or 0))
+                # Any word in query matches a word in name
+                query_words = ql.split()
+                name_words = name.split()
+                if any(qw in name_words for qw in query_words):
+                    return (1, float(x.get("downloads") or 0))
+                return (0, float(x.get("downloads") or 0))
+            
+            out.sort(key=score_item, reverse=True)
         return out
 
     def get_pack(self, pack_id: str) -> PackDetail:
