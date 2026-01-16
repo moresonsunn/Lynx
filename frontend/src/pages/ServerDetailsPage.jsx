@@ -17,6 +17,8 @@ import {
   FaDownload,
   FaClock,
   FaTerminal,
+  FaCube,
+  FaPlug,
 } from 'react-icons/fa';
 
 
@@ -28,6 +30,8 @@ import SchedulePanel from '../components/server-details/SchedulePanel';
 import PlayersPanel from '../components/server-details/PlayersPanel';
 import FilesPanelWrapper from '../components/server-details/FilesPanelWrapper';
 import EditingPanel from '../components/server-details/EditingPanel';
+import ModsPanel from '../components/server-details/ModsPanel';
+import PluginsPanel from '../components/server-details/PluginsPanel';
 
 
 function useServerStats(serverId) {
@@ -102,6 +106,10 @@ export default function ServerDetailsPage() {
 
 
   const tabs = useMemo(() => {
+    const serverType = (typeVersionData?.server_type || server?.type || '').toLowerCase();
+    const isModdedServer = ['fabric', 'forge', 'neoforge'].includes(serverType);
+    const isPluginServer = ['paper', 'purpur', 'spigot', 'bukkit'].includes(serverType);
+
     const base = [
       { id: 'overview', label: t('tabs.overview'), icon: FaServer },
       { id: 'console', label: t('tabs.console') || 'Console', icon: FaTerminal },
@@ -112,12 +120,23 @@ export default function ServerDetailsPage() {
       { id: 'backup', label: t('tabs.backup'), icon: FaDownload },
       { id: 'schedule', label: t('tabs.schedule'), icon: FaClock },
     ];
+
+    // Add Mods tab for Fabric/Forge/NeoForge
+    if (isModdedServer) {
+      base.splice(3, 0, { id: 'mods', label: 'Mods', icon: FaCube });
+    }
+
+    // Add Plugins tab for Paper/Purpur/Spigot
+    if (isPluginServer) {
+      base.splice(3, 0, { id: 'plugins', label: 'Plugins', icon: FaPlug });
+    }
+
     if (isSteam) {
       const allowed = new Set(['overview', 'console', 'files', 'backup', 'schedule']);
       return base.filter(tab => allowed.has(tab.id));
     }
     return base;
-  }, [isSteam, t]);
+  }, [isSteam, t, typeVersionData, server]);
 
 
   const handleAction = useCallback(async (action) => {
@@ -296,8 +315,8 @@ export default function ServerDetailsPage() {
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${activeTab === tab.id
-                    ? 'bg-white/10 text-white border-b-2 border-brand-500'
-                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                  ? 'bg-white/10 text-white border-b-2 border-brand-500'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
                   }`}
               >
                 <tab.icon className="text-xs" />
@@ -427,6 +446,18 @@ export default function ServerDetailsPage() {
           <SchedulePanel
             serverName={server.name}
             serverId={server.id}
+          />
+        )}
+
+        {activeTab === 'mods' && (
+          <ModsPanel
+            serverName={server.name}
+          />
+        )}
+
+        {activeTab === 'plugins' && (
+          <PluginsPanel
+            serverName={server.name}
           />
         )}
       </div>

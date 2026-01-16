@@ -17,3 +17,4 @@ psycopg2-binary
 psutil
 pillow>=10,<11
 mcstatus
+httpx

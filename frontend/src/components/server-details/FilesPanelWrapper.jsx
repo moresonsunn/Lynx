@@ -25,7 +25,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
   function withTimeout(promise, ms, controller) {
     return new Promise((resolve, reject) => {
       const id = setTimeout(() => {
-        try { controller && controller.abort && controller.abort(); } catch {}
+        try { controller && controller.abort && controller.abort(); } catch { }
         reject(new DOMException('Timeout', 'AbortError'));
       }, ms);
       promise.then((v) => { clearTimeout(id); resolve(v); }).catch((e) => { clearTimeout(id); reject(e); });
@@ -34,8 +34,8 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
 
   useEffect(() => {
     // clear cache when server changes
-  cacheRef.current = {};
-  const key = `${sName}::.`;
+    cacheRef.current = {};
+    const key = `${sName}::.`;
     if (Array.isArray(initialItems) && initialItems.length) {
       // hydrate immediately for instant render
       cacheRef.current[key] = { items: initialItems, ts: Date.now(), etag: undefined };
@@ -63,7 +63,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     }
 
     // Abort any in-flight fetch for previous path
-    try { abortRef.current?.abort(); } catch {}
+    try { abortRef.current?.abort(); } catch { }
     const abortController = new AbortController();
     abortRef.current = abortController;
 
@@ -155,7 +155,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     // Optimistic remove from current list
     setItems(prev => prev.filter(it => it.name !== name));
     // Bust cache for this directory to avoid stale 304
-    try { delete cacheRef.current[`${sName}::${path}`]; } catch {}
+    try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
     try {
       if (!sName) throw new Error('Server name missing');
       const r = await fetch(
@@ -183,7 +183,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     });
     setRenameTarget(null);
     setRenameValue('');
-    try { delete cacheRef.current[`${sName}::${path}`]; } catch {}
+    try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
     loadDir(path, { force: true });
   }
   function startRename(name) {
@@ -197,7 +197,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
 
   async function zipItem(name) {
     const p = path === '.' ? name : `${path}/${name}`;
-    try { delete cacheRef.current[`${sName}::${path}`]; } catch {}
+    try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
     if (!sName) throw new Error('Server name missing');
     await fetch(`${API}/servers/${encodeURIComponent(sName)}/zip`, {
       method: 'POST',
@@ -213,7 +213,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     const destInput = window.prompt('Unzip destination folder (relative to current path):', defaultDest);
     const destRel = destInput && destInput.trim() ? destInput.trim() : defaultDest;
     const dest = path === '.' ? destRel : `${path}/${destRel}`;
-    try { delete cacheRef.current[`${sName}::${path}`]; } catch {}
+    try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
     if (!sName) throw new Error('Server name missing');
     await fetch(`${API}/servers/${encodeURIComponent(sName)}/unzip`, {
       method: 'POST',
@@ -225,8 +225,8 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
 
   async function downloadItem(name, isDir) {
     const p = path === '.' ? name : `${path}/${name}`;
-  if (!sName) { alert('Server name missing'); return; }
-  const url = `${API}/servers/${encodeURIComponent(sName)}/download?path=${encodeURIComponent(p)}`;
+    if (!sName) { alert('Server name missing'); return; }
+    const url = `${API}/servers/${encodeURIComponent(sName)}/download?path=${encodeURIComponent(p)}`;
     try {
       const token = getStoredToken();
       const headers = token ? { 'Authorization': `Bearer ${token}` } : authHeaders();
@@ -250,7 +250,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     const folder = window.prompt('New folder name');
     if (!folder) return;
     const p = path === '.' ? folder : `${path}/${folder}`;
-    try { delete cacheRef.current[`${sName}::${path}`]; } catch {}
+    try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
     if (!sName) throw new Error('Server name missing');
     await fetch(`${API}/servers/${encodeURIComponent(sName)}/mkdir`, {
       method: 'POST',
@@ -281,9 +281,9 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     }));
     setUploads(prev => [...prev, ...toAdd]);
     const total = toAdd.reduce((s, it) => s + (it.size || 0), 0);
-  aggRef.current = { totalBytes: total, sentBytes: 0 };
-  perFileLoadedRef.current = {};
-  setAggregate({ totalBytes: total, sentBytes: 0, inProgress: true, error: '' });
+    aggRef.current = { totalBytes: total, sentBytes: 0 };
+    perFileLoadedRef.current = {};
+    setAggregate({ totalBytes: total, sentBytes: 0, inProgress: true, error: '' });
     // Kick off sequential uploads but only track aggregate progress
     setTimeout(() => {
       startBatchUpload(toAdd);
@@ -312,9 +312,9 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     });
     setUploads(prev => [...prev, ...toAdd]);
     const total = toAdd.reduce((s, it) => s + (it.size || 0), 0);
-  aggRef.current = { totalBytes: total, sentBytes: 0 };
-  perFileLoadedRef.current = {};
-  setAggregate({ totalBytes: total, sentBytes: 0, inProgress: true, error: '' });
+    aggRef.current = { totalBytes: total, sentBytes: 0 };
+    perFileLoadedRef.current = {};
+    setAggregate({ totalBytes: total, sentBytes: 0, inProgress: true, error: '' });
     setTimeout(() => {
       startBatchUpload(toAdd);
     }, 0);
@@ -322,7 +322,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
 
   function formatBytes(n) {
     if (!Number.isFinite(n)) return '0 B';
-    const units = ['B','KB','MB','GB'];
+    const units = ['B', 'KB', 'MB', 'GB'];
     let u = 0;
     let x = n;
     while (x >= 1024 && u < units.length - 1) { x /= 1024; u++; }
@@ -339,10 +339,13 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
       }
     }
     setAggregate(a => ({ ...a, inProgress: false }));
-    loadDir(path, { force: true });
+    // Clear cache for all paths that might have been affected
+    try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
+    // Force immediate reload after uploads complete
+    await loadDir(path, { force: true });
     // Auto-dismiss upload tray when finished
     setTimeout(() => {
-      const allDone = (arr) => arr.every(u => ['done','error','cancelled'].includes(u.status));
+      const allDone = (arr) => arr.every(u => ['done', 'error', 'cancelled'].includes(u.status));
       if (!aggregate.inProgress) {
         setUploads(prev => allDone(prev) ? [] : prev);
         if (allDone(uploads)) setAggregate({ totalBytes: 0, sentBytes: 0, inProgress: false, error: '' });
@@ -422,9 +425,9 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
   function cancelUpload(id) {
     const ctrl = uploadAbortersRef.current[id];
     if (ctrl && ctrl.abort) {
-      try { ctrl.abort(); } catch(_) {}
+      try { ctrl.abort(); } catch (_) { }
     } else if (ctrl && ctrl.readyState && ctrl.readyState !== 4) {
-      try { ctrl.abort(); } catch(_) {}
+      try { ctrl.abort(); } catch (_) { }
     }
     setUploads(prev => prev.map(u => u.id === id ? { ...u, status: 'cancelled', error: 'Cancelled' } : u));
   }
@@ -454,6 +457,12 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     });
   }, [items]);
 
+  // Reset scroll position when items change (e.g., after upload or path change)
+  useEffect(() => {
+    setScrollTop(0);
+    if (listRef.current) listRef.current.scrollTop = 0;
+  }, [items]);
+
   // Prefetch throttle map
   const lastPrefetchRef = useRef({});
   const inflightPrefetchRef = useRef({});
@@ -477,7 +486,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
       if (!r.ok) return;
       const d = await r.json();
       cacheRef.current[key] = { items: d.items || [], ts: now };
-    } catch {}
+    } catch { }
     finally {
       delete inflightPrefetchRef.current[key];
     }
@@ -485,14 +494,14 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
 
   const listRef = useRef(null);
   const [scrollTop, setScrollTop] = useState(0);
-  const CONTAINER_MAX_HEIGHT = 420;
+  const CONTAINER_MAX_HEIGHT = 600;
   const ROW_H = 36;
 
   return (
-    <div className="p-2 bg-black/20 rounded-lg" style={{ maxWidth: 520, minWidth: 320 }}
-         onDragOver={onDragOver}
-         onDragLeave={onDragLeave}
-         onDrop={onDrop}>
+    <div className="p-3 bg-black/20 rounded-lg w-full"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}>
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs text-white/70 truncate">
           Path: <span className="text-white font-mono">{path}</span>
@@ -515,7 +524,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
                 </label>
                 <label className={`${btnPrimary} cursor-pointer`} title="Upload a folder" aria-label="Upload folder">
                   <FaFolder /> <span className="hidden sm:inline">Upload Folder</span>
-                  <input type="file" className="sr-only" onChange={(e) => { addFolderUploads(e.target.files); e.target.value=''; }} webkitdirectory="" directory="" />
+                  <input type="file" className="sr-only" onChange={(e) => { addFolderUploads(e.target.files); e.target.value = ''; }} webkitdirectory="" directory="" />
                 </label>
                 <button onClick={() => loadDir(path, { force: true })} className={btn} title="Refresh" aria-label="Refresh">
                   <FaSyncAlt /> <span className="hidden sm:inline">Refresh</span>
@@ -544,13 +553,13 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
                 <span>{formatBytes(aggregate.sentBytes)} / {formatBytes(aggregate.totalBytes)}</span>
               </div>
               <div className="w-full h-2 bg-white/10 rounded mt-1 overflow-hidden">
-                <div className="h-full bg-brand-500" style={{ width: `${aggregate.totalBytes ? Math.round((aggregate.sentBytes/aggregate.totalBytes)*100) : 0}%` }} />
+                <div className="h-full bg-brand-500" style={{ width: `${aggregate.totalBytes ? Math.round((aggregate.sentBytes / aggregate.totalBytes) * 100) : 0}%` }} />
               </div>
               {aggregate.error && <div className="text-[10px] text-red-400 mt-1">{aggregate.error}</div>}
             </div>
             {aggregate.inProgress && (
               <button className="text-white/80 hover:text-white" title="Cancel all" onClick={() => {
-                Object.values(uploadAbortersRef.current).forEach((xhr) => { try { xhr.abort(); } catch {} });
+                Object.values(uploadAbortersRef.current).forEach((xhr) => { try { xhr.abort(); } catch { } });
                 setAggregate(a => ({ ...a, inProgress: false, error: 'Cancelled' }));
               }}>
                 <FaBan />
@@ -568,16 +577,16 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
       {!loading && (
         (() => {
           const containerHeight = listRef.current?.clientHeight || CONTAINER_MAX_HEIGHT;
-          const visibleCount = Math.ceil(containerHeight / ROW_H) + 10; // buffer
-          const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - 5);
+          const visibleCount = Math.ceil(containerHeight / ROW_H) + 15; // larger buffer for smooth scrolling
+          const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - 8);
           const endIndex = Math.min(sortedItems.length, startIndex + visibleCount);
           const topPad = startIndex * ROW_H;
           const bottomPad = Math.max(0, (sortedItems.length - endIndex) * ROW_H);
           const visibleItems = sortedItems.slice(startIndex, endIndex);
 
-          const renderRow = (it) => (
+          const renderRow = (it, idx) => (
             <div
-              key={it.name}
+              key={`${path}::${it.name}::${idx}`}
               className="flex items-center justify-between bg-white/5 border border-white/10 rounded px-2 py-1"
               style={{ minHeight: 32 }}
               onMouseEnter={() => { if (it.is_dir) prefetchDir(path === '.' ? it.name : `${path}/${it.name}`); }}
@@ -684,7 +693,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
             >
               <div style={{ height: topPad }} />
               <div className="space-y-1">
-                {visibleItems.map(renderRow)}
+                {visibleItems.map((it, i) => renderRow(it, startIndex + i))}
               </div>
               <div style={{ height: bottomPad }} />
             </div>

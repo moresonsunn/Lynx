@@ -622,24 +622,7 @@ BASE_STEAM_GAMES = {
         },
         "volume": {"container": "/mnt/vrising/server"},
     },
-    "hytale": {
-        "display_name": "Hytale",
-        "category": "Adventure",
-        "summary": "Adventure RPG with creativity at its heart.",
-        "notes": "Requires a valid Hytale license. Default ports config.",
-        "default_name": "hytale",
-        "image": "hytalegame/server:latest",
-        "ports": [
-            {"container": 25565, "protocol": "udp"},
-            {"container": 25565, "protocol": "tcp"},
-        ],
-        "env": {
-            "SERVER_NAME": "Hytale Server",
-            "WORLD_NAME": "world",
-            "MAX_PLAYERS": 20,
-        },
-        "volume": {"container": "/data"},
-    },
+
 }
 
 
