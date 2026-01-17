@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { useTranslation } from '../i18n';
 import { useGlobalData } from '../context/GlobalDataContext';
 import { API, authHeaders } from '../context/AppContext';
-import { 
-  FaShieldAlt, 
-  FaPlus, 
-  FaTimes, 
-  FaUsers, 
-  FaHistory, 
+import {
+  FaShieldAlt,
+  FaPlus,
+  FaTimes,
+  FaUsers,
+  FaHistory,
   FaCheckCircle,
   FaExclamationTriangle,
   FaSearch,
@@ -20,7 +20,7 @@ import {
 export default function UsersPage() {
   const { t } = useTranslation();
   const globalData = useGlobalData();
-  
+
   const safeUsers = Array.isArray(globalData.users) ? globalData.users : [];
   const safeRoles = Array.isArray(globalData.roles) ? globalData.roles : [];
   const safeAuditLogs = Array.isArray(globalData.auditLogs) ? globalData.auditLogs : [];
@@ -32,7 +32,7 @@ export default function UsersPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  
+
   const loadUsers = async () => {
     try {
       const refresher = globalData.__refreshBG;
@@ -46,22 +46,22 @@ export default function UsersPage() {
     }
   };
 
-  
+
   const filteredUsers = safeUsers.filter(user => {
     const matchesSearch = user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email?.toLowerCase().includes(searchTerm.toLowerCase());
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesRole = filterRole === 'all' || user.role === filterRole;
-    const matchesStatus = filterStatus === 'all' || 
-                         (filterStatus === 'active' && user.is_active) ||
-                         (filterStatus === 'inactive' && !user.is_active);
+    const matchesStatus = filterStatus === 'all' ||
+      (filterStatus === 'active' && user.is_active) ||
+      (filterStatus === 'inactive' && !user.is_active);
     return matchesSearch && matchesRole && matchesStatus;
   });
 
-  
+
   async function toggleUserActive(userId, isActive) {
     try {
       await fetch(`${API}/users/${userId}`, {
-        method: 'PUT', 
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ is_active: isActive }),
       });
@@ -89,14 +89,14 @@ export default function UsersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
-            <FaShieldAlt className="text-brand-500" /> 
-            <span className="gradient-text-brand">Advanced User Management</span>
+            <FaShieldAlt className="text-brand-500" />
+            <span className="gradient-text-brand">{t('usersPage.advancedUserManagement')}</span>
           </h1>
           <p className="text-white/70 mt-2">Comprehensive user, role, and permission management system</p>
         </div>
         <div className="flex items-center gap-3">
           <button className="bg-brand-500 hover:bg-brand-600 px-4 py-2 rounded-lg flex items-center gap-2">
-            <FaPlus /> Create User
+            <FaPlus /> {t('usersPage.createUser')}
           </button>
         </div>
       </div>
@@ -111,7 +111,7 @@ export default function UsersPage() {
           </button>
         </div>
       )}
-      
+
       {success && (
         <div className="bg-green-500/10 border border-green-500/20 text-green-300 p-4 rounded-lg flex items-center gap-3">
           <FaCheckCircle />
@@ -126,25 +126,22 @@ export default function UsersPage() {
       <div className="bg-white/5 border border-white/10 rounded-lg p-1 flex">
         <button
           onClick={() => setActiveTab('users')}
-          className={`flex-1 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all ${
-            activeTab === 'users' ? 'bg-brand-500 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
-          }`}
+          className={`flex-1 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all ${activeTab === 'users' ? 'bg-brand-500 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
+            }`}
         >
           <FaUsers /> Users ({safeUsers.length})
         </button>
         <button
           onClick={() => setActiveTab('roles')}
-          className={`flex-1 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all ${
-            activeTab === 'roles' ? 'bg-brand-500 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
-          }`}
+          className={`flex-1 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all ${activeTab === 'roles' ? 'bg-brand-500 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
+            }`}
         >
           <FaShieldAlt /> Roles ({safeRoles.length})
         </button>
         <button
           onClick={() => setActiveTab('audit')}
-          className={`flex-1 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all ${
-            activeTab === 'audit' ? 'bg-brand-500 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
-          }`}
+          className={`flex-1 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all ${activeTab === 'audit' ? 'bg-brand-500 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
+            }`}
         >
           <FaHistory /> Audit Logs ({safeAuditLogs.length})
         </button>
@@ -160,7 +157,7 @@ export default function UsersPage() {
                 <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50" />
                 <input
                   type="text"
-                  placeholder="Search users..."
+                  placeholder={t('usersPage.searchUsers')}
                   className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/50"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -171,7 +168,7 @@ export default function UsersPage() {
                 onChange={(e) => setFilterRole(e.target.value)}
                 className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
               >
-                <option value="all">All Roles</option>
+                <option value="all">{t('usersPage.allRoles')}</option>
                 {safeRoles.map(role => (
                   <option key={role.name} value={role.name}>{role.name}</option>
                 ))}
@@ -181,7 +178,7 @@ export default function UsersPage() {
                 onChange={(e) => setFilterStatus(e.target.value)}
                 className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
               >
-                <option value="all">All Status</option>
+                <option value="all">{t('usersPage.allStatus')}</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
@@ -197,7 +194,7 @@ export default function UsersPage() {
                     <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-white/70 uppercase">User</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-white/70 uppercase">Role</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-white/70 uppercase">Status</th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-white/70 uppercase">Last Login</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-white/70 uppercase">{t('usersPage.lastLogin')}</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-white/70 uppercase">Actions</th>
                   </tr>
                 </thead>
@@ -208,7 +205,7 @@ export default function UsersPage() {
                       <tr key={user.id} className="hover:bg-white/5">
                         <td className="px-3 sm:px-6 py-4">
                           <div className="flex items-center">
-                            <div 
+                            <div
                               className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold"
                               style={{ backgroundColor: userRole?.color || '#6b7280' }}
                             >
@@ -226,11 +223,10 @@ export default function UsersPage() {
                           </span>
                         </td>
                         <td className="px-3 sm:px-6 py-4">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            user.is_active
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.is_active
                               ? 'bg-green-500/20 text-green-300'
                               : 'bg-red-500/20 text-red-300'
-                          }`}>
+                            }`}>
                             {user.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
@@ -239,7 +235,7 @@ export default function UsersPage() {
                         </td>
                         <td className="px-3 sm:px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <button className="p-2 text-blue-400 hover:bg-blue-500/10 rounded" title="View">
+                            <button className="p-2 text-blue-400 hover:bg-blue-500/10 rounded" title={t('usersPage.view')}>
                               <FaEye />
                             </button>
                             <button
@@ -252,7 +248,7 @@ export default function UsersPage() {
                             <button
                               onClick={() => deleteUser(user.id)}
                               className="p-2 text-red-400 hover:bg-red-500/10 rounded"
-                              title="Delete"
+                              title={t('usersPage.delete')}
                             >
                               <FaTrash />
                             </button>
@@ -279,14 +275,14 @@ export default function UsersPage() {
           <div className="flex justify-between items-center">
             <h3 className="font-medium text-white">Roles</h3>
             <button className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 rounded text-white text-sm flex items-center gap-2">
-              <FaPlus /> Create Role
+              <FaPlus /> {t('usersPage.createRole')}
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {safeRoles.map((role) => (
               <div key={role.name} className="bg-white/5 border border-white/10 rounded-lg p-6 hover:bg-white/10 transition-colors">
                 <div className="flex items-center gap-4 mb-4">
-                  <div 
+                  <div
                     className="w-12 h-12 rounded-lg flex items-center justify-center"
                     style={{ backgroundColor: role.color || '#6b7280' }}
                   >

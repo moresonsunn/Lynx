@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { FaUpload, FaTrash, FaCube, FaSearch, FaDownload, FaTimes, FaExternalLinkAlt } from 'react-icons/fa';
+import { useTranslation } from '../../i18n';
 import { API, getStoredToken } from '../../lib/api';
 
 export default function ModsPanel({ serverName, serverVersion, serverLoader }) {
+    const { t } = useTranslation();
     const sName = serverName || '';
     const [mods, setMods] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -181,8 +183,8 @@ export default function ModsPanel({ serverName, serverVersion, serverLoader }) {
                     <button
                         onClick={() => setShowSearch(!showSearch)}
                         className={`rounded px-4 py-2 inline-flex items-center gap-2 transition-colors ${showSearch
-                                ? 'bg-purple-500 text-white'
-                                : 'bg-white/10 hover:bg-white/20 text-white/80'
+                            ? 'bg-purple-500 text-white'
+                            : 'bg-white/10 hover:bg-white/20 text-white/80'
                             }`}
                     >
                         <FaSearch />
@@ -206,7 +208,7 @@ export default function ModsPanel({ serverName, serverVersion, serverLoader }) {
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && searchMods()}
-                                placeholder="Search for mods..."
+                                placeholder={t('modsPlugins.searchForMods')}
                                 className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 focus:outline-none focus:border-purple-500"
                             />
                         </div>
@@ -357,7 +359,7 @@ export default function ModsPanel({ serverName, serverVersion, serverLoader }) {
                             <button
                                 onClick={() => remove(mod.name)}
                                 className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-2 rounded transition-colors"
-                                title="Delete mod"
+                                title={t('modsPlugins.deleteMod')}
                             >
                                 <FaTrash />
                             </button>

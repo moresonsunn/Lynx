@@ -170,6 +170,18 @@ export default {
     clearConsole: 'Konsole leeren',
     noServersYet: 'Noch keine Server',
     createFirstServer: 'Erstellen Sie Ihren ersten Server, um loszulegen',
+    // New keys for ServerDetailsPage
+    backToServers: 'Zurück zu Servern',
+    serverInfo: 'Server-Info',
+    resources: 'Ressourcen',
+    cpuUsage: 'CPU-Auslastung',
+    memory: 'Speicher',
+    noStatsAvailable: 'Keine Statistiken verfügbar',
+    serverNotFound: 'Server nicht gefunden oder wird geladen...',
+    failedToAction: '{{action}} des Servers fehlgeschlagen: {{error}}',
+    start: 'Starten',
+    stop: 'Stoppen',
+    restart: 'Neustart',
   },
 
   // Templates
@@ -418,5 +430,209 @@ export default {
     worlds: 'Welten',
     backup: 'Backup',
     schedule: 'Zeitplan',
+    mods: 'Mods',
+    plugins: 'Plugins',
+  },
+
+  // Modals / Dialogs
+  modals: {
+    confirmAction: 'Aktion bestätigen',
+    areYouSure: 'Sind Sie sicher, dass Sie fortfahren möchten?',
+    deleteServer: 'Server löschen',
+    deleteServerMessage: 'Sind Sie sicher, dass Sie "{{name}}" löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden und alle Daten gehen dauerhaft verloren.',
+    cannotBeUndone: 'Diese Aktion kann nicht rückgängig gemacht werden.',
+  },
+
+  // Mods & Plugins
+  modsPlugins: {
+    noModsInstalled: 'Keine Mods installiert',
+    searchMods: 'Nach Mods suchen oder .jar-Dateien hochladen',
+    searchPlugins: 'Nach Plugins suchen oder .jar-Dateien hochladen',
+    noPluginsInstalled: 'Keine Plugins installiert',
+    upload: 'Hochladen',
+    searchMod: 'Mods suchen',
+    searchPlugin: 'Plugins suchen',
+    deleteMod: 'Mod löschen',
+    deletePlugin: 'Plugin löschen',
+    reloadPlugins: 'Plugins im Spiel neu laden',
+    searchForPlugins: 'Nach Plugins suchen...',
+    searchForMods: 'Nach Mods suchen...',
+  },
+
+  // Console
+  console: {
+    title: 'Server-Konsole & Logs (live)',
+    commandPlaceholder: 'Befehl eingeben (z.B. say hallo oder op Benutzername)',
+    manageMutePatterns: 'Stummschaltungsmuster verwalten',
+  },
+
+  // Player Management
+  playerManagement: {
+    title: 'Spielerverwaltung',
+    onlinePlayers: 'Online-Spieler',
+    offlinePlayers: 'Offline-Spieler',
+    playerName: 'Spielername',
+    reason: 'Grund (optional)',
+    message: 'Nachricht',
+    deop: 'DEOP',
+    op: 'OP',
+    kick: 'Kicken',
+    ban: 'Bannen',
+  },
+
+  // Schedule Panel
+  scheduleTasks: {
+    title: 'Geplante Aufgaben',
+    createTask: 'Aufgabe erstellen',
+    taskName: 'Aufgabenname',
+    serverName: 'Servername (backup/restart/befehl)',
+    cronExpression: 'Cron (z.B. 0 2 * * *)',
+    retentionDays: 'Aufbewahrungstage (z.B. 30)',
+    commandTasks: 'Befehl (für Befehlsaufgaben)',
+  },
+
+  // File Browser
+  fileBrowser: {
+    upOneLevel: 'Eine Ebene höher',
+    createFolder: 'Ordner erstellen',
+    uploadFiles: 'Dateien hochladen',
+    uploadFolder: 'Ordner hochladen',
+    refresh: 'Aktualisieren',
+    cancelAll: 'Alle abbrechen',
+    clear: 'Leeren',
+    rename: 'Umbenennen',
+  },
+
+  // Config Panel
+  configPanel: {
+    title: 'Server-Konfiguration',
+    loadingJavaInfo: 'Java-Versionsinformationen werden geladen...',
+    javaVersion: 'Java-Version',
+    updatingJava: 'Java-Version wird aktualisiert...',
+    restartServer: 'Server neustarten',
+    customJavaArgs: 'Benutzerdefinierte Java-Argumente (JAVA_OPTS)',
+    javaArgsDescription: 'Erweiterte JVM-Flags, die beim Serverstart angewendet werden.',
+    javaArgsExample: 'Beispiel: -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC',
+    motdDefault: 'Ein Minecraft Server',
+    maxPlayers: 'Max. Spieler',
+    viewDistance: 'Sichtweite',
+    simulationDistance: 'Simulationsdistanz',
+  },
+
+  // Settings Sections
+  settingsSections: {
+    appearance: 'Erscheinungsbild',
+    appearanceDesc: 'Anpassen des Aussehens',
+    performance: 'Leistung',
+    performanceDesc: 'API- und Cache-Einstellungen',
+    defaultServerSettings: 'Standard-Servereinstellungen',
+    defaultServerSettingsDesc: 'Standardkonfiguration für neue Server',
+    backupConfiguration: 'Backup-Konfiguration',
+    backupConfigurationDesc: 'Automatische Backup-Einstellungen',
+    webhookNotifications: 'Webhook-Benachrichtigungen',
+    webhookNotificationsDesc: 'Benachrichtigungen an Discord, Slack oder andere Dienste senden',
+    emailNotifications: 'E-Mail-Benachrichtigungen',
+    emailNotificationsDesc: 'SMTP E-Mail-Konfiguration',
+    sessionSettings: 'Sitzungseinstellungen',
+    sessionSettingsDesc: 'Authentifizierung und Sitzungsverwaltung',
+    activeSessions: 'Aktive Sitzungen',
+    activeSessionsDesc: 'Angemeldete Sitzungen verwalten',
+    curseforge: 'CurseForge',
+    curseforgeDesc: 'API-Zugang für Modpack-Installation',
+    docker: 'Docker',
+    dockerDesc: 'Container-Laufzeitkonfiguration',
+    storageUsage: 'Speichernutzung',
+    storageUsageDesc: 'Speicherplatzübersicht',
+    maintenance: 'Wartung',
+    maintenanceDesc: 'Systembereinigung und Wartungsaufgaben',
+    about: 'Über',
+    aboutDesc: 'Lynx-Systeminformationen',
+    accentColor: 'Akzentfarbe',
+    availableJavaVersions: 'Verfügbare Java-Versionen',
+    alertTypes: 'Alarmtypen',
+    alertThresholds: 'Alarmschwellenwerte',
+    cleanupOldLogs: 'Alte Logs bereinigen',
+    cleanupOldBackups: 'Alte Backups bereinigen',
+    refreshStorageInfo: 'Speicherinfo aktualisieren',
+    detectJavaVersions: 'Java-Versionen erkennen',
+    diskFree: 'Freier Speicher',
+  },
+
+  // Users Page
+  usersPage: {
+    advancedUserManagement: 'Erweiterte Benutzerverwaltung',
+    createUser: 'Benutzer erstellen',
+    auditLogs: 'Audit-Logs',
+    allRoles: 'Alle Rollen',
+    allStatus: 'Alle Status',
+    lastLogin: 'Letzte Anmeldung',
+    createRole: 'Rolle erstellen',
+    view: 'Ansehen',
+    delete: 'Löschen',
+    searchUsers: 'Benutzer suchen...',
+  },
+
+  // Global Search
+  globalSearch: {
+    placeholder: 'Server, Spieler, Dateien suchen',
+  },
+
+  // Modpack Install Modal
+  modpackInstall: {
+    title: 'Modpack installieren',
+    serverName: 'Servername',
+    hostPort: 'Host-Port (optional)',
+    minRam: 'Min RAM',
+    maxRam: 'Max RAM',
+    recentIssues: 'Aktuelle Probleme',
+  },
+
+  // Templates Page
+  templatesPage: {
+    loaderVersion: 'Loader-Version',
+    installerVersion: 'Installer-Version',
+    minRam: 'Min RAM (MB)',
+    maxRam: 'Max RAM (MB)',
+    createServer: 'Server erstellen',
+    importServerPack: 'Serverpaket importieren (.zip)',
+    serverName: 'Servername',
+    serverPackFile: 'Serverpaket-Datei (.zip)',
+    modpackCatalog: 'Modpack-Katalog',
+    searchModrinthCurseforge: 'Modrinth & CurseForge durchsuchen',
+    generateRandomName: 'Zufälligen Namen generieren',
+    searchModpacks: 'Nach Modpacks suchen...',
+  },
+
+  // Steam Games Page
+  steamGames: {
+    envVars: 'Umgebungsvariablen',
+    envVariables: 'Umgebungsvariablen',
+    searchGames: 'Spiele suchen...',
+    autoAssign: 'Automatisch zuweisen',
+    serverName: 'Servername',
+    hostPort: 'Host-Port (Optional)',
+  },
+
+  // Config Panel
+  configPanel: {
+    title: 'Server-Konfiguration',
+    loadingJavaInfo: 'Lade Java-Versionsinformationen...',
+    javaVersion: 'Java-Version',
+    updatingJava: 'Aktualisiere Java-Version...',
+    restartServer: 'Server neustarten',
+    customJavaArgs: 'Benutzerdefinierte Java-Argumente (JAVA_OPTS)',
+    javaArgsDescription: 'Erweiterte JVM-Flags, die beim Serverstart angewendet werden.',
+    javaArgsExample: 'Beispiel: -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC',
+  },
+
+  // Hytale Page
+  hytale: {
+    serverConfiguration: 'Server-Konfiguration',
+    serverName: 'Servername',
+  },
+
+  // Worlds Panel
+  worldsPanel: {
+    uploadWorld: 'Welt hochladen (.zip)',
   },
 };

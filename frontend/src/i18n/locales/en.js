@@ -151,7 +151,7 @@ export default {
     renameServer: 'Rename Server',
     newServerName: 'New server name',
     confirmDelete: 'Are you sure you want to delete this server?',
-    deleteWarning: 'This action cannot be undone. All server data will be lost.',
+    deleteWarning: 'This action cannot be undone. All server data will be permanently lost.',
     noPlayers: 'No players online',
     maxRam: 'Max RAM',
     minRam: 'Min RAM',
@@ -170,6 +170,18 @@ export default {
     clearConsole: 'Clear Console',
     noServersYet: 'No servers yet',
     createFirstServer: 'Create your first server to get started',
+    // New keys for ServerDetailsPage
+    backToServers: 'Back to Servers',
+    serverInfo: 'Server Info',
+    resources: 'Resources',
+    cpuUsage: 'CPU Usage',
+    memory: 'Memory',
+    noStatsAvailable: 'No stats available',
+    serverNotFound: 'Server not found or loading...',
+    failedToAction: 'Failed to {{action}} server: {{error}}',
+    start: 'Start',
+    stop: 'Stop',
+    restart: 'Restart',
   },
 
   // Templates
@@ -418,5 +430,209 @@ export default {
     worlds: 'Worlds',
     backup: 'Backup',
     schedule: 'Schedule',
+    mods: 'Mods',
+    plugins: 'Plugins',
+  },
+
+  // Modals / Dialogs
+  modals: {
+    confirmAction: 'Confirm Action',
+    areYouSure: 'Are you sure you want to proceed?',
+    deleteServer: 'Delete Server',
+    deleteServerMessage: 'Are you sure you want to delete "{{name}}"? This action cannot be undone and all data will be permanently lost.',
+    cannotBeUndone: 'This action cannot be undone.',
+  },
+
+  // Mods & Plugins
+  modsPlugins: {
+    noModsInstalled: 'No mods installed',
+    searchMods: 'Search for mods or upload .jar files',
+    searchPlugins: 'Search for plugins or upload .jar files',
+    noPluginsInstalled: 'No plugins installed',
+    upload: 'Upload',
+    searchMod: 'Search Mods',
+    searchPlugin: 'Search Plugins',
+    deleteMod: 'Delete mod',
+    deletePlugin: 'Delete plugin',
+    reloadPlugins: 'Reload plugins in game',
+    searchForPlugins: 'Search for plugins...',
+    searchForMods: 'Search for mods...',
+  },
+
+  // Console
+  console: {
+    title: 'Server Console & Logs (live)',
+    commandPlaceholder: 'Type a command (e.g. say hello or op Username)',
+    manageMutePatterns: 'Manage mute patterns',
+  },
+
+  // Player Management (additional keys)
+  playerManagement: {
+    title: 'Player Management',
+    onlinePlayers: 'Online Players',
+    offlinePlayers: 'Offline Players',
+    playerName: 'Player name',
+    reason: 'Reason (optional)',
+    message: 'Message',
+    deop: 'DEOP',
+    op: 'OP',
+    kick: 'Kick',
+    ban: 'Ban',
+  },
+
+  // Schedule Panel (additional keys)
+  scheduleTasks: {
+    title: 'Scheduled Tasks',
+    createTask: 'Create Task',
+    taskName: 'Task name',
+    serverName: 'Server name (backup/restart/command)',
+    cronExpression: 'Cron (e.g., 0 2 * * *)',
+    retentionDays: 'Retention days (e.g., 30)',
+    commandTasks: 'Command (for command tasks)',
+  },
+
+  // File Browser
+  fileBrowser: {
+    upOneLevel: 'Up one level',
+    createFolder: 'Create folder',
+    uploadFiles: 'Upload files',
+    uploadFolder: 'Upload a folder',
+    refresh: 'Refresh',
+    cancelAll: 'Cancel all',
+    clear: 'Clear',
+    rename: 'Rename',
+  },
+
+  // Config Panel
+  configPanel: {
+    title: 'Server Configuration',
+    loadingJavaInfo: 'Loading Java version information...',
+    javaVersion: 'Java Version',
+    updatingJava: 'Updating Java version...',
+    restartServer: 'Restart Server',
+    customJavaArgs: 'Custom Java Arguments (JAVA_OPTS)',
+    javaArgsDescription: 'Advanced JVM flags applied when the server starts.',
+    javaArgsExample: 'Example: -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC',
+    motdDefault: 'A Minecraft Server',
+    maxPlayers: 'Max Players',
+    viewDistance: 'View Distance',
+    simulationDistance: 'Simulation Distance',
+  },
+
+  // Settings Sections
+  settingsSections: {
+    appearance: 'Appearance',
+    appearanceDesc: 'Customize the look and feel',
+    performance: 'Performance',
+    performanceDesc: 'API and caching settings',
+    defaultServerSettings: 'Default Server Settings',
+    defaultServerSettingsDesc: 'Default configuration for new servers',
+    backupConfiguration: 'Backup Configuration',
+    backupConfigurationDesc: 'Automatic backup settings',
+    webhookNotifications: 'Webhook Notifications',
+    webhookNotificationsDesc: 'Send alerts to Discord, Slack, or other services',
+    emailNotifications: 'Email Notifications',
+    emailNotificationsDesc: 'SMTP email configuration',
+    sessionSettings: 'Session Settings',
+    sessionSettingsDesc: 'Authentication and session management',
+    activeSessions: 'Active Sessions',
+    activeSessionsDesc: 'Manage logged-in sessions',
+    curseforge: 'CurseForge',
+    curseforgeDesc: 'API access for modpack installation',
+    docker: 'Docker',
+    dockerDesc: 'Container runtime configuration',
+    storageUsage: 'Storage Usage',
+    storageUsageDesc: 'Disk space overview',
+    maintenance: 'Maintenance',
+    maintenanceDesc: 'System cleanup and maintenance tasks',
+    about: 'About',
+    aboutDesc: 'Lynx system information',
+    accentColor: 'Accent Color',
+    availableJavaVersions: 'Available Java Versions',
+    alertTypes: 'Alert Types',
+    alertThresholds: 'Alert Thresholds',
+    cleanupOldLogs: 'Cleanup Old Logs',
+    cleanupOldBackups: 'Cleanup Old Backups',
+    refreshStorageInfo: 'Refresh Storage Info',
+    detectJavaVersions: 'Detect Java Versions',
+    diskFree: 'Disk Free',
+  },
+
+  // Users Page
+  usersPage: {
+    advancedUserManagement: 'Advanced User Management',
+    createUser: 'Create User',
+    auditLogs: 'Audit Logs',
+    allRoles: 'All Roles',
+    allStatus: 'All Status',
+    lastLogin: 'Last Login',
+    createRole: 'Create Role',
+    view: 'View',
+    delete: 'Delete',
+    searchUsers: 'Search users...',
+  },
+
+  // Global Search
+  globalSearch: {
+    placeholder: 'Search servers, players, files',
+  },
+
+  // Modpack Install Modal
+  modpackInstall: {
+    title: 'Install Modpack',
+    serverName: 'Server Name',
+    hostPort: 'Host Port (optional)',
+    minRam: 'Min RAM',
+    maxRam: 'Max RAM',
+    recentIssues: 'Recent Issues',
+  },
+
+  // Templates Page
+  templatesPage: {
+    loaderVersion: 'Loader Version',
+    installerVersion: 'Installer Version',
+    minRam: 'Min RAM (MB)',
+    maxRam: 'Max RAM (MB)',
+    createServer: 'Create Server',
+    importServerPack: 'Import Server Pack (.zip)',
+    serverName: 'Server Name',
+    serverPackFile: 'Server Pack File (.zip)',
+    modpackCatalog: 'Modpack Catalog',
+    searchModrinthCurseforge: 'Search Modrinth & CurseForge',
+    generateRandomName: 'Generate Random Name',
+    searchModpacks: 'Search for modpacks...',
+  },
+
+  // Steam Games Page
+  steamGames: {
+    envVars: 'Environment Variables',
+    envVariables: 'Environment Variables',
+    searchGames: 'Search games...',
+    autoAssign: 'Auto-assign',
+    serverName: 'Server Name',
+    hostPort: 'Host Port (Optional)',
+  },
+
+  // Config Panel
+  configPanel: {
+    title: 'Server Configuration',
+    loadingJavaInfo: 'Loading Java version information...',
+    javaVersion: 'Java Version',
+    updatingJava: 'Updating Java version...',
+    restartServer: 'Restart Server',
+    customJavaArgs: 'Custom Java Arguments (JAVA_OPTS)',
+    javaArgsDescription: 'Advanced JVM flags applied when the server starts.',
+    javaArgsExample: 'Example: -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC',
+  },
+
+  // Hytale Page
+  hytale: {
+    serverConfiguration: 'Server Configuration',
+    serverName: 'Server Name',
+  },
+
+  // Worlds Panel
+  worldsPanel: {
+    uploadWorld: 'Upload World (.zip)',
   },
 };

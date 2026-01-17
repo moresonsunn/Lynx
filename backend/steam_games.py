@@ -32,6 +32,12 @@ BASE_STEAM_GAMES = {
             "ADMIN_PASSWORD": "admin",
         },
         "volume": {"container": "/palworld"},
+        "server_commands": {
+            "save": "/Save",
+            "stop": "/DoExit",
+            "shutdown": "/Shutdown 30 Server shutting down in 30 seconds",
+            "broadcast": "/Broadcast {message}",
+        },
     },
     "project_zomboid": {
         "display_name": "Project Zomboid",
@@ -52,6 +58,11 @@ BASE_STEAM_GAMES = {
             "SERVER_NAME": "Zomboid Server",
         },
         "volume": {"container": "/serverdata"},
+        "server_commands": {
+            "save": "save",
+            "stop": "quit",
+            "broadcast": "servermsg \"{message}\"",
+        },
     },
     "valheim": {
         "display_name": "Valheim",
@@ -71,6 +82,11 @@ BASE_STEAM_GAMES = {
             "SERVER_PASS": "change-me",
         },
         "volume": {"container": "/config"},
+        "server_commands": {
+            "save": "save",
+            "stop_method": "signal",  # Uses SIGINT (Ctrl+C)
+            "notes": "Valheim uses SIGINT for graceful shutdown, no RCON.",
+        },
     },
     "tmodloader": {
         "display_name": "Terraria (tModLoader)",
@@ -112,6 +128,13 @@ BASE_STEAM_GAMES = {
             "SRCDS_TICKRATE": 128,
         },
         "volume": {"container": "/home/steam/cs2-dedicated"},
+        "server_commands": {
+            "restart_match": "mp_restartgame 1",
+            "broadcast": "say {message}",
+            "kick": "kick {player}",
+            "ban": "banid {duration} {steamid}",
+            "changelevel": "changelevel {map}",
+        },
     },
     "factorio": {
         "display_name": "Factorio",
@@ -152,6 +175,14 @@ BASE_STEAM_GAMES = {
             "TZ": "UTC",
         },
         "volume": {"container": "/steamcmd/rust"},
+        "server_commands": {
+            "save": "server.save",
+            "stop": "quit",
+            "restart": "restart 120 \"Server restarting in 2 minutes\"",
+            "broadcast": "say {message}",
+            "kick": "kick {player} {reason}",
+            "ban": "ban {player} {reason}",
+        },
     },
     "satisfactory": {
         "display_name": "Satisfactory",
@@ -270,6 +301,13 @@ BASE_STEAM_GAMES = {
             "AUTO_UPDATE": 0,
         },
         "volume": {"container": "/ark-server"},
+        "server_commands": {
+            "save": "saveworld",
+            "stop": "doexit",
+            "broadcast": "broadcast {message}",
+            "kick": "kickplayer {steamid}",
+            "ban": "banplayer {steamid}",
+        },
     },
     "the_front": {
         "display_name": "The Front",
@@ -335,6 +373,13 @@ BASE_STEAM_GAMES = {
             "QUERY_PORT": 27015,
         },
         "volume": {"container": "/ark"},
+        "server_commands": {
+            "save": "saveworld",
+            "stop": "doexit",
+            "broadcast": "broadcast {message}",
+            "kick": "kickplayer {steamid}",
+            "ban": "banplayer {steamid}",
+        },
     },
     "conan_exiles": {
         "display_name": "Conan Exiles",

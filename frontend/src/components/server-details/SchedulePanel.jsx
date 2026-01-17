@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { useTranslation } from '../../i18n';
 import { useFetch } from '../../lib/useFetch';
 import { API } from '../../lib/api';
 
 export default function SchedulePanel() {
+  const { t } = useTranslation();
   const { data, loading, error, setData } = useFetch(`${API}/schedule/tasks`, []);
   const [name, setName] = useState('');
   const [taskType, setTaskType] = useState('backup');
@@ -29,22 +31,22 @@ export default function SchedulePanel() {
 
   return (
     <div className="p-4 bg-black/20 rounded-lg">
-      <div className="text-sm text-white/70 mb-3">Scheduled Tasks</div>
+      <div className="text-sm text-white/70 mb-3">{t('scheduleTasks.title')}</div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Task name" value={name} onChange={e => setName(e.target.value)} />
+        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder={t('scheduleTasks.taskName')} value={name} onChange={e => setName(e.target.value)} />
         <select className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500" value={taskType} onChange={e => setTaskType(e.target.value)} style={{ backgroundColor: '#1f2937', color: '#ffffff' }}>
           <option value="backup" style={{ backgroundColor: '#1f2937', color: '#ffffff' }}>Backup</option>
           <option value="restart" style={{ backgroundColor: '#1f2937', color: '#ffffff' }}>Restart</option>
           <option value="command" style={{ backgroundColor: '#1f2937', color: '#ffffff' }}>Command</option>
           <option value="cleanup" style={{ backgroundColor: '#1f2937', color: '#ffffff' }}>Cleanup</option>
         </select>
-        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Server name (backup/restart/command)" value={serverName} onChange={e => setServerName(e.target.value)} />
-        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Cron (e.g., 0 2 * * *)" value={cron} onChange={e => setCron(e.target.value)} />
+        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder={t('scheduleTasks.serverName')} value={serverName} onChange={e => setServerName(e.target.value)} />
+        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder={t('scheduleTasks.cronExpression')} value={cron} onChange={e => setCron(e.target.value)} />
         {taskType === 'cleanup' && (
-          <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" type="number" min={1} placeholder="Retention days (e.g., 30)" value={retentionDays} onChange={e => setRetentionDays(parseInt(e.target.value || '0') || 1)} />
+          <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" type="number" min={1} placeholder={t('scheduleTasks.retentionDays')} value={retentionDays} onChange={e => setRetentionDays(parseInt(e.target.value || '0') || 1)} />
         )}
-        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 md:col-span-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Command (for command tasks)" value={command} onChange={e => setCommand(e.target.value)} />
-        <button onClick={createTask} className="rounded bg-brand-500 hover:bg-brand-400 px-3 py-2">Create Task</button>
+        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 md:col-span-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder={t('scheduleTasks.commandTasks')} value={command} onChange={e => setCommand(e.target.value)} />
+        <button onClick={createTask} className="rounded bg-brand-500 hover:bg-brand-400 px-3 py-2">{t('scheduleTasks.createTask')}</button>
       </div>
       {loading ? <div className="text-white/60 text-sm">Loading…</div> : error ? <div className="text-red-400 text-sm">{String(error)}</div> : (
         <div className="space-y-2">

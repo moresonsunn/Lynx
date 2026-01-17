@@ -299,7 +299,7 @@ export default function TemplatesPage({
           {SERVER_TYPES_WITH_LOADER.includes(createSelectedType) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white/5 p-4 rounded-lg border border-white/5">
               <div>
-                <label className="block text-xs text-white/60 mb-1">Loader Version</label>
+                <label className="block text-xs text-white/60 mb-1">{t('templatesPage.loaderVersion')}</label>
                 <select
                   value={createLoaderVersion}
                   onChange={(e) => setCreateLoaderVersion(e.target.value)}
@@ -312,7 +312,7 @@ export default function TemplatesPage({
               </div>
               {createSelectedType === 'fabric' && (
                 <div>
-                  <label className="block text-xs text-white/60 mb-1">Installer Version</label>
+                  <label className="block text-xs text-white/60 mb-1">{t('templatesPage.installerVersion')}</label>
                   <input
                     type="text"
                     value={createInstallerVersion}
@@ -337,7 +337,7 @@ export default function TemplatesPage({
               />
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1">Min RAM (MB)</label>
+              <label className="block text-xs text-white/50 mb-1">{t('templatesPage.minRam')}</label>
               <input
                 value={createMinRam}
                 onChange={(e) => setCreateMinRam(e.target.value)}
@@ -345,7 +345,7 @@ export default function TemplatesPage({
               />
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1">Max RAM (MB)</label>
+              <label className="block text-xs text-white/50 mb-1">{t('templatesPage.maxRam')}</label>
               <input
                 value={createMaxRam}
                 onChange={(e) => setCreateMaxRam(e.target.value)}
@@ -359,7 +359,7 @@ export default function TemplatesPage({
               type="submit"
               className="bg-brand-600 hover:bg-brand-500 text-white px-6 py-3 rounded-lg font-bold shadow-lg shadow-brand-500/20 transition-all flex items-center gap-2"
             >
-              <FaPlusCircle /> Create Server
+              <FaPlusCircle /> {t('templatesPage.createServer')}
             </button>
           </div>
         </form>
@@ -368,11 +368,11 @@ export default function TemplatesPage({
       {/* 2. Import ZIP Section */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-          <FaFileArchive className="text-yellow-400" /> Import Server Pack (.zip)
+          <FaFileArchive className="text-yellow-400" /> {t('templatesPage.importServerPack')}
         </h3>
         <div className="space-y-6">
           <div>
-            <label className="block text-xs font-semibold text-white/50 mb-1 uppercase">Server Name</label>
+            <label className="block text-xs font-semibold text-white/50 mb-1 uppercase">{t('templatesPage.serverName')}</label>
             <div className="flex gap-2">
               <input
                 value={serverName}
@@ -383,7 +383,7 @@ export default function TemplatesPage({
               <button
                 onClick={() => setServerName(generateRandomName())}
                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
-                title="Generate Random Name"
+                title={t('templatesPage.generateRandomName')}
               >
                 <FaDice />
               </button>
@@ -391,7 +391,7 @@ export default function TemplatesPage({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-white/50 mb-2 uppercase">Server Pack File (.zip)</label>
+            <label className="block text-xs font-semibold text-white/50 mb-2 uppercase">{t('templatesPage.serverPackFile')}</label>
             <div className="relative group">
               <input
                 type="file"
@@ -474,9 +474,9 @@ export default function TemplatesPage({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>
             <h3 className="text-xl font-bold flex items-center gap-2">
-              <FaSearch className="text-blue-400" /> Modpack Catalog
+              <FaSearch className="text-blue-400" /> {t('templatesPage.modpackCatalog')}
             </h3>
-            <p className="text-sm text-white/60">Search Modrinth & CurseForge</p>
+            <p className="text-sm text-white/60">{t('templatesPage.searchModrinthCurseforge')}</p>
           </div>
 
           <div className="flex items-center gap-2 bg-black/20 p-1 rounded-lg border border-white/5">
@@ -495,7 +495,7 @@ export default function TemplatesPage({
         <div className="flex gap-2 mb-6">
           <input
             className="flex-1 rounded-lg bg-black/20 border border-white/10 px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
-            placeholder="Search for modpacks..."
+            placeholder={t('templatesPage.searchModpacks')}
             value={catalogQuery}
             onChange={e => setCatalogQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && searchCatalog()}

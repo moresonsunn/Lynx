@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { FaUpload, FaTrash, FaPlug, FaSearch, FaDownload, FaTimes, FaExternalLinkAlt, FaSyncAlt } from 'react-icons/fa';
+import { useTranslation } from '../../i18n';
 import { API, getStoredToken } from '../../lib/api';
 
 export default function PluginsPanel({ serverName, serverVersion }) {
+  const { t } = useTranslation();
   const sName = serverName || '';
   const [plugins, setPlugins] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -187,8 +189,8 @@ export default function PluginsPanel({ serverName, serverVersion }) {
           <button
             onClick={() => setShowSearch(!showSearch)}
             className={`rounded px-4 py-2 inline-flex items-center gap-2 transition-colors ${showSearch
-                ? 'bg-green-500 text-white'
-                : 'bg-white/10 hover:bg-white/20 text-white/80'
+              ? 'bg-green-500 text-white'
+              : 'bg-white/10 hover:bg-white/20 text-white/80'
               }`}
           >
             <FaSearch />
@@ -202,7 +204,7 @@ export default function PluginsPanel({ serverName, serverVersion }) {
           <button
             onClick={reloadPlugins}
             className="rounded bg-white/10 hover:bg-white/20 border border-white/10 px-3 py-2 text-white/80 inline-flex items-center gap-2"
-            title="Reload plugins in game"
+            title={t('modsPlugins.reloadPlugins')}
           >
             <FaSyncAlt />
             <span className="hidden sm:inline">Reload</span>
@@ -220,7 +222,7 @@ export default function PluginsPanel({ serverName, serverVersion }) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && searchPlugins()}
-                placeholder="Search for plugins..."
+                placeholder={t('modsPlugins.searchForPlugins')}
                 className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 focus:outline-none focus:border-green-500"
               />
             </div>
@@ -368,7 +370,7 @@ export default function PluginsPanel({ serverName, serverVersion }) {
               <button
                 onClick={() => remove(plugin.name)}
                 className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-2 rounded transition-colors"
-                title="Delete plugin"
+                title={t('modsPlugins.deletePlugin')}
               >
                 <FaTrash />
               </button>

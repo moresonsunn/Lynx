@@ -28,23 +28,23 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const globalData = useGlobalData();
-  
-  const { 
-    servers, 
+
+  const {
+    servers,
     serverStats,
-    dashboardData, 
-    systemHealth, 
-    alerts, 
+    dashboardData,
+    systemHealth,
+    alerts,
     featuredModpacks,
-    isInitialized 
+    isInitialized
   } = globalData;
 
-  
+
   const [localFeatured, setLocalFeatured] = useState([]);
   const [featuredError, setFeaturedError] = useState('');
   const featured = featuredModpacks?.length > 0 ? featuredModpacks : localFeatured;
 
-  
+
   const [installOpen, setInstallOpen] = useState(false);
   const [installPack, setInstallPack] = useState(null);
   const [installProvider, setInstallProvider] = useState('modrinth');
@@ -52,12 +52,12 @@ export default function DashboardPage() {
   const [installVersionId, setInstallVersionId] = useState('');
   const [installEvents, setInstallEvents] = useState([]);
   const [installWorking, setInstallWorking] = useState(false);
-  const [serverName, setServerName] = useState('mp-' + Math.random().toString(36).slice(2,6));
+  const [serverName, setServerName] = useState('mp-' + Math.random().toString(36).slice(2, 6));
   const [hostPort, setHostPort] = useState('');
   const [minRam, setMinRam] = useState('2048M');
   const [maxRam, setMaxRam] = useState('4096M');
-  
-  
+
+
   useEffect(() => {
     if (featuredModpacks?.length > 0) return;
     let cancelled = false;
@@ -66,7 +66,7 @@ export default function DashboardPage() {
         const r = await fetch(`${API}/catalog/search?provider=all&page_size=6`);
         const d = await r.json();
         if (!cancelled) setLocalFeatured(Array.isArray(d?.results) ? d.results : []);
-      } catch(e){ if (!cancelled) setFeaturedError(String(e.message||e)); }
+      } catch (e) { if (!cancelled) setFeaturedError(String(e.message || e)); }
     }, 500);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [featuredModpacks]);
@@ -133,7 +133,7 @@ export default function DashboardPage() {
             return next.length > 500 ? next.slice(-500) : next;
           });
           if (evd.type === 'done' || evd.type === 'error') {
-            try { es.close(); } catch {}
+            try { es.close(); } catch { }
             setInstallWorking(false);
             if (globalData.__refreshServers) {
               globalData.__refreshServers();
@@ -141,16 +141,16 @@ export default function DashboardPage() {
               setTimeout(() => globalData.__refreshServers && globalData.__refreshServers(), 3000);
             }
           }
-        } catch {}
+        } catch { }
       };
-      es.onerror = () => { try { es.close(); } catch {} setInstallWorking(false); };
+      es.onerror = () => { try { es.close(); } catch { } setInstallWorking(false); };
     } catch (e) {
       setInstallEvents((prev) => [...prev, { type: 'error', message: String(e.message || e) }]);
       setInstallWorking(false);
     }
   }
 
-  
+
   const { totalServers, runningServers, totalMemoryMB, avgCpuPercent, criticalAlerts, warningAlerts } = useMemo(() => {
     const total = servers?.length || 0;
     const runningList = Array.isArray(servers) ? servers.filter(s => s?.status === 'running') : [];
@@ -198,7 +198,7 @@ export default function DashboardPage() {
     if (!Number.isFinite(memoryMB)) memoryMB = 0;
     const critical = alerts?.filter(a => a.type === 'critical' && !a.acknowledged).length || 0;
     const warning = alerts?.filter(a => a.type === 'warning' && !a.acknowledged).length || 0;
-    
+
     return {
       totalServers: total,
       runningServers: running,
@@ -208,7 +208,7 @@ export default function DashboardPage() {
       warningAlerts: warning
     };
   }, [servers, serverStats, dashboardData, systemHealth, alerts]);
-  
+
   return (
     <div className="min-h-screen bg-transparent">
       {/* Clean Linear-inspired header */}
@@ -219,7 +219,7 @@ export default function DashboardPage() {
               <h1 className="text-2xl font-semibold gradient-text-brand mb-1">{t('dashboard.overview')}</h1>
               <p className="text-sm text-white/60">{t('dashboard.monitorInfrastructure')}</p>
             </div>
-            
+
             {(criticalAlerts > 0 || warningAlerts > 0) && (
               <div className="flex items-center gap-2">
                 {criticalAlerts > 0 && (
@@ -239,7 +239,7 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-      
+
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-8 animate-fade-in">
 
         {/* Simplified Stats */}
@@ -253,21 +253,21 @@ export default function DashboardPage() {
               <div className="text-sm text-white/40">/ {totalServers}</div>
             </div>
           </div>
-          
+
           <div className="glassmorphism rounded-xl p-4 sm:p-5">
             <div className="text-sm text-white/60 mb-1">{t('dashboard.cpuUsage')}</div>
             <div className="text-xl sm:text-2xl font-medium text-white">
               {`${avgCpuPercent.toFixed(0)}%`}
             </div>
           </div>
-          
+
           <div className="glassmorphism rounded-xl p-4 sm:p-5">
             <div className="text-sm text-white/60 mb-1">{t('dashboard.memoryUsage')}</div>
             <div className="text-xl sm:text-2xl font-medium text-white">
               {`${(totalMemoryMB / 1024).toFixed(1)}GB`}
             </div>
           </div>
-          
+
           <div className="glassmorphism rounded-xl p-4 sm:p-5">
             <div className="text-sm text-white/60 mb-1">{t('dashboard.issues')}</div>
             <div className="text-xl sm:text-2xl font-medium text-white">
@@ -293,15 +293,15 @@ export default function DashboardPage() {
               featured.map((p, idx) => (
                 <div key={p.id || p.slug || idx} className="glassmorphism rounded-xl p-4 hover:bg-white/10 transition-colors">
                   <div className="flex items-center gap-3 mb-2">
-                    {p.icon_url ? <img src={p.icon_url} alt="" className="w-8 h-8 rounded" loading="lazy" /> : <div className="w-8 h-8 bg-white/10 rounded"/>}
+                    {p.icon_url ? <img src={p.icon_url} alt="" className="w-8 h-8 rounded" loading="lazy" /> : <div className="w-8 h-8 bg-white/10 rounded" />}
                     <div className="min-w-0 flex-1">
                       <div className="text-white font-medium truncate" title={p.name}>{p.name}</div>
-                      <div className="text-xs text-white/60">{p.provider || 'Modrinth'} • {typeof p.downloads==='number'?`⬇ ${Intl.NumberFormat().format(p.downloads)}`:''}</div>
+                      <div className="text-xs text-white/60">{p.provider || 'Modrinth'} • {typeof p.downloads === 'number' ? `⬇ ${Intl.NumberFormat().format(p.downloads)}` : ''}</div>
                     </div>
                   </div>
                   <div className="text-sm text-white/60 line-clamp-2 min-h-[38px]">{p.description}</div>
                   <div className="mt-3">
-                    <button onClick={()=> openInstallFromFeatured(p)} className="text-sm text-brand-400 hover:text-brand-300">Install</button>
+                    <button onClick={() => openInstallFromFeatured(p)} className="text-sm text-brand-400 hover:text-brand-300">Install</button>
                   </div>
                 </div>
               ))
@@ -316,33 +316,33 @@ export default function DashboardPage() {
           <div className="fixed inset-0 bg-black/60 flex items-start sm:items-center justify-center z-50 p-4">
             <div className="bg-ink border border-white/10 rounded-lg p-4 sm:p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
-                <div className="text-lg font-semibold text-white">Install Modpack{installPack?.name ? `: ${installPack.name}` : ''}</div>
+                <div className="text-lg font-semibold text-white">{t('modpackInstall.title')}{installPack?.name ? `: ${installPack.name}` : ''}</div>
                 <button onClick={() => { setInstallOpen(false); setInstallPack(null); }} className="text-white/60 hover:text-white">Close</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                 <div>
                   <label className="block text-xs text-white/60 mb-1">Version</label>
-                  <select className="w-full rounded bg-white/10 border border-white/20 px-3 py-2 text-white" value={installVersionId} onChange={e=>setInstallVersionId(e.target.value)} style={{ backgroundColor: '#1f2937' }}>
+                  <select className="w-full rounded bg-white/10 border border-white/20 px-3 py-2 text-white" value={installVersionId} onChange={e => setInstallVersionId(e.target.value)} style={{ backgroundColor: '#1f2937' }}>
                     {installVersions.map(v => <option key={v.id} value={v.id} style={{ backgroundColor: '#1f2937' }}>{v.name || v.version_number}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-white/60 mb-1">Server Name</label>
-                  <input className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" value={serverName} onChange={e=>setServerName(e.target.value)} />
+                  <label className="block text-xs text-white/60 mb-1">{t('modpackInstall.serverName')}</label>
+                  <input className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" value={serverName} onChange={e => setServerName(e.target.value)} />
                 </div>
                 <div>
-                  <label className="block text-xs text-white/60 mb-1">Host Port (optional)</label>
-                  <input className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" value={hostPort} onChange={e=>setHostPort(e.target.value)} placeholder="25565" />
+                  <label className="block text-xs text-white/60 mb-1">{t('modpackInstall.hostPort')}</label>
+                  <input className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" value={hostPort} onChange={e => setHostPort(e.target.value)} placeholder="25565" />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-white/60 mb-1">Min RAM</label>
-                    <input className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" value={minRam} onChange={e=>setMinRam(e.target.value)} onBlur={()=>{ const v = normalizeRamInput(minRam); if (v) setMinRam(v); }} />
+                    <label className="block text-xs text-white/60 mb-1">{t('modpackInstall.minRam')}</label>
+                    <input className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" value={minRam} onChange={e => setMinRam(e.target.value)} onBlur={() => { const v = normalizeRamInput(minRam); if (v) setMinRam(v); }} />
                     <div className="text-[11px] text-white/50 mt-1">Accepts 2048M, 2G, or raw MB.</div>
                   </div>
                   <div>
-                    <label className="block text-xs text-white/60 mb-1">Max RAM</label>
-                    <input className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" value={maxRam} onChange={e=>setMaxRam(e.target.value)} onBlur={()=>{ const v = normalizeRamInput(maxRam); if (v) setMaxRam(v); }} />
+                    <label className="block text-xs text-white/60 mb-1">{t('modpackInstall.maxRam')}</label>
+                    <input className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" value={maxRam} onChange={e => setMaxRam(e.target.value)} onBlur={() => { const v = normalizeRamInput(maxRam); if (v) setMaxRam(v); }} />
                     <div className="text-[11px] text-white/50 mt-1">Accepts 4096M, 4G, or raw MB.</div>
                   </div>
                 </div>
@@ -387,29 +387,28 @@ export default function DashboardPage() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-medium text-white">Servers</h2>
-              <button 
+              <button
                 onClick={() => navigate('/servers')}
                 className="text-sm text-white/60 hover:text-white transition-colors"
               >
                 View all
               </button>
             </div>
-            
+
             <div className="glassmorphism rounded-xl divide-y divide-white/10">
               {servers.length > 0 ? (
                 servers.slice(0, 5).map((server) => {
                   const isRunning = server.status === 'running';
-                  
+
                   return (
-                    <div 
+                    <div
                       key={server.id}
                       className="flex flex-col sm:flex-row sm:items-center items-start justify-between p-4 gap-3 hover:bg-white/5 cursor-pointer transition-colors"
                       onClick={() => navigate(`/servers/${server.id}`)}
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`w-2 h-2 rounded-full ${
-                          isRunning ? 'bg-green-400' : 'bg-gray-500'
-                        }`} />
+                        <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-400' : 'bg-gray-500'
+                          }`} />
                         <div>
                           <div className="text-white font-medium">{server.name}</div>
                           <div className="text-sm text-white/60">
@@ -417,13 +416,12 @@ export default function DashboardPage() {
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-3">
-                        <span className={`text-xs px-2 py-1 rounded ${
-                          isRunning 
+                        <span className={`text-xs px-2 py-1 rounded ${isRunning
                             ? 'bg-green-500/15 text-green-200 border border-green-500/30'
                             : 'bg-white/5 text-white/60 border border-white/10'
-                        }`}>
+                          }`}>
                           {isRunning ? 'Running' : 'Stopped'}
                         </span>
                         <FaChevronRight className="w-3 h-3 text-white/40" />
@@ -434,7 +432,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="p-8 text-center">
                   <div className="text-white/60 mb-2">No servers yet</div>
-                  <button 
+                  <button
                     onClick={() => navigate('/templates')}
                     className="text-sm text-brand-400 hover:text-brand-300"
                   >
@@ -444,24 +442,23 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
-          
+
           {/* Clean Alerts */}
           {alerts.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-medium text-white">Recent Issues</h2>
+                <h2 className="text-lg font-medium text-white">{t('modpackInstall.recentIssues')}</h2>
               </div>
-              
+
               <div className="glassmorphism rounded-xl divide-y divide-white/10">
                 {alerts.slice(0, 3).map((alert, index) => {
                   const isError = alert.type === 'critical' || alert.type === 'error';
-                  
+
                   return (
                     <div key={alert.id || index} className="p-4">
                       <div className="flex items-start gap-3">
-                        <div className={`w-2 h-2 rounded-full mt-2 ${
-                          isError ? 'bg-red-400' : 'bg-yellow-400'
-                        }`} />
+                        <div className={`w-2 h-2 rounded-full mt-2 ${isError ? 'bg-red-400' : 'bg-yellow-400'
+                          }`} />
                         <div className="flex-1 min-w-0">
                           <div className="text-white text-sm">{alert.message}</div>
                           <div className="text-xs text-white/50 mt-1">

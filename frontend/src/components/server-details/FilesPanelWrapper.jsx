@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FaFolder, FaUpload, FaSave, FaEdit, FaTimes, FaCheck, FaBan, FaArrowUp, FaSyncAlt, FaFolderPlus } from 'react-icons/fa';
+import { useTranslation } from '../../i18n';
 import { API, getStoredToken } from '../../lib/api';
 import { authHeaders } from '../../context/AppContext';
 
 export default function FilesPanelWrapper({ serverName, initialItems = null, isBlockedFile, onEditStart, onEdit, onBlockedFileError }) {
+  const { t } = useTranslation();
   // Accept both `onEditStart` (old name) and `onEdit` (used by pages)
   const onEditCallback = onEditStart || onEdit;
   // Defensive alias to avoid accidental ReferenceError when prop is missing
@@ -512,21 +514,21 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
             const btnPrimary = "inline-flex items-center gap-1 rounded-md bg-brand-500 hover:bg-brand-400 text-white px-2 h-7 text-xs leading-none";
             return (
               <>
-                <button onClick={goUp} className={btn} title="Up one level" aria-label="Up">
+                <button onClick={goUp} className={btn} title={t('fileBrowser.upOneLevel')} aria-label="Up">
                   <FaArrowUp /> <span className="hidden sm:inline">Up</span>
                 </button>
-                <button onClick={createFolder} className={btn} title="Create folder" aria-label="New Folder">
+                <button onClick={createFolder} className={btn} title={t('fileBrowser.createFolder')} aria-label="New Folder">
                   <FaFolderPlus /> <span className="hidden sm:inline">New Folder</span>
                 </button>
-                <label className={`${btnPrimary} cursor-pointer`} title="Upload files" aria-label="Upload files">
+                <label className={`${btnPrimary} cursor-pointer`} title={t('fileBrowser.uploadFiles')} aria-label="Upload files">
                   <FaUpload /> <span className="hidden sm:inline">Upload</span>
                   <input type="file" className="sr-only" multiple onChange={upload} />
                 </label>
-                <label className={`${btnPrimary} cursor-pointer`} title="Upload a folder" aria-label="Upload folder">
+                <label className={`${btnPrimary} cursor-pointer`} title={t('fileBrowser.uploadFolder')} aria-label="Upload folder">
                   <FaFolder /> <span className="hidden sm:inline">Upload Folder</span>
                   <input type="file" className="sr-only" onChange={(e) => { addFolderUploads(e.target.files); e.target.value = ''; }} webkitdirectory="" directory="" />
                 </label>
-                <button onClick={() => loadDir(path, { force: true })} className={btn} title="Refresh" aria-label="Refresh">
+                <button onClick={() => loadDir(path, { force: true })} className={btn} title={t('fileBrowser.refresh')} aria-label="Refresh">
                   <FaSyncAlt /> <span className="hidden sm:inline">Refresh</span>
                 </button>
               </>
@@ -558,7 +560,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
               {aggregate.error && <div className="text-[10px] text-red-400 mt-1">{aggregate.error}</div>}
             </div>
             {aggregate.inProgress && (
-              <button className="text-white/80 hover:text-white" title="Cancel all" onClick={() => {
+              <button className="text-white/80 hover:text-white" title={t('fileBrowser.cancelAll')} onClick={() => {
                 Object.values(uploadAbortersRef.current).forEach((xhr) => { try { xhr.abort(); } catch { } });
                 setAggregate(a => ({ ...a, inProgress: false, error: 'Cancelled' }));
               }}>
@@ -566,7 +568,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
               </button>
             )}
             {!aggregate.inProgress && uploads.length > 0 && (
-              <button className="text-white/80 hover:text-white" title="Clear" onClick={() => { setUploads([]); setAggregate({ totalBytes: 0, sentBytes: 0, inProgress: false, error: '' }); }}>
+              <button className="text-white/80 hover:text-white" title={t('fileBrowser.clear')} onClick={() => { setUploads([]); setAggregate({ totalBytes: 0, sentBytes: 0, inProgress: false, error: '' }); }}>
                 <FaTimes />
               </button>
             )}

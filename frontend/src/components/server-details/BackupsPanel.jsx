@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { FaDownload } from 'react-icons/fa';
 import { API } from '../../lib/api';
+import { useTranslation } from '../../i18n';
 
 export default function BackupsPanel({ serverName }) {
+  const { t } = useTranslation();
   const [list, setList] = useState([]);
   async function refresh() {
     const r = await fetch(`${API}/servers/${encodeURIComponent(serverName)}/backups`);
@@ -23,7 +25,7 @@ export default function BackupsPanel({ serverName }) {
   return (
     <div className="p-4 bg-black/20 rounded-lg">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-white/70">Backups</div>
+        <div className="text-sm text-white/70">{t('servers.backups')}</div>
         <button onClick={createBackup} className="rounded bg-brand-500 hover:bg-brand-400 px-3 py-1.5 inline-flex items-center gap-2">
           <FaDownload /> Create backup
         </button>
@@ -39,7 +41,7 @@ export default function BackupsPanel({ serverName }) {
             </div>
           </div>
         ))}
-        {list.length === 0 && <div className="text-white/60 text-sm">No backups yet.</div>}
+        {list.length === 0 && <div className="text-white/60 text-sm">{t('servers.noBackups')}</div>}
       </div>
     </div>
   );

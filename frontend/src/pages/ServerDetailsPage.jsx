@@ -32,6 +32,7 @@ import FilesPanelWrapper from '../components/server-details/FilesPanelWrapper';
 import EditingPanel from '../components/server-details/EditingPanel';
 import ModsPanel from '../components/server-details/ModsPanel';
 import PluginsPanel from '../components/server-details/PluginsPanel';
+import ConfirmModal from '../components/ConfirmModal';
 
 
 function useServerStats(serverId) {
@@ -70,6 +71,7 @@ export default function ServerDetailsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [logReset, setLogReset] = useState(0);
   const [actionLoading, setActionLoading] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const stats = useServerStats(serverId);
 
@@ -173,9 +175,6 @@ export default function ServerDetailsPage() {
 
   const handleDelete = useCallback(async () => {
     if (!serverId) return;
-    if (!window.confirm('Are you sure you want to delete this server? This action cannot be undone.')) {
-      return;
-    }
     setActionLoading('delete');
     try {
       const r = await fetch(`${API}/servers/${serverId}`, {
@@ -194,6 +193,7 @@ export default function ServerDetailsPage() {
       alert(`Failed to delete server: ${err.message}`);
     } finally {
       setActionLoading(null);
+      setShowDeleteModal(false);
     }
   }, [serverId, globalData, navigate]);
 
@@ -212,9 +212,9 @@ export default function ServerDetailsPage() {
           onClick={() => navigate('/servers')}
           className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
         >
-          <FaArrowLeft /> Back to Servers
+          <FaArrowLeft /> {t('servers.backToServers')}
         </button>
-        <div className="text-white/60">Server not found or loading...</div>
+        <div className="text-white/60">{t('servers.serverNotFound')}</div>
       </div>
     );
   }
@@ -234,7 +234,7 @@ export default function ServerDetailsPage() {
             onClick={() => navigate('/servers')}
             className="flex items-center gap-2 text-white/60 hover:text-white text-sm mb-4"
           >
-            <FaArrowLeft /> Back to Servers
+            <FaArrowLeft /> {t('servers.backToServers')}
           </button>
 
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -266,7 +266,7 @@ export default function ServerDetailsPage() {
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded flex items-center gap-2 disabled:opacity-50"
                   >
                     <FaSync className={actionLoading === 'restart' ? 'animate-spin' : ''} />
-                    Restart
+                    {t('servers.restart')}
                   </button>
                   <button
                     onClick={() => handleAction('stop')}
@@ -274,7 +274,7 @@ export default function ServerDetailsPage() {
                     className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded flex items-center gap-2 disabled:opacity-50"
                   >
                     <FaStop />
-                    Stop
+                    {t('servers.stop')}
                   </button>
                 </>
               ) : (
@@ -284,11 +284,11 @@ export default function ServerDetailsPage() {
                   className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded flex items-center gap-2 disabled:opacity-50"
                 >
                   <FaPlay />
-                  Start
+                  {t('servers.start')}
                 </button>
               )}
               <button
-                onClick={handleDelete}
+                onClick={() => setShowDeleteModal(true)}
                 disabled={!!actionLoading}
                 className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded flex items-center gap-2 disabled:opacity-50"
               >
@@ -333,23 +333,23 @@ export default function ServerDetailsPage() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="glassmorphism rounded-xl p-4">
-                <h3 className="text-sm font-medium text-white/60 mb-2">Server Info</h3>
+                <h3 className="text-sm font-medium text-white/60 mb-2">{t('servers.serverInfo')}</h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-white/60">Type</span>
+                    <span className="text-white/60">{t('common.type')}</span>
                     <span className="text-white">{displayType}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-white/60">Version</span>
+                    <span className="text-white/60">{t('common.version')}</span>
                     <span className="text-white">{displayVersion}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-white/60">Status</span>
+                    <span className="text-white/60">{t('common.status')}</span>
                     <span className="text-white">{server.status}</span>
                   </div>
                   {server.host_port && (
                     <div className="flex justify-between">
-                      <span className="text-white/60">Port</span>
+                      <span className="text-white/60">{t('servers.port')}</span>
                       <span className="text-white">{server.host_port}</span>
                     </div>
                   )}
@@ -357,27 +357,27 @@ export default function ServerDetailsPage() {
               </div>
 
               <div className="glassmorphism rounded-xl p-4">
-                <h3 className="text-sm font-medium text-white/60 mb-2">Resources</h3>
+                <h3 className="text-sm font-medium text-white/60 mb-2">{t('servers.resources')}</h3>
                 <div className="space-y-2 text-sm">
                   {stats && !stats.error ? (
                     <>
                       <div className="flex justify-between">
-                        <span className="text-white/60">CPU Usage</span>
+                        <span className="text-white/60">{t('servers.cpuUsage')}</span>
                         <span className="text-white">{stats.cpu_percent}%</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-white/60">Memory</span>
+                        <span className="text-white/60">{t('servers.memory')}</span>
                         <span className="text-white">{Math.round(stats.memory_usage_mb)} / {Math.round(stats.memory_limit_mb)} MB</span>
                       </div>
                       {stats.uptime_seconds > 0 && (
                         <div className="flex justify-between">
-                          <span className="text-white/60">Uptime</span>
+                          <span className="text-white/60">{t('servers.uptime')}</span>
                           <span className="text-white">{formatUptime(stats.uptime_seconds)}</span>
                         </div>
                       )}
                     </>
                   ) : (
-                    <div className="text-white/40">No stats available</div>
+                    <div className="text-white/40">{t('servers.noStatsAvailable')}</div>
                   )}
                 </div>
               </div>
@@ -461,6 +461,19 @@ export default function ServerDetailsPage() {
           />
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        title={t('modals.deleteServer')}
+        message={t('modals.deleteServerMessage', { name: server?.name })}
+        confirmText={t('servers.deleteServer')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteModal(false)}
+        isLoading={actionLoading === 'delete'}
+      />
     </div>
   );
 }

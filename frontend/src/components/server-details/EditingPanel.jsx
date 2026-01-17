@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { FaSave, FaTimes } from 'react-icons/fa';
 import { API } from '../../lib/api';
 import { authHeaders } from '../../context/AppContext';
+import { useTranslation } from '../../i18n';
 
 export default function EditingPanel({ serverName, filePath, initialContent, onClose }) {
+  const { t } = useTranslation();
   const [content, setContent] = useState(initialContent || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -42,7 +44,7 @@ export default function EditingPanel({ serverName, filePath, initialContent, onC
     <div className="bg-black/20 rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm text-white/70">
-          Editing: <span className="text-white font-mono">{filePath}</span>
+          {t('servers.editing')}: <span className="text-white font-mono">{filePath}</span>
         </div>
         <button
           onClick={onClose}
@@ -73,13 +75,13 @@ export default function EditingPanel({ serverName, filePath, initialContent, onC
           className="rounded bg-brand-500 hover:bg-brand-400 disabled:opacity-50 px-4 py-2 inline-flex items-center gap-2 text-sm font-medium"
         >
           <FaSave />
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? t('servers.saving') : t('servers.save')}
         </button>
         <button
           onClick={onClose}
           className="rounded bg-white/10 hover:bg-white/20 px-4 py-2 text-sm"
         >
-          Cancel
+          {t('servers.cancel')}
         </button>
       </div>
     </div>

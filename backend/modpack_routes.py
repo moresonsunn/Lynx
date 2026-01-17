@@ -476,6 +476,15 @@ async def import_server_pack(
         eula = target_dir / "eula.txt"
         eula.write_text("eula=true\n", encoding="utf-8")
 
+        # Ensure server JAR exists - auto-download if missing based on modpack metadata
+        try:
+            loader = pack_metadata.get("loader") if pack_metadata else None
+            mc_version = pack_metadata.get("minecraft_version") if pack_metadata else None
+            loader_version = pack_metadata.get("loader_version") if pack_metadata else None
+            _ensure_server_jar(target_dir, loader, mc_version, loader_version)
+        except Exception:
+            pass  # Best-effort; server may still work with existing files
+
         # Start container using runtime, pointing to existing dir
         result = dm.create_server_from_existing(
             name=payload.server_name,
@@ -665,6 +674,21 @@ async def import_server_pack_upload(
         # Override host_port if not provided but detected port present
         if host_port is None and isinstance(detected.get("detected_port"), int):
             host_port = int(detected["detected_port"])  # Will be passed through create
+
+        # Ensure server JAR exists - auto-download if missing based on modpack metadata
+        try:
+            pack_metadata = _extract_modpack_metadata(target_dir)
+            loader = pack_metadata.get("loader") if pack_metadata else None
+            mc_version = pack_metadata.get("minecraft_version") if pack_metadata else None
+            loader_version = pack_metadata.get("loader_version") if pack_metadata else None
+            # Use detected type/version as fallback if metadata is sparse
+            if not loader and detected.get("detected_type"):
+                loader = str(detected["detected_type"])
+            if not mc_version and detected.get("detected_version"):
+                mc_version = str(detected["detected_version"])
+            _ensure_server_jar(target_dir, loader, mc_version, loader_version)
+        except Exception:
+            pass  # Best-effort; server may still work with existing files
 
         result = dm.create_server_from_existing(
             name=server_name,
@@ -1076,6 +1100,12 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                     loader = "paper"
 
                 _push_event(task_id, {"type": "progress", "step": "prepare", "message": f"Preparing {loader} server", "progress": 70})
+
+                # Ensure server JAR exists for .mrpack - auto-download if missing
+                try:
+                    _ensure_server_jar(target_dir, loader, mc_version, loader_version, push_event=lambda ev: _push_event(task_id, ev))
+                except Exception as e:
+                    _push_event(task_id, {"type": "progress", "step": "server", "message": f"Server jar auto-download: {e}", "progress": 72})
 
                 min_ram = req.min_ram or ("2048M" if loader != "paper" else "1024M")
                 max_ram = req.max_ram or ("4096M" if loader != "paper" else "2048M")

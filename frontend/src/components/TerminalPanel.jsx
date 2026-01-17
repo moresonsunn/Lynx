@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FaTerminal, FaFilter, FaPlus, FaTimes } from 'react-icons/fa';
+import { useTranslation } from '../i18n';
 import { API } from '../lib/api';
 import { authHeaders } from '../context/AppContext';
 import { loadMuteConfig, saveMuteConfig, defaultMuteRegexes, defaultMutePatterns } from '../lib/consoleFilters';
 import { ansiToHtml } from '../lib/ansiToHtml';
 
 export default function TerminalPanel({ containerId, serverId, resetToken = 0 }) {
+  const { t } = useTranslation();
   const container = containerId || serverId;
   const [cmd, setCmd] = useState('');
   const [rawLogs, setRawLogs] = useState('');
@@ -117,7 +119,7 @@ export default function TerminalPanel({ containerId, serverId, resetToken = 0 })
   return (
     <div className="p-6 bg-black/20 rounded-lg space-y-4" style={{ minHeight: 600 }}>
       <div className="flex items-center justify-between">
-        <div className="text-base text-white/70 mb-2">Server Console & Logs (live)</div>
+        <div className="text-base text-white/70 mb-2">{t('console.title')}</div>
         <div className="flex items-center gap-2">
           <label className="inline-flex items-center gap-2 text-sm text-white/70">
             <input
@@ -138,7 +140,7 @@ export default function TerminalPanel({ containerId, serverId, resetToken = 0 })
           <button
             onClick={() => setShowSettings(v => !v)}
             className="inline-flex items-center gap-2 rounded-md bg-white/10 hover:bg-white/20 px-3 py-1.5 text-sm"
-            title="Manage mute patterns"
+            title={t('console.manageMutePatterns')}
           >
             <FaFilter /> Manage
           </button>
@@ -170,7 +172,7 @@ export default function TerminalPanel({ containerId, serverId, resetToken = 0 })
           onChange={(e) => setCmd(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && send()}
           className="flex-1 rounded-md bg-white/5 border border-white/10 px-4 py-3 text-base"
-          placeholder="Type a command (e.g. say hello or op Username)"
+          placeholder={t('console.commandPlaceholder')}
         />
         <button
           onClick={send}

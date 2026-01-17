@@ -7,6 +7,7 @@ import {
   FaTimes,
   FaKeyboard,
 } from 'react-icons/fa';
+import { useTranslation } from '../i18n';
 import { API, getStoredToken } from '../lib/api';
 
 const ICON_BY_TYPE = {
@@ -29,6 +30,7 @@ function friendlyShortcut() {
 }
 
 export default function GlobalSearchBar({ onNavigate, className = '' }) {
+  const { t } = useTranslation();
   const containerRef = useRef(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
@@ -62,7 +64,7 @@ export default function GlobalSearchBar({ onNavigate, className = '' }) {
 
   useEffect(() => {
     if (abortRef.current) {
-      try { abortRef.current.abort(); } catch (_) {}
+      try { abortRef.current.abort(); } catch (_) { }
       abortRef.current = null;
     }
     if (trimmedQuery.length < 2) {
@@ -95,7 +97,7 @@ export default function GlobalSearchBar({ onNavigate, className = '' }) {
 
     return () => {
       clearTimeout(timeoutId);
-      try { controller.abort(); } catch (_) {}
+      try { controller.abort(); } catch (_) { }
       abortRef.current = null;
     };
   }, [trimmedQuery, runSearch]);
@@ -229,7 +231,7 @@ export default function GlobalSearchBar({ onNavigate, className = '' }) {
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => { if (results.length || trimmedQuery.length >= 2) setOpen(true); }}
-          placeholder="Search servers, players, files"
+          placeholder={t('globalSearch.placeholder')}
           className="bg-transparent flex-1 outline-none text-white placeholder-white/50"
         />
         {query ? (
@@ -280,9 +282,8 @@ export default function GlobalSearchBar({ onNavigate, className = '' }) {
                     key={item.id || `${item.type}-${item.name}`}
                     type="button"
                     data-index={index}
-                    className={`w-full px-4 py-2 text-left text-sm flex items-start gap-3 transition-colors ${
-                      active ? 'bg-brand-500/20 text-white' : 'hover:bg-white/10'
-                    }`}
+                    className={`w-full px-4 py-2 text-left text-sm flex items-start gap-3 transition-colors ${active ? 'bg-brand-500/20 text-white' : 'hover:bg-white/10'
+                      }`}
                     onMouseEnter={() => setHighlightIndex(index)}
                     onMouseDown={(event) => { event.preventDefault(); handleSelect(item); }}
                   >

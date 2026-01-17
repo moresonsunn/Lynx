@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useTranslation } from '../../i18n';
 import { API } from '../../lib/api';
 /* eslint-disable */
 export default function PlayersPanel({ serverId, serverName, focusPlayer = '', onFocusConsumed }) {
+  const { t } = useTranslation();
   // Defensive: normalize serverName to avoid ReferenceError if caller omits prop
   const sName = serverName || '';
   const [online, setOnline] = useState([]);
@@ -19,8 +21,8 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
 
   async function fetchRoster() {
     try {
-  if (!sName) { setPlayers([]); setMethod('missing'); return; }
-  const r = await fetch(`${API}/players/${encodeURIComponent(sName)}/roster`);
+      if (!sName) { setPlayers([]); setMethod('missing'); return; }
+      const r = await fetch(`${API}/players/${encodeURIComponent(sName)}/roster`);
       if (!r.ok) {
         setOnline([]);
         setOffline([]);
@@ -85,8 +87,8 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
   }, [online, offline]);
 
   async function call(endpoint, method = 'POST', body = null) {
-  if (!sName) return;
-  await fetch(`${API}/players/${encodeURIComponent(sName)}/${endpoint}`, {
+    if (!sName) return;
+    await fetch(`${API}/players/${encodeURIComponent(sName)}/${endpoint}`, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
@@ -95,8 +97,8 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
 
   async function postAction(action, player, reasonArg = '') {
     try {
-  if (!sName) return;
-  await fetch(`${API}/players/${encodeURIComponent(sName)}/${action}`, {
+      if (!sName) return;
+      await fetch(`${API}/players/${encodeURIComponent(sName)}/${action}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_name: player, action_type: action, reason: reasonArg })
       });
       await fetchRoster();
@@ -107,8 +109,8 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
 
   async function deop(player) {
     try {
-  if (!sName) return;
-  await fetch(`${API}/players/${encodeURIComponent(sName)}/op/${encodeURIComponent(player)}`, { method: 'DELETE' });
+      if (!sName) return;
+      await fetch(`${API}/players/${encodeURIComponent(sName)}/op/${encodeURIComponent(player)}`, { method: 'DELETE' });
       await fetchRoster();
     } catch (e) { console.error(e); }
   }
@@ -117,7 +119,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
     const msg = window.prompt(`Message to ${player}`);
     if (!msg) return;
     try {
-  await fetch(`${API}/servers/${serverId}/command`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: `tell ${player} ${msg}` }) });
+      await fetch(`${API}/servers/${serverId}/command`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: `tell ${player} ${msg}` }) });
     } catch (e) { console.error(e); }
   }
 
@@ -133,7 +135,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
     const focusTick = setTimeout(() => {
       const node = highlightRefs.current[key];
       if (node && node.scrollIntoView) {
-        try { node.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+        try { node.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { }
       }
       if (typeof onFocusConsumed === 'function') {
         onFocusConsumed();
@@ -151,12 +153,12 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
   return (
     <div className="p-4 bg-black/20 rounded-lg space-y-4" style={{ minHeight: 300 }}>
       <div className="flex items-center justify-between">
-        <div className="text-sm text-white/70">Player Management</div>
+        <div className="text-sm text-white/70">{t('playerManagement.title')}</div>
         <div className="text-xs text-white/50">Updated every 3s</div>
       </div>
 
       <div>
-        <div className="text-xs text-white/60 mb-2">Online Players {online.length > 0 ? `(${online.length})` : ''} {method ? ` — ${method}` : ''}</div>
+        <div className="text-xs text-white/60 mb-2">{t('playerManagement.onlinePlayers')} {online.length > 0 ? `(${online.length})` : ''} {method ? ` — ${method}` : ''}</div>
         {loading ? <div className="text-xs text-white/50">Loading…</div> : null}
 
         {online.length > 0 ? (
@@ -174,7 +176,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
                     {avatarCache.current[p] ? (
                       <img src={avatarCache.current[p]} alt={p} className="w-12 h-12 rounded-full" />
                     ) : (
-                      <div className="w-12 h-12 rounded-full bg-brand-600 flex items-center justify-center text-base font-semibold text-white">{p.slice(0,1).toUpperCase()}</div>
+                      <div className="w-12 h-12 rounded-full bg-brand-600 flex items-center justify-center text-base font-semibold text-white">{p.slice(0, 1).toUpperCase()}</div>
                     )}
                     <div>
                       <div className="text-sm text-white font-semibold">{p}</div>
@@ -182,11 +184,11 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button title="Message" onClick={() => sendTell(p)} className="px-2 py-1 bg-white/5 rounded text-xs text-sky-300 hover:bg-white/10">Message</button>
-                    <button title="De-OP" onClick={() => deop(p)} className="px-2 py-1 bg-white/5 rounded text-xs text-orange-300 hover:bg-white/10">DEOP</button>
-                    <button title="OP" onClick={() => postAction('op', p)} className="px-2 py-1 bg-white/5 rounded text-xs text-green-300 hover:bg-white/10">OP</button>
-                    <button title="Kick" onClick={() => postAction('kick', p)} className="px-2 py-1 bg-yellow-800 rounded text-xs text-yellow-100 hover:bg-yellow-700">Kick</button>
-                    <button title="Ban" onClick={() => postAction('ban', p)} className="px-2 py-1 bg-red-800 rounded text-xs text-red-100 hover:bg-red-700">Ban</button>
+                    <button title={t('playerManagement.message')} onClick={() => sendTell(p)} className="px-2 py-1 bg-white/5 rounded text-xs text-sky-300 hover:bg-white/10">{t('playerManagement.message')}</button>
+                    <button title={t('playerManagement.deop')} onClick={() => deop(p)} className="px-2 py-1 bg-white/5 rounded text-xs text-orange-300 hover:bg-white/10">{t('playerManagement.deop')}</button>
+                    <button title={t('playerManagement.op')} onClick={() => postAction('op', p)} className="px-2 py-1 bg-white/5 rounded text-xs text-green-300 hover:bg-white/10">{t('playerManagement.op')}</button>
+                    <button title={t('playerManagement.kick')} onClick={() => postAction('kick', p)} className="px-2 py-1 bg-yellow-800 rounded text-xs text-yellow-100 hover:bg-yellow-700">{t('playerManagement.kick')}</button>
+                    <button title={t('playerManagement.ban')} onClick={() => postAction('ban', p)} className="px-2 py-1 bg-red-800 rounded text-xs text-red-100 hover:bg-red-700">{t('playerManagement.ban')}</button>
                   </div>
                 </div>
               );
@@ -198,7 +200,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
       </div>
 
       <div className="pt-4">
-        <div className="text-xs text-white/60 mb-2">Offline Players {offline.length ? `(${offline.length})` : ''}</div>
+        <div className="text-xs text-white/60 mb-2">{t('playerManagement.offlinePlayers')} {offline.length ? `(${offline.length})` : ''}</div>
         {offline.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {offline.map((o) => {
@@ -214,7 +216,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
                     {avatarCache.current[o.name] ? (
                       <img src={avatarCache.current[o.name]} alt={o.name} className="w-10 h-10 rounded-full" />
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center text-sm font-semibold text-white">{o.name.slice(0,1).toUpperCase()}</div>
+                      <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center text-sm font-semibold text-white">{o.name.slice(0, 1).toUpperCase()}</div>
                     )}
                     <div>
                       <div className="text-sm text-white">{o.name}</div>
@@ -232,8 +234,8 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Player name" value={playerName} onChange={e => setPlayerName(e.target.value)} />
-        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Reason (optional)" value={reason} onChange={e => setReason(e.target.value)} />
+        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder={t('playerManagement.playerName')} value={playerName} onChange={e => setPlayerName(e.target.value)} />
+        <input className="rounded bg-gray-800 border border-white/20 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder={t('playerManagement.reason')} value={reason} onChange={e => setReason(e.target.value)} />
         <div className="flex items-center gap-2">
           <button onClick={() => call('whitelist', 'POST', { player_name: playerName, reason })} className="rounded bg-white/10 hover:bg-white/20 border border-white/10 px-3 py-2 text-sm text-white/80">Whitelist</button>
           <button onClick={() => call('ban', 'POST', { player_name: playerName, reason })} className="rounded bg-red-600 hover:bg-red-500 px-3 py-2 text-sm">Ban</button>

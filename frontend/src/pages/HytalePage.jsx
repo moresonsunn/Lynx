@@ -133,13 +133,13 @@ export default function HytalePage() {
                     <div className="bg-white/5 border border-white/10 rounded-xl p-6">
                         <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
                             <FaDungeon className="text-brand-400" />
-                            Server Configuration
+                            {t('hytale.serverConfiguration')}
                         </h2>
 
                         <form onSubmit={handleInstallSubmit} className="space-y-6">
                             <div>
                                 <label className="block text-sm font-medium text-white/70 mb-2">
-                                    Server Name
+                                    {t('hytale.serverName')}
                                 </label>
                                 <input
                                     type="text"

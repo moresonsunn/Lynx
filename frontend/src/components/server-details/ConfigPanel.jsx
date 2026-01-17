@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FaMemory, FaMicrochip, FaNetworkWired, FaSave } from 'react-icons/fa';
+import { useTranslation } from '../../i18n';
 import { API } from '../../lib/api';
 
 // Simple in-memory cache for Config per server
@@ -7,6 +8,7 @@ const CONFIG_CACHE = {}; // { [serverName]: { ts, propsData, eulaAccepted, javaV
 const CACHE_TTL_MS = 60_000;
 
 export default function ConfigPanel({ server, onRestart }) {
+  const { t } = useTranslation();
   const [javaVersions, setJavaVersions] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -72,7 +74,7 @@ export default function ConfigPanel({ server, onRestart }) {
     function withTimeout(promise, ms, controller) {
       return new Promise((resolve, reject) => {
         const id = setTimeout(() => {
-          try { controller.abort(); } catch {}
+          try { controller.abort(); } catch { }
           reject(new DOMException('Timeout', 'AbortError'));
         }, ms);
         timeoutIds.push(id);
@@ -232,7 +234,7 @@ export default function ConfigPanel({ server, onRestart }) {
     loadAll(false);
 
     return () => {
-      try { abort.abort(); } catch {}
+      try { abort.abort(); } catch { }
       timeoutIds.forEach((id) => clearTimeout(id));
     };
   }, [server.name, server.id, refreshNonce]);
@@ -352,13 +354,13 @@ export default function ConfigPanel({ server, onRestart }) {
     setJavaArgsError('');
   }
 
-  if (loading) return (<div className="p-4 bg-black/20 rounded-lg"><div className="text-sm text-white/70">Loading Java version information...</div></div>);
+  if (loading) return (<div className="p-4 bg-black/20 rounded-lg"><div className="text-sm text-white/70">{t('configPanel.loadingJavaInfo')}</div></div>);
   if (error) return (<div className="p-4 bg-black/20 rounded-lg"><div className="text-sm text-red-400">Error: {error}</div></div>);
 
   return (
     <div className="p-4 bg-black/20 rounded-lg" style={{ minHeight: 500, minWidth: 1043.02 }}>
       <div className="flex items-center justify-between mb-4">
-        <div className="text-lg font-semibold text-white">Server Configuration</div>
+        <div className="text-lg font-semibold text-white">{t('configPanel.title')}</div>
         <div className="flex items-center gap-2">
           <button onClick={() => setRefreshNonce(n => n + 1)} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-sm">Refresh</button>
         </div>
@@ -384,7 +386,7 @@ export default function ConfigPanel({ server, onRestart }) {
         <div>
           {/* Java Section (compact) */}
           <div className="mb-4">
-            <div className="text-sm text-white/70 mb-2">Java Version</div>
+            <div className="text-sm text-white/70 mb-2">{t('configPanel.javaVersion')}</div>
             <div className="text-xs text-white/50 mb-2">Current version: <span className="text-green-400">{currentVersion}</span></div>
             <div className="grid grid-cols-2 gap-3">
               {javaVersions?.map((javaInfo) => (
@@ -395,13 +397,13 @@ export default function ConfigPanel({ server, onRestart }) {
                 </button>
               ))}
             </div>
-            {updating && (<div className="text-sm text-yellow-400 mt-2">Updating Java version...</div>)}
+            {updating && (<div className="text-sm text-yellow-400 mt-2">{t('configPanel.updatingJava')}</div>)}
             {currentVersion && (
               <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                 <div className="text-sm text-blue-300 mb-2">💡 Tip</div>
                 <div className="text-xs text-blue-200">After changing the Java version, restart the server for the changes to take effect.</div>
                 {onRestart && (
-                  <button onClick={() => onRestart(server.id)} className="mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition">Restart Server</button>
+                  <button onClick={() => onRestart(server.id)} className="mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition">{t('configPanel.restartServer')}</button>
                 )}
               </div>
             )}
@@ -410,8 +412,8 @@ export default function ConfigPanel({ server, onRestart }) {
           <div className="mb-4 p-3 bg-white/5 border border-white/10 rounded-lg">
             <div className="flex items-center justify-between mb-2">
               <div>
-                <div className="text-sm text-white/70">Custom Java Arguments (JAVA_OPTS)</div>
-                <div className="text-xs text-white/50">Advanced JVM flags applied when the server starts.</div>
+                <div className="text-sm text-white/70">{t('configPanel.customJavaArgs')}</div>
+                <div className="text-xs text-white/50">{t('configPanel.javaArgsDescription')}</div>
               </div>
               <button
                 type="button"
@@ -424,7 +426,7 @@ export default function ConfigPanel({ server, onRestart }) {
               value={javaArgs}
               onChange={(e) => { setJavaArgs(e.target.value); setJavaArgsError(''); }}
               className="w-full rounded bg-black/40 border border-white/10 px-3 py-2 text-white text-sm font-mono min-h-[88px]"
-              placeholder="Example: -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC"
+              placeholder={t('configPanel.javaArgsExample')}
             />
             {javaArgsError && <div className="text-xs text-red-400 mt-2">{javaArgsError}</div>}
             <div className="flex items-center justify-between mt-3">
@@ -478,22 +480,22 @@ export default function ConfigPanel({ server, onRestart }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-white/60 mb-1">Max Players</label>
-                <input value={propsData.max_players} onChange={e=>setPropsData({...propsData, max_players: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" placeholder="20" />
+                <input value={propsData.max_players} onChange={e => setPropsData({ ...propsData, max_players: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" placeholder="20" />
               </div>
               <div>
                 <label className="block text-xs text-white/60 mb-1">Online Mode</label>
-                <select value={propsData.online_mode} onChange={e=>setPropsData({...propsData, online_mode: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
+                <select value={propsData.online_mode} onChange={e => setPropsData({ ...propsData, online_mode: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
                   <option value="true" style={{ backgroundColor: '#1f2937' }}>true</option>
                   <option value="false" style={{ backgroundColor: '#1f2937' }}>false</option>
                 </select>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-xs text-white/60 mb-1">MOTD</label>
-                <input value={propsData.motd} onChange={e=>setPropsData({...propsData, motd: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" placeholder="A Minecraft Server" />
+                <input value={propsData.motd} onChange={e => setPropsData({ ...propsData, motd: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" placeholder="A Minecraft Server" />
               </div>
               <div>
                 <label className="block text-xs text-white/60 mb-1">Difficulty</label>
-                <select value={propsData.difficulty} onChange={e=>setPropsData({...propsData, difficulty: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
+                <select value={propsData.difficulty} onChange={e => setPropsData({ ...propsData, difficulty: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
                   <option value="peaceful" style={{ backgroundColor: '#1f2937' }}>peaceful</option>
                   <option value="easy" style={{ backgroundColor: '#1f2937' }}>easy</option>
                   <option value="normal" style={{ backgroundColor: '#1f2937' }}>normal</option>
@@ -502,39 +504,39 @@ export default function ConfigPanel({ server, onRestart }) {
               </div>
               <div>
                 <label className="block text-xs text-white/60 mb-1">Whitelist Enabled</label>
-                <select value={propsData.white_list} onChange={e=>setPropsData({...propsData, white_list: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
+                <select value={propsData.white_list} onChange={e => setPropsData({ ...propsData, white_list: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
                   <option value="true" style={{ backgroundColor: '#1f2937' }}>true</option>
                   <option value="false" style={{ backgroundColor: '#1f2937' }}>false</option>
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-white/60 mb-1">PVP Enabled</label>
-                <select value={propsData.pvp} onChange={e=>setPropsData({...propsData, pvp: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
+                <select value={propsData.pvp} onChange={e => setPropsData({ ...propsData, pvp: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
                   <option value="true" style={{ backgroundColor: '#1f2937' }}>true</option>
                   <option value="false" style={{ backgroundColor: '#1f2937' }}>false</option>
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-white/60 mb-1">Allow Nether</label>
-                <select value={propsData.allow_nether} onChange={e=>setPropsData({...propsData, allow_nether: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
+                <select value={propsData.allow_nether} onChange={e => setPropsData({ ...propsData, allow_nether: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
                   <option value="true" style={{ backgroundColor: '#1f2937' }}>true</option>
                   <option value="false" style={{ backgroundColor: '#1f2937' }}>false</option>
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-white/60 mb-1">Enable Command Blocks</label>
-                <select value={propsData.enable_command_block} onChange={e=>setPropsData({...propsData, enable_command_block: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
+                <select value={propsData.enable_command_block} onChange={e => setPropsData({ ...propsData, enable_command_block: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" style={{ backgroundColor: '#1f2937' }}>
                   <option value="true" style={{ backgroundColor: '#1f2937' }}>true</option>
                   <option value="false" style={{ backgroundColor: '#1f2937' }}>false</option>
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-white/60 mb-1">View Distance</label>
-                <input type="number" min={2} max={32} value={propsData.view_distance} onChange={e=>setPropsData({...propsData, view_distance: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" placeholder="10" />
+                <input type="number" min={2} max={32} value={propsData.view_distance} onChange={e => setPropsData({ ...propsData, view_distance: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" placeholder="10" />
               </div>
               <div>
                 <label className="block text-xs text-white/60 mb-1">Simulation Distance</label>
-                <input type="number" min={2} max={32} value={propsData.simulation_distance} onChange={e=>setPropsData({...propsData, simulation_distance: e.target.value})} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" placeholder="10" />
+                <input type="number" min={2} max={32} value={propsData.simulation_distance} onChange={e => setPropsData({ ...propsData, simulation_distance: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-3 py-2 text-white" placeholder="10" />
               </div>
             </div>
             <div className="mt-3 flex items-center gap-2">

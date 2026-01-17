@@ -127,7 +127,7 @@ export default function SteamGamesPage() {
                     <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
                     <input
                         type="text"
-                        placeholder="Search games..."
+                        placeholder={t('steamGames.searchGames')}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-brand-500 w-full md:w-64"
@@ -247,7 +247,7 @@ export default function SteamGamesPage() {
                             <div className="p-6 space-y-6">
                                 <div>
                                     <label className="block text-sm font-medium text-white/70 mb-2">
-                                        Server Name
+                                        {t('steamGames.serverName')}
                                     </label>
                                     <input
                                         type="text"
@@ -264,14 +264,14 @@ export default function SteamGamesPage() {
 
                                 <div>
                                     <label className="block text-sm font-medium text-white/70 mb-2">
-                                        Host Port (Optional)
+                                        {t('steamGames.hostPort')}
                                     </label>
                                     <input
                                         type="number"
                                         value={hostPort}
                                         onChange={(e) => setHostPort(e.target.value)}
                                         className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-brand-500"
-                                        placeholder="Auto-assign"
+                                        placeholder={t('steamGames.autoAssign')}
                                     />
                                     <p className="text-xs text-white/40 mt-1">
                                         Correct port mapping will be handled automatically if left blank.
@@ -280,7 +280,7 @@ export default function SteamGamesPage() {
 
                                 {Object.keys(envVars).length > 0 && (
                                     <div className="space-y-4 pt-4 border-t border-white/10">
-                                        <h4 className="font-medium text-white">Environment Variables</h4>
+                                        <h4 className="font-medium text-white">{t('steamGames.envVars')}</h4>
                                         {Object.entries(envVars).map(([key, value]) => (
                                             <div key={key}>
                                                 <label className="block text-xs font-mono text-white/60 mb-1">
