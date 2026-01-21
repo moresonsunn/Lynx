@@ -111,10 +111,12 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
     Rules:
     - Inspect Fabric/Quilt JSON: environment == "client" => client-only
     - Inspect Forge mods.toml: client-only hints (side/clientSideOnly/onlyClient)
+    - Inspect NeoForge neoforge.mods.toml: client-only hints
     - No built-in name patterns. Optional patterns can be supplied via:
       ENV `CLIENT_ONLY_MOD_PATTERNS` (comma-separated),
       ENV `CLIENT_ONLY_MOD_PATTERNS_URL` (one per line),
       files `client-only-mods.txt` in server folder or `/data/servers/client-only-mods.txt`.
+    - Whitelisting via `client-only-allow.txt` in server folder or `/data/servers/client-only-allow.txt`.
     """
     try:
         mods_dir = target_dir / "mods"
@@ -162,6 +164,20 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
             "reeses_sodium_options", "rrls", "respackopt",
             "fancymenu", "konkrete",
         ]
+        
+        # Load Allowed Patterns
+        allowed_patterns: list[str] = []
+        try:
+            for cfg in [target_dir / "client-only-allow.txt", Path("/data/servers/client-only-allow.txt")]:
+                if cfg.exists():
+                    for line in cfg.read_text(encoding="utf-8", errors="ignore").splitlines():
+                        line = (line or "").strip().lower()
+                        if not line or line.startswith("#"):
+                            continue
+                        allowed_patterns.append(line)
+        except Exception:
+            pass
+
         try:
             extra_env = os.environ.get("CLIENT_ONLY_MOD_PATTERNS", "").strip()
             if extra_env:
@@ -200,9 +216,14 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
         moved = 0
         for jar in mods_dir.glob("*.jar"):
             name = jar.name.lower()
+            
+            # Check Allow list first
+            if allowed_patterns and any(pat in name for pat in allowed_patterns):
+                continue
+
             client_only = False
             has_metadata = False
-            # Inspect contents for Fabric/Quilt/Forge metadata flags
+            # Inspect contents for Fabric/Quilt/Forge/NeoForge metadata flags
             try:
                 with zipfile.ZipFile(jar, 'r') as zf:
                     try:
@@ -231,8 +252,16 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
                         if not client_only and 'META-INF/mods.toml' in zf.namelist():
                             has_metadata = True
                             txt = zf.read('META-INF/mods.toml').decode('utf-8', errors='ignore').lower()
-                            # Strict Forge heuristic: only mark as client-only on explicit boolean flags.
-                            # Avoid generic side=\"client\" which often appears in dependency blocks.
+                            # Strict Forge heuristic
+                            if ('clientsideonly=true' in txt) or ('onlyclient=true' in txt) or ('client_only=true' in txt):
+                                client_only = True
+                    except Exception:
+                        pass
+                    try:
+                        if not client_only and 'META-INF/neoforge.mods.toml' in zf.namelist():
+                            has_metadata = True
+                            txt = zf.read('META-INF/neoforge.mods.toml').decode('utf-8', errors='ignore').lower()
+                            # NeoForge uses similar TOML structure
                             if ('clientsideonly=true' in txt) or ('onlyclient=true' in txt) or ('client_only=true' in txt):
                                 client_only = True
                     except Exception:
@@ -242,6 +271,7 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
             # Optional fallback to provided name-patterns only (only if no metadata at all)
             if not client_only and not has_metadata and patterns and any(pat in name for pat in patterns):
                 client_only = True
+            
             if client_only:
                 dest = disable_dir / jar.name
                 try:
