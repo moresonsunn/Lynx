@@ -13,6 +13,7 @@ Lynx provides a unified interface to deploy, configure, and monitor game servers
 
 ## Features
 
+### Core Features
 - Server lifecycle management (create, start, stop, restart, delete)
 - Real-time console output with ANSI color support
 - File manager with upload, download, and archive operations
@@ -20,6 +21,31 @@ Lynx provides a unified interface to deploy, configure, and monitor game servers
 - User authentication with role-based access control
 - REST API for automation and integration
 - Multi-architecture support (amd64, arm64)
+
+### High-Impact Features ✨
+- **Performance Monitoring:** Real-time metrics, crash detection, performance alerts
+- **Multi-Server Management:** Bulk operations, server groups, cloning
+- **Enhanced Modpacks:** Automatic mod scanning, update checking, conflict detection
+- **Advanced Backups:** Incremental backups, cloud storage (S3/GCS/Azure), encryption
+- **Player Experience:** Advanced analytics, bulk whitelist, temporary bans
+
+See [HIGH_IMPACT_FEATURES.md](HIGH_IMPACT_FEATURES.md) for detailed documentation.
+
+### Quality of Life Improvements 🎨
+- **UI/UX Enhancements:** Advanced search, drag-drop uploads, command history, dashboard widgets
+- **Configuration Management:** Visual server.properties editor, templates, validation, diff comparison
+- **Enhanced Security:** 2FA/TOTP, IP whitelisting, audit logging, per-server permissions
+
+See [QUALITY_OF_LIFE_FEATURES.md](QUALITY_OF_LIFE_FEATURES.md) for detailed documentation.
+
+### Platform Features 🚀
+- **Multi-Tenancy:** Organizations, resource quotas, billing tracking, role-based access
+- **API Management:** Rate limiting, API keys, webhooks, usage analytics
+- **Plugin System:** Marketplace, custom server types, versioning, reviews
+- **Real-Time:** WebSocket support, console streaming, live notifications
+- **Advanced API:** Batch operations, task management, API versioning
+
+See [PLATFORM_FEATURES.md](PLATFORM_FEATURES.md) for detailed documentation.
 
 ## Supported Games
 

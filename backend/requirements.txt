@@ -18,3 +18,9 @@ psutil
 pillow>=10,<11
 mcstatus
 httpx
+pyotp>=2.8.0
+websockets>=10.0
+# High-Impact Features - Optional cloud storage dependencies
+# boto3>=1.26.0  # Uncomment for AWS S3 backup support
+# google-cloud-storage  # Uncomment for Google Cloud Storage backup support
+# azure-storage-blob  # Uncomment for Azure Blob Storage backup support

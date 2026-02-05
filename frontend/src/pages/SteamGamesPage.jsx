@@ -205,9 +205,9 @@ export default function SteamGamesPage() {
                                     <h2 className="text-2xl font-bold text-white mb-6 pl-3 border-l-4 border-brand-500">
                                         {category} Games
                                     </h2>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                                         {grouped[category].map(game => (
-                                            <GameCard key={game.slug} game={game} onInstall={handleInstallClick} />
+                                            <GameTile key={game.slug} game={game} onInstall={handleInstallClick} />
                                         ))}
                                     </div>
                                 </div>
@@ -215,11 +215,11 @@ export default function SteamGamesPage() {
                         })()
                     ) : (
                         // Flat View for Specific Category
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                             {filteredGames
                                 .filter(g => (g.category || 'Other') === activeCategory)
                                 .map(game => (
-                                    <GameCard key={game.slug} game={game} onInstall={handleInstallClick} />
+                                    <GameTile key={game.slug} game={game} onInstall={handleInstallClick} />
                                 ))}
                         </div>
                     )}
@@ -343,45 +343,115 @@ export default function SteamGamesPage() {
     );
 }
 
-function GameCard({ game, onInstall }) {
+// Get Steam CDN image URL from app ID
+function getSteamImageUrl(appid, type = 'header') {
+    if (!appid) return null;
+    // Steam CDN image types:
+    // header: 460x215 - good for cards/tiles
+    // capsule_231x87: 231x87 - small capsule
+    // library_600x900: 600x900 - vertical library art
+    // library_hero: 1920x620 - horizontal hero banner
+    const imageTypes = {
+        header: `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`,
+        capsule: `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/capsule_231x87.jpg`,
+        library: `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/library_600x900.jpg`,
+        hero: `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/library_hero.jpg`,
+    };
+    return imageTypes[type] || imageTypes.header;
+}
+
+// Generate a consistent gradient based on game name
+function getGameGradient(name) {
+    const gradients = [
+        'from-blue-600 to-purple-700',
+        'from-emerald-600 to-teal-700',
+        'from-orange-500 to-red-600',
+        'from-pink-500 to-rose-600',
+        'from-violet-600 to-indigo-700',
+        'from-cyan-500 to-blue-600',
+        'from-amber-500 to-orange-600',
+        'from-fuchsia-500 to-purple-600',
+        'from-lime-500 to-green-600',
+        'from-sky-500 to-indigo-600',
+    ];
+    // Simple hash based on name
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return gradients[Math.abs(hash) % gradients.length];
+}
+
+// Get initials from game name (max 2 chars)
+function getGameInitials(name) {
+    const words = name.split(/\s+/).filter(w => w.length > 0);
+    if (words.length >= 2) {
+        return (words[0][0] + words[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+}
+
+function GameTile({ game, onInstall }) {
+    const gradient = getGameGradient(game.name);
+    const initials = getGameInitials(game.name);
+    // Use steam_appid to generate URL, or fall back to game_image if provided
+    const steamImageUrl = getSteamImageUrl(game.steam_appid) || game.game_image;
+    const [imageLoaded, setImageLoaded] = useState(false);
+    const [imageError, setImageError] = useState(false);
+
     return (
-        <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden hover:bg-white/10 transition-colors flex flex-col">
-            <div className="p-6 flex-1">
-                <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center text-2xl text-blue-400">
-                        <FaServer />
-                    </div>
-                    <div className="flex gap-2">
-                        {game.category && (
-                            <span className="text-xs px-2 py-1 bg-white/10 rounded text-white/60 font-mono">
-                                {game.category}
+        <div
+            onClick={() => onInstall(game)}
+            className="group cursor-pointer flex flex-col"
+        >
+            {/* Game Image/Placeholder */}
+            <div className={`relative aspect-[4/3] rounded-xl overflow-hidden shadow-lg group-hover:shadow-xl group-hover:shadow-brand-500/20 transition-all duration-300 group-hover:scale-[1.03] ${!steamImageUrl || imageError ? `bg-gradient-to-br ${gradient}` : 'bg-gray-800'}`}>
+                {/* Steam Image */}
+                {steamImageUrl && !imageError && (
+                    <img
+                        src={steamImageUrl}
+                        alt={game.name}
+                        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                        onLoad={() => setImageLoaded(true)}
+                        onError={() => setImageError(true)}
+                    />
+                )}
+
+                {/* Fallback gradient background with initials (shown when no image or loading) */}
+                {(!steamImageUrl || imageError || !imageLoaded) && (
+                    <>
+                        {/* Decorative overlay pattern */}
+                        <div className="absolute inset-0 opacity-20">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+                            <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/20 rounded-full translate-y-1/2 -translate-x-1/2" />
+                        </div>
+
+                        {/* Game Initials */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-4xl font-black text-white/90 tracking-wider drop-shadow-lg">
+                                {initials}
                             </span>
-                        )}
-                        {game.image && (
-                            <span className="text-xs px-2 py-1 bg-white/10 rounded text-white/60 font-mono">
-                                Docker
-                            </span>
-                        )}
+                        </div>
+                    </>
+                )}
+
+                {/* Dark overlay for better text contrast on images */}
+                {steamImageUrl && imageLoaded && !imageError && (
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                )}
+
+                {/* Hover overlay with install hint */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-full p-3 transform scale-75 group-hover:scale-100 transition-transform duration-300">
+                        <FaDownload className="text-white text-xl" />
                     </div>
                 </div>
-                <h3 className="text-xl font-bold text-white mb-2">{game.name}</h3>
-                <p className="text-sm text-white/60 line-clamp-3">{game.summary}</p>
+            </div>
 
-                {game.ports && game.ports.length > 0 && (
-                    <div className="mt-4 text-xs text-white/40 font-mono">
-                        Ports: {game.ports.map(p => `${p.container}/${p.protocol}`).join(', ')}
-                    </div>
-                )}
-            </div>
-            <div className="p-4 bg-black/20 border-t border-white/10">
-                <button
-                    onClick={() => onInstall(game)}
-                    className="w-full py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                >
-                    <FaDownload />
-                    Install Server
-                </button>
-            </div>
+            {/* Game Name */}
+            <h3 className="mt-3 text-sm font-semibold text-white text-center line-clamp-2 group-hover:text-brand-400 transition-colors">
+                {game.name}
+            </h3>
         </div>
     );
 }

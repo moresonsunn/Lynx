@@ -150,30 +150,30 @@ export function GlobalDataProvider({ children }) {
   useEffect(() => {
     preloadAllData();
 
-    // Set up optimized background refresh intervals for balanced performance
+    // Set up fast background refresh intervals for instant updates
     refreshIntervals.current.servers = setInterval(() => {
       refreshDataInBackground('servers', `${API}/servers`, (data) => Array.isArray(data) ? data : []);
-    }, 5000); // Refresh servers every 5s for instant updates
+    }, 3000); // Refresh servers every 3s for instant updates
 
     refreshIntervals.current.dashboardData = setInterval(() => {
       refreshDataInBackground('dashboardData', `${API}/monitoring/dashboard-data`);
-    }, 15000); // Refresh dashboard data every 15s
+    }, 5000); // Refresh dashboard data every 5s
 
     // Refresh users/roles frequently for instant updates
     refreshIntervals.current.users = setInterval(() => {
       refreshDataInBackground('users', `${API}/users`, (d) => d.users || []);
       refreshDataInBackground('roles', `${API}/users/roles`, (d) => d.roles || []);
-    }, 10000); // Refresh every 10s
+    }, 5000); // Refresh every 5s
 
     refreshIntervals.current.alerts = setInterval(() => {
       refreshDataInBackground('alerts', `${API}/monitoring/alerts`, (data) => data.alerts || []);
-    }, 30000); // Refresh alerts every 30s
+    }, 10000); // Refresh alerts every 10s
 
     // Server stats refresh using bulk endpoint for performance
     refreshIntervals.current.serverStats = setInterval(async () => {
       try {
         if (typeof window !== 'undefined' && window.HEAVY_PANEL_ACTIVE) return;
-        const r = await fetch(`${API}/servers/stats?ttl=2`, { headers: authHeaders() });
+        const r = await fetch(`${API}/servers/stats?ttl=0`, { headers: authHeaders() });
         if (!r.ok) return;
         const data = await r.json();
         setGlobalData(current => {
@@ -186,7 +186,7 @@ export function GlobalDataProvider({ children }) {
           return { ...current, serverStats: merged };
         });
       } catch {}
-    }, 4000); // Refresh stats every 4s for real-time feel
+    }, 2000); // Refresh stats every 2s for instant feel
 
     const handleVisibility = () => {
       if (typeof document !== 'undefined' && document.hidden) return;

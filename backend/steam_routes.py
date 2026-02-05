@@ -198,6 +198,8 @@ async def list_games(
             "summary": meta.get("summary") or meta.get("notes") or "",
             "notes": meta.get("notes") or "",
             "image": meta.get("image"),
+            "steam_appid": meta.get("steam_appid"),
+            "game_image": meta.get("game_image"),
             "ports": sanitized_ports,
             "env": env_defaults,
             "volume": meta.get("volume"),

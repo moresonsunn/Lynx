@@ -49,9 +49,26 @@ from repair_routes import router as repair_router
 from probe_routes import router as probe_router
 from maintenance_routes import router as maintenance_router
 from steam_routes import router as steam_router
+from steam_mods_routes import router as steam_mods_router
 from server_types_routes import router as server_types_router
 from settings_routes import router as settings_router
 from mods_routes import router as mods_router
+# High-Impact Features routers
+from analytics_routes import router as analytics_router
+from multi_server_routes import router as multi_server_router
+from mods_enhanced_routes import router as mods_enhanced_router
+from backup_advanced_routes import router as backup_advanced_router
+from player_enhanced_routes import router as player_enhanced_router
+# Quality of Life Features routers
+from ui_enhancements_routes import router as ui_enhancements_router
+from config_management_routes import router as config_management_router
+from security_enhanced_routes import router as security_enhanced_router
+# Platform Features routers
+from organizations_routes import router as organizations_router
+from api_management_routes import router as api_management_router
+from plugins_routes import router as plugins_router
+from realtime_routes import router as realtime_router
+from advanced_api_routes import router as advanced_api_router
 from auth import require_auth, get_current_user, require_admin, require_moderator, get_password_hash, verify_token, get_user_by_username
 from scheduler import get_scheduler
 from models import User
@@ -175,8 +192,25 @@ app.include_router(repair_router)
 app.include_router(probe_router)
 app.include_router(maintenance_router)
 app.include_router(steam_router)
+app.include_router(steam_mods_router)
 app.include_router(settings_router)
 app.include_router(mods_router)
+# High-Impact Features
+app.include_router(analytics_router)
+app.include_router(multi_server_router)
+app.include_router(mods_enhanced_router)
+app.include_router(backup_advanced_router)
+app.include_router(player_enhanced_router)
+# Quality of Life Features
+app.include_router(ui_enhancements_router)
+app.include_router(config_management_router)
+app.include_router(security_enhanced_router)
+# Platform Features
+app.include_router(organizations_router)
+app.include_router(api_management_router)
+app.include_router(plugins_router)
+app.include_router(realtime_router)
+app.include_router(advanced_api_router)
 
 # /api aliases to avoid ad-block filters blocking paths like /servers/stats or /auth/login
 for _router in [
@@ -199,6 +233,19 @@ for _router in [
     steam_router,
     settings_router,
     mods_router,
+    analytics_router,
+    multi_server_router,
+    mods_enhanced_router,
+    backup_advanced_router,
+    player_enhanced_router,
+    ui_enhancements_router,
+    config_management_router,
+    security_enhanced_router,
+    organizations_router,
+    api_management_router,
+    plugins_router,
+    realtime_router,
+    advanced_api_router,
 ]:
     try:
         app.include_router(_router, prefix="/api")

@@ -14,6 +14,7 @@ from pathlib import Path
 BASE_STEAM_GAMES = {
     "palworld": {
         "display_name": "Palworld",
+        "steam_appid": 1623730,
         "category": "Survival",
         "summary": "Co-op creature survival shooter with heavy CPU load on busy worlds.",
         "notes": "Set a strong admin password and monitor CPU usage as bases grow.",
@@ -41,6 +42,7 @@ BASE_STEAM_GAMES = {
     },
     "project_zomboid": {
         "display_name": "Project Zomboid",
+        "steam_appid": 108600,
         "category": "Survival",
         "summary": "Isometric zombie survival with persistent worlds and RCON support.",
         "notes": "Watch RAM usage for large maps and set an admin password.",
@@ -66,6 +68,7 @@ BASE_STEAM_GAMES = {
     },
     "valheim": {
         "display_name": "Valheim",
+        "steam_appid": 892970,
         "category": "Survival",
         "summary": "Popular Viking survival sandbox supporting up to 10 players.",
         "notes": "Configure world name and server password; open UDP ports 2456-2458.",
@@ -90,6 +93,7 @@ BASE_STEAM_GAMES = {
     },
     "tmodloader": {
         "display_name": "Terraria (tModLoader)",
+        "steam_appid": 105600,
         "category": "Sandbox",
         "summary": "Modded Terraria server via tModLoader with SteamCMD builds.",
         "notes": "Set world seed, max players, and password as desired.",
@@ -111,6 +115,7 @@ BASE_STEAM_GAMES = {
     },
     "cs2": {
         "display_name": "Counter-Strike 2",
+        "steam_appid": 730,
         "category": "Shooter",
         "summary": "Dedicated CS2 server with tickrate and RCON configuration.",
         "notes": "Open both UDP and TCP 27015. Configure RCON and lobby passwords.",
@@ -138,6 +143,7 @@ BASE_STEAM_GAMES = {
     },
     "factorio": {
         "display_name": "Factorio",
+        "steam_appid": 427520,
         "category": "Simulation",
         "summary": "Automation factory builder with deterministic saves and mods.",
         "notes": "Enable save/backups and set a server password if needed.",
@@ -155,6 +161,7 @@ BASE_STEAM_GAMES = {
     },
     "rust": {
         "display_name": "Rust",
+        "steam_appid": 252490,
         "category": "Survival",
         "summary": "Survival sandbox with monthly wipes; RCON enabled by default.",
         "notes": "Adjust RCON password immediately and consider enabling team size limits.",
@@ -186,6 +193,7 @@ BASE_STEAM_GAMES = {
     },
     "satisfactory": {
         "display_name": "Satisfactory",
+        "steam_appid": 526870,
         "category": "Simulation",
         "summary": "Co-op factory builder with three exposed UDP ports.",
         "notes": "Back up saves frequently; dedicated servers are still in early access.",
@@ -206,6 +214,7 @@ BASE_STEAM_GAMES = {
     },
     "7_days_to_die": {
         "display_name": "7 Days to Die",
+        "steam_appid": 251570,
         "category": "Survival",
         "summary": "Zombie survival crafting with scheduled blood moons.",
         "notes": "Enable auto-backups and tweak blood moon frequency in the config.",
@@ -229,6 +238,7 @@ BASE_STEAM_GAMES = {
     },
     "enshrouded": {
         "display_name": "Enshrouded",
+        "steam_appid": 1203620,
         "category": "Survival",
         "summary": "Co-op survival action RPG running under Proton.",
         "notes": "Image uses Wine/Proton; Steam login is required. Query port must stay gamePort+1.",
@@ -254,6 +264,7 @@ BASE_STEAM_GAMES = {
     },
     "assetto_corsa": {
         "display_name": "Assetto Corsa",
+        "steam_appid": 244210,
         "category": "Simulation",
         "summary": "Dedicated racing server with stracker telemetry.",
         "notes": "Requires a Steam account without Steam Guard. Set STEAM_USER/STEAM_PASSWORD and mount /steamapps writable.",
@@ -281,6 +292,7 @@ BASE_STEAM_GAMES = {
     },
     "ark_survival_ascended": {
         "display_name": "ARK: Survival Ascended",
+        "steam_appid": 2399830,
         "category": "Survival",
         "summary": "UE5 reboot of ARK with high CPU/RAM requirements.",
         "notes": "Peer port is game+1; allow at least 11GB RAM before players join.",
@@ -311,6 +323,7 @@ BASE_STEAM_GAMES = {
     },
     "the_front": {
         "display_name": "The Front",
+        "steam_appid": 2285150,
         "category": "Survival",
         "summary": "PvPvE survival shooter with four exposed service ports.",
         "notes": "Do not append flags after the password flag; server tags limited to five entries.",
@@ -334,6 +347,7 @@ BASE_STEAM_GAMES = {
     },
     "dayz": {
         "display_name": "DayZ",
+        "steam_appid": 221100,
         "category": "Survival",
         "summary": "Open-world survival shooter on Chernarus or modded maps.",
         "notes": "Query port is game+1; set a password if public.",
@@ -354,6 +368,7 @@ BASE_STEAM_GAMES = {
     },
     "ark_survival_evolved": {
         "display_name": "ARK: Survival Evolved",
+        "steam_appid": 346110,
         "category": "Survival",
         "summary": "Classic ARK dedicated server.",
         "notes": "Peer port is game+1; allow high CPU/RAM for larger maps.",
@@ -383,6 +398,7 @@ BASE_STEAM_GAMES = {
     },
     "conan_exiles": {
         "display_name": "Conan Exiles",
+        "steam_appid": 440900,
         "category": "Survival",
         "summary": "Survival sandbox in the Exiled Lands.",
         "notes": "Enable RCON if you need remote admin; defaults are open.",
@@ -404,6 +420,7 @@ BASE_STEAM_GAMES = {
     },
     "squad": {
         "display_name": "Squad",
+        "steam_appid": 393380,
         "category": "Shooter",
         "summary": "Tactical FPS with VOIP and large maps.",
         "notes": "Set RCON password; ensure UDP ports are forwarded.",
@@ -424,6 +441,7 @@ BASE_STEAM_GAMES = {
     },
     "eco": {
         "display_name": "Eco",
+        "steam_appid": 382310,
         "category": "Simulation",
         "summary": "Collaborative civilization builder with an economy and laws.",
         "notes": "Back up the world regularly; single TCP/UDP pair.",
@@ -441,6 +459,7 @@ BASE_STEAM_GAMES = {
     },
     "space_engineers": {
         "display_name": "Space Engineers",
+        "steam_appid": 244850,
         "category": "Sandbox",
         "summary": "Voxel engineering sandbox with dedicated server support.",
         "notes": "Game port defaults to 27016; keep UDP forwarded.",
@@ -459,6 +478,7 @@ BASE_STEAM_GAMES = {
     },
     "left4dead2": {
         "display_name": "Left 4 Dead 2",
+        "steam_appid": 550,
         "category": "Shooter",
         "summary": "Co-op zombie shooter dedicated server.",
         "notes": "Set RCON and sv_password if public; uses Source ports.",
@@ -477,6 +497,7 @@ BASE_STEAM_GAMES = {
     },
     "terraria": {
         "display_name": "Terraria (Vanilla)",
+        "steam_appid": 105600,
         "category": "Sandbox",
         "summary": "Vanilla dedicated Terraria server.",
         "notes": "Single TCP port; for mods use tModLoader entry.",
@@ -494,6 +515,7 @@ BASE_STEAM_GAMES = {
     },
     "stormworks": {
         "display_name": "Stormworks",
+        "steam_appid": 573090,
         "category": "Sandbox",
         "summary": "Search and rescue sandbox with vehicle building.",
         "notes": "Set RCON password; query uses RCON port.",
@@ -513,6 +535,7 @@ BASE_STEAM_GAMES = {
     },
     "unturned": {
         "display_name": "Unturned",
+        "steam_appid": 304930,
         "category": "Survival",
         "summary": "Free-to-play zombie survival with Steam networking.",
         "notes": "Uses game and query on adjacent ports; set a password for public servers.",
@@ -532,6 +555,7 @@ BASE_STEAM_GAMES = {
     },
     "arma3": {
         "display_name": "Arma 3",
+        "steam_appid": 107410,
         "category": "Shooter",
         "summary": "Military sandbox with Zeus and mod support.",
         "notes": "Ports 2302-2305 UDP required; set admin password for RCON/Zeus.",
@@ -553,6 +577,7 @@ BASE_STEAM_GAMES = {
     },
     "garrys_mod": {
         "display_name": "Garry's Mod",
+        "steam_appid": 4000,
         "category": "Sandbox",
         "summary": "Sandbox Source server with workshop support.",
         "notes": "Add a GSLT for public listing; set RCON and server password if needed.",
@@ -573,6 +598,7 @@ BASE_STEAM_GAMES = {
     },
     "insurgency_sandstorm": {
         "display_name": "Insurgency: Sandstorm",
+        "steam_appid": 581320,
         "category": "Shooter",
         "summary": "Co-op and PvP tactical shooter dedicated server.",
         "notes": "Forward both game and query UDP ports; set admin password.",
@@ -592,6 +618,7 @@ BASE_STEAM_GAMES = {
     },
     "killing_floor_2": {
         "display_name": "Killing Floor 2",
+        "steam_appid": 232090,
         "category": "Shooter",
         "summary": "Co-op horde shooter with webadmin.",
         "notes": "Forward 7777/udp and 27015/udp plus 8080/tcp for webadmin; set a strong web password.",
@@ -612,6 +639,7 @@ BASE_STEAM_GAMES = {
     },
     "mordhau": {
         "display_name": "Mordhau",
+        "steam_appid": 629760,
         "category": "Action",
         "summary": "Medieval melee brawler dedicated server.",
         "notes": "RCON shares 27015; set server and admin passwords.",
@@ -632,6 +660,7 @@ BASE_STEAM_GAMES = {
     },
     "tf2": {
         "display_name": "Team Fortress 2",
+        "steam_appid": 440,
         "category": "Shooter",
         "summary": "Source-engine TF2 dedicated server.",
         "notes": "Add a GSLT for public servers; set RCON and server password.",
@@ -651,6 +680,7 @@ BASE_STEAM_GAMES = {
     },
     "vrising": {
         "display_name": "V Rising",
+        "steam_appid": 1604030,
         "category": "Survival",
         "summary": "Vampire survival action RPG with dedicated server.",
         "notes": "Query is game+1; keep both UDP ports forwarded.",

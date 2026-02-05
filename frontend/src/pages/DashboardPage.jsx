@@ -7,23 +7,6 @@ import { normalizeRamInput } from '../utils/ram';
 import { FaChevronRight } from 'react-icons/fa';
 
 
-const SkeletonCard = ({ className = '' }) => (
-  <div className={`glassmorphism rounded-xl p-4 animate-pulse ${className}`}>
-    <div className="flex items-center gap-3 mb-2">
-      <div className="w-8 h-8 bg-white/10 rounded" />
-      <div className="flex-1">
-        <div className="h-4 bg-white/10 rounded w-3/4 mb-1" />
-        <div className="h-3 bg-white/10 rounded w-1/2" />
-      </div>
-    </div>
-    <div className="space-y-2">
-      <div className="h-3 bg-white/10 rounded w-full" />
-      <div className="h-3 bg-white/10 rounded w-2/3" />
-    </div>
-  </div>
-);
-
-
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -61,14 +44,15 @@ export default function DashboardPage() {
   useEffect(() => {
     if (featuredModpacks?.length > 0) return;
     let cancelled = false;
-    const timer = setTimeout(async () => {
+    // Fetch immediately - no delay
+    (async () => {
       try {
-        const r = await fetch(`${API}/catalog/search?provider=all&page_size=6`);
+        const r = await fetch(`${API}/catalog/search?provider=all&page_size=6`, { headers: authHeaders() });
         const d = await r.json();
         if (!cancelled) setLocalFeatured(Array.isArray(d?.results) ? d.results : []);
       } catch (e) { if (!cancelled) setFeaturedError(String(e.message || e)); }
-    }, 500);
-    return () => { cancelled = true; clearTimeout(timer); };
+    })();
+    return () => { cancelled = true; };
   }, [featuredModpacks]);
 
   async function openInstallFromFeatured(pack) {
@@ -135,10 +119,9 @@ export default function DashboardPage() {
           if (evd.type === 'done' || evd.type === 'error') {
             try { es.close(); } catch { }
             setInstallWorking(false);
+            // Refresh immediately - no delays
             if (globalData.__refreshServers) {
               globalData.__refreshServers();
-              setTimeout(() => globalData.__refreshServers && globalData.__refreshServers(), 1000);
-              setTimeout(() => globalData.__refreshServers && globalData.__refreshServers(), 3000);
             }
           }
         } catch { }
@@ -276,20 +259,14 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Featured Modpacks with skeleton loading */}
+        {/* Featured Modpacks - instant load */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-medium text-white">{t('dashboard.featuredModpacks')}</h2>
             {featuredError && <div className="text-sm text-red-400">{featuredError}</div>}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-4">
-            {featured.length === 0 && !featuredError ? (
-              <>
-                <SkeletonCard />
-                <SkeletonCard className="hidden md:block" />
-                <SkeletonCard className="hidden lg:block" />
-              </>
-            ) : featured.length > 0 ? (
+            {featured.length > 0 ? (
               featured.map((p, idx) => (
                 <div key={p.id || p.slug || idx} className="glassmorphism rounded-xl p-4 hover:bg-white/10 transition-colors">
                   <div className="flex items-center gap-3 mb-2">
@@ -305,6 +282,8 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))
+            ) : !featuredError ? (
+              <div className="text-white/40 text-sm">Loading modpacks...</div>
             ) : (
               <div className="text-white/60">No featured packs available.</div>
             )}

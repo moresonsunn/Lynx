@@ -32,6 +32,7 @@ import FilesPanelWrapper from '../components/server-details/FilesPanelWrapper';
 import EditingPanel from '../components/server-details/EditingPanel';
 import ModsPanel from '../components/server-details/ModsPanel';
 import PluginsPanel from '../components/server-details/PluginsPanel';
+import SteamModsPanel from '../components/server-details/SteamModsPanel';
 import ConfirmModal from '../components/ConfirmModal';
 
 
@@ -134,8 +135,15 @@ export default function ServerDetailsPage() {
     }
 
     if (isSteam) {
-      const allowed = new Set(['overview', 'console', 'files', 'backup', 'schedule']);
-      return base.filter(tab => allowed.has(tab.id));
+      const allowed = new Set(['overview', 'console', 'files', 'mods', 'backup', 'schedule']);
+      // Add mods tab for Steam games
+      const steamBase = base.filter(tab => allowed.has(tab.id));
+      // Insert mods tab after files
+      const filesIdx = steamBase.findIndex(t => t.id === 'files');
+      if (filesIdx !== -1 && !steamBase.find(t => t.id === 'mods')) {
+        steamBase.splice(filesIdx + 1, 0, { id: 'mods', label: 'Mods', icon: FaCube });
+      }
+      return steamBase;
     }
     return base;
   }, [isSteam, t, typeVersionData, server]);
@@ -450,9 +458,17 @@ export default function ServerDetailsPage() {
         )}
 
         {activeTab === 'mods' && (
-          <ModsPanel
-            serverName={server.name}
-          />
+          isSteam ? (
+            <SteamModsPanel
+              serverId={server.id}
+              serverName={server.name}
+              gameSlug={typeVersionData?.server_type || server?.type || ''}
+            />
+          ) : (
+            <ModsPanel
+              serverName={server.name}
+            />
+          )
         )}
 
         {activeTab === 'plugins' && (
