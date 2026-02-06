@@ -20,6 +20,13 @@ from database import get_db
 router = APIRouter(prefix="/steam-mods", tags=["Steam Mods"])
 
 # =============================================================================
+# EXTERNAL API KEYS
+# =============================================================================
+
+NEXUS_API_KEY = os.environ.get("NEXUS_API_KEY", "d4ZrYNBdi8dxEVn1un7k20fk4eKx6aDK7bfpXZOSQNEq--Ws1540amhF+txm3K--gYljtzo8RKI/K9hDh3qssg==")
+MODIO_API_KEY = os.environ.get("MODIO_API_KEY", "")
+
+# =============================================================================
 # MOD SOURCE CONFIGURATIONS
 # =============================================================================
 
@@ -201,9 +208,281 @@ CURSEFORGE_GAMES = {
         "mod_path": "/BepInEx/plugins",
         "name": "Core Keeper"
     },
+    # Enshrouded - 85767
+    "enshrouded": {
+        "game_id": 85767,
+        "mod_path": "/BepInEx/plugins",
+        "name": "Enshrouded"
+    },
+    # The Forest - 60028
+    "the_forest": {
+        "game_id": 60028,
+        "mod_path": "/Mods",
+        "name": "The Forest"
+    },
+    # Conan Exiles - 58498
+    "conan_exiles": {
+        "game_id": 58498,
+        "mod_path": "/ConanSandbox/Mods",
+        "name": "Conan Exiles"
+    },
+    # Project Zomboid - 78135
+    "project_zomboid": {
+        "game_id": 78135,
+        "mod_path": "/Zomboid/mods",
+        "name": "Project Zomboid"
+    },
+    # Don't Starve Together - 4525
+    "dont_starve_together": {
+        "game_id": 4525,
+        "mod_path": "/mods",
+        "name": "Don't Starve Together"
+    },
+    # Factorio - 79148
+    "factorio": {
+        "game_id": 79148,
+        "mod_path": "/mods",
+        "name": "Factorio"
+    },
+    # Rust - 69162
+    "rust": {
+        "game_id": 69162,
+        "mod_path": "/oxide/plugins",
+        "name": "Rust"
+    },
+    # DayZ - 82002
+    "dayz": {
+        "game_id": 82002,
+        "mod_path": "/mods",
+        "name": "DayZ"
+    },
+    # Eco - 79501
+    "eco": {
+        "game_id": 79501,
+        "mod_path": "/Mods",
+        "name": "Eco"
+    },
+    # Unturned - 79744
+    "unturned": {
+        "game_id": 79744,
+        "mod_path": "/Modules",
+        "name": "Unturned"
+    },
 }
 
-# Games that support Steam Workshop
+# =============================================================================
+# NEXUS MODS - Game domain mappings
+# API Reference: https://app.swaggerhub.com/apis-docs/NexusMods/nexus-mods_public_api_params_in_form_data/1.0
+# =============================================================================
+
+NEXUS_GAMES = {
+    # Game slug -> { domain_name, mod_path, name }
+    "baldurs_gate_3": {
+        "domain": "baldursgate3",
+        "mod_path": "/Mods",
+        "name": "Baldur's Gate 3"
+    },
+    "bg3": {
+        "domain": "baldursgate3",
+        "mod_path": "/Mods",
+        "name": "Baldur's Gate 3"
+    },
+    "skyrim": {
+        "domain": "skyrimspecialedition",
+        "mod_path": "/Data",
+        "name": "Skyrim Special Edition"
+    },
+    "fallout_4": {
+        "domain": "fallout4",
+        "mod_path": "/Data",
+        "name": "Fallout 4"
+    },
+    "starfield": {
+        "domain": "starfield",
+        "mod_path": "/Data",
+        "name": "Starfield"
+    },
+    "cyberpunk_2077": {
+        "domain": "cyberpunk2077",
+        "mod_path": "/archive/pc/mod",
+        "name": "Cyberpunk 2077"
+    },
+    "palworld": {
+        "domain": "palworld",
+        "mod_path": "/Pal/Content/Paks/~mods",
+        "name": "Palworld"
+    },
+    "valheim": {
+        "domain": "valheim",
+        "mod_path": "/BepInEx/plugins",
+        "name": "Valheim"
+    },
+    "stardew_valley": {
+        "domain": "stardewvalley",
+        "mod_path": "/Mods",
+        "name": "Stardew Valley"
+    },
+    "7_days_to_die": {
+        "domain": "7daystodie",
+        "mod_path": "/Mods",
+        "name": "7 Days to Die"
+    },
+    "sdtd": {
+        "domain": "7daystodie",
+        "mod_path": "/Mods",
+        "name": "7 Days to Die"
+    },
+    "vrising": {
+        "domain": "vrising",
+        "mod_path": "/BepInEx/plugins",
+        "name": "V Rising"
+    },
+    "rimworld": {
+        "domain": "rimworld",
+        "mod_path": "/Mods",
+        "name": "RimWorld"
+    },
+    "conan_exiles": {
+        "domain": "conanexiles",
+        "mod_path": "/ConanSandbox/Mods",
+        "name": "Conan Exiles"
+    },
+    "manor_lords": {
+        "domain": "manorlords",
+        "mod_path": "/ManorLords/Content/Paks/~mods",
+        "name": "Manor Lords"
+    },
+    "lethal_company": {
+        "domain": "lethalcompany",
+        "mod_path": "/BepInEx/plugins",
+        "name": "Lethal Company"
+    },
+    "among_us": {
+        "domain": "amongus",
+        "mod_path": "/BepInEx/plugins",
+        "name": "Among Us"
+    },
+    "satisfactory": {
+        "domain": "satisfactory",
+        "mod_path": "/FactoryGame/Mods",
+        "name": "Satisfactory"
+    },
+    "core_keeper": {
+        "domain": "corekeeper",
+        "mod_path": "/BepInEx/plugins",
+        "name": "Core Keeper"
+    },
+    "sons_of_the_forest": {
+        "domain": "sonsoftheforest",
+        "mod_path": "/BepInEx/plugins",
+        "name": "Sons of the Forest"
+    },
+    "enshrouded": {
+        "domain": "enshrouded",
+        "mod_path": "/BepInEx/plugins",
+        "name": "Enshrouded"
+    },
+    "project_zomboid": {
+        "domain": "projectzomboid",
+        "mod_path": "/Zomboid/mods",
+        "name": "Project Zomboid"
+    },
+    "the_forest": {
+        "domain": "theforest",
+        "mod_path": "/Mods",
+        "name": "The Forest"
+    },
+    "rust": {
+        "domain": "rust",
+        "mod_path": "/oxide/plugins",
+        "name": "Rust"
+    },
+    "terraria": {
+        "domain": "terraria",
+        "mod_path": "/tModLoader/Mods",
+        "name": "Terraria"
+    },
+    "terraria_tmodloader": {
+        "domain": "terraria",
+        "mod_path": "/tModLoader/Mods",
+        "name": "Terraria"
+    },
+    "ark_survival_evolved": {
+        "domain": "arksurvivalevolved",
+        "mod_path": "/ShooterGame/Content/Mods",
+        "name": "ARK: Survival Evolved"
+    },
+    "ark_survival_ascended": {
+        "domain": "arksurvivalascended",
+        "mod_path": "/ShooterGame/Content/Mods",
+        "name": "ARK: Survival Ascended"
+    },
+    "dayz": {
+        "domain": "dayz",
+        "mod_path": "/mods",
+        "name": "DayZ"
+    },
+    "dont_starve_together": {
+        "domain": "dontstarvetogether",
+        "mod_path": "/mods",
+        "name": "Don't Starve Together"
+    },
+    "garrys_mod": {
+        "domain": "garysmod",
+        "mod_path": "/garrysmod/addons",
+        "name": "Garry's Mod"
+    },
+    "gmod": {
+        "domain": "garysmod",
+        "mod_path": "/garrysmod/addons",
+        "name": "Garry's Mod"
+    },
+}
+
+# =============================================================================
+# MOD.IO - Game ID mappings
+# API Reference: https://docs.mod.io/
+# =============================================================================
+
+MODIO_GAMES = {
+    "squad": {
+        "game_id": 362,
+        "mod_path": "/SquadGame/Plugins/Mods",
+        "name": "Squad"
+    },
+    "mordhau": {
+        "game_id": 264,
+        "mod_path": "/Mordhau/Content/Paks/~mods",
+        "name": "Mordhau"
+    },
+    "insurgency_sandstorm": {
+        "game_id": 188,
+        "mod_path": "/Insurgency/Mods",
+        "name": "Insurgency: Sandstorm"
+    },
+    "killing_floor_2": {
+        "game_id": 50,
+        "mod_path": "/KFGame/Cache",
+        "name": "Killing Floor 2"
+    },
+    "conan_exiles": {
+        "game_id": 42,
+        "mod_path": "/ConanSandbox/Mods",
+        "name": "Conan Exiles"
+    },
+    "eco": {
+        "game_id": 6,
+        "mod_path": "/Mods",
+        "name": "Eco"
+    },
+    "unturned": {
+        "game_id": 51,
+        "mod_path": "/Modules",
+        "name": "Unturned"
+    },
+}
+
+# Games that support Steam Workshop (expanded)
 WORKSHOP_GAMES = {
     "gmod": {"appid": 4000, "workshop_appid": 4000, "mod_path": "/garrysmod/addons"},
     "garrys_mod": {"appid": 4000, "workshop_appid": 4000, "mod_path": "/garrysmod/addons"},
@@ -213,12 +492,34 @@ WORKSHOP_GAMES = {
     "space_engineers": {"appid": 244850, "workshop_appid": 244850, "mod_path": "/Mods"},
     "starbound": {"appid": 211820, "workshop_appid": 211820, "mod_path": "/mods"},
     "terraria_tmodloader": {"appid": 1281930, "workshop_appid": 1281930, "mod_path": "/Mods"},
+    "tmodloader": {"appid": 1281930, "workshop_appid": 1281930, "mod_path": "/Mods"},
     "rimworld": {"appid": 294100, "workshop_appid": 294100, "mod_path": "/Mods"},
     "cities_skylines": {"appid": 255710, "workshop_appid": 255710, "mod_path": "/Addons/Mods"},
     "7_days_to_die": {"appid": 251570, "workshop_appid": 251570, "mod_path": "/Mods"},
+    "sdtd": {"appid": 251570, "workshop_appid": 251570, "mod_path": "/Mods"},
     "conan_exiles": {"appid": 440900, "workshop_appid": 440900, "mod_path": "/ConanSandbox/Mods"},
     "ark": {"appid": 346110, "workshop_appid": 346110, "mod_path": "/ShooterGame/Content/Mods"},
-    "rust": {"appid": 252490, "workshop_appid": 252490, "mod_path": "/oxide/plugins"},  # Oxide/uMod
+    "ark_survival_evolved": {"appid": 346110, "workshop_appid": 346110, "mod_path": "/ShooterGame/Content/Mods"},
+    "rust": {"appid": 252490, "workshop_appid": 252490, "mod_path": "/oxide/plugins"},
+    # New Workshop games
+    "cs2": {"appid": 730, "workshop_appid": 730, "mod_path": "/game/csgo/maps/workshop"},
+    "tf2": {"appid": 440, "workshop_appid": 440, "mod_path": "/tf/maps"},
+    "left4dead2": {"appid": 550, "workshop_appid": 550, "mod_path": "/left4dead2/addons"},
+    "l4d2": {"appid": 550, "workshop_appid": 550, "mod_path": "/left4dead2/addons"},
+    "killing_floor_2": {"appid": 232090, "workshop_appid": 232090, "mod_path": "/KFGame/Cache"},
+    "kf2": {"appid": 232090, "workshop_appid": 232090, "mod_path": "/KFGame/Cache"},
+    "dayz": {"appid": 221100, "workshop_appid": 221100, "mod_path": "/mods"},
+    "unturned": {"appid": 304930, "workshop_appid": 304930, "mod_path": "/Modules"},
+    "stormworks": {"appid": 573090, "workshop_appid": 573090, "mod_path": "/rom/vehicles"},
+    "barotrauma": {"appid": 602960, "workshop_appid": 602960, "mod_path": "/LocalMods"},
+    "insurgency_sandstorm": {"appid": 581320, "workshop_appid": 581320, "mod_path": "/Insurgency/Mods"},
+    "assetto_corsa": {"appid": 244210, "workshop_appid": 244210, "mod_path": "/content"},
+    "factorio": {"appid": 427520, "workshop_appid": 427520, "mod_path": "/mods"},
+    "mordhau": {"appid": 629760, "workshop_appid": 629760, "mod_path": "/Mordhau/Content/Paks/~mods"},
+    "squad": {"appid": 393380, "workshop_appid": 393380, "mod_path": "/SquadGame/Plugins/Mods"},
+    "eco": {"appid": 382310, "workshop_appid": 382310, "mod_path": "/Mods"},
+    "avorion": {"appid": 445220, "workshop_appid": 445220, "mod_path": "/mods"},
+    "core_keeper": {"appid": 1621690, "workshop_appid": 1621690, "mod_path": "/BepInEx/plugins"},
 }
 
 # Games that use Thunderstore
@@ -279,8 +580,80 @@ THUNDERSTORE_GAMES = {
         "community": "gtfo",
         "mod_path": "/BepInEx/plugins",
         "bepinex_required": True
-    }
+    },
+    "dyson_sphere_program": {
+        "community": "dyson-sphere-program",
+        "mod_path": "/BepInEx/plugins",
+        "bepinex_required": True
+    },
+    "sons_of_the_forest": {
+        "community": "sons-of-the-forest",
+        "mod_path": "/BepInEx/plugins",
+        "bepinex_required": True
+    },
+    "enshrouded": {
+        "community": "enshrouded",
+        "mod_path": "/BepInEx/plugins",
+        "bepinex_required": True
+    },
+    "the_forest": {
+        "community": "the-forest",
+        "mod_path": "/BepInEx/plugins",
+        "bepinex_required": True
+    },
+    "stardew_valley": {
+        "community": "stardew-valley",
+        "mod_path": "/Mods",
+        "bepinex_required": False
+    },
 }
+
+# =============================================================================
+# UNIFIED GAME MOD SOURCES REGISTRY
+# Maps every game to ALL its available mod sources
+# =============================================================================
+
+def build_game_mod_sources() -> Dict[str, Dict[str, Any]]:
+    """Build a unified registry of which mod sources each game supports."""
+    registry: Dict[str, Dict[str, Any]] = {}
+
+    # Aggregate from all source dicts
+    all_slugs = set()
+    all_slugs.update(WORKSHOP_GAMES.keys())
+    all_slugs.update(THUNDERSTORE_GAMES.keys())
+    all_slugs.update(CURSEFORGE_GAMES.keys())
+    all_slugs.update(NEXUS_GAMES.keys())
+    all_slugs.update(MODIO_GAMES.keys())
+
+    for slug in all_slugs:
+        sources = []
+        name = slug.replace("_", " ").title()
+
+        if slug in WORKSHOP_GAMES:
+            cfg = WORKSHOP_GAMES[slug]
+            sources.append({"type": "workshop", "appid": cfg["appid"], "mod_path": cfg["mod_path"]})
+        if slug in THUNDERSTORE_GAMES:
+            cfg = THUNDERSTORE_GAMES[slug]
+            sources.append({"type": "thunderstore", "community": cfg["community"], "mod_path": cfg["mod_path"], "bepinex_required": cfg.get("bepinex_required", False)})
+            name = cfg.get("name", name) if isinstance(cfg, dict) else name
+        if slug in CURSEFORGE_GAMES:
+            cfg = CURSEFORGE_GAMES[slug]
+            sources.append({"type": "curseforge", "game_id": cfg["game_id"], "mod_path": cfg["mod_path"]})
+            name = cfg.get("name", name)
+        if slug in NEXUS_GAMES:
+            cfg = NEXUS_GAMES[slug]
+            sources.append({"type": "nexus", "domain": cfg["domain"], "mod_path": cfg["mod_path"]})
+            name = cfg.get("name", name)
+        if slug in MODIO_GAMES:
+            cfg = MODIO_GAMES[slug]
+            sources.append({"type": "modio", "game_id": cfg["game_id"], "mod_path": cfg["mod_path"]})
+            name = cfg.get("name", name)
+
+        registry[slug] = {"name": name, "sources": sources}
+
+    return registry
+
+GAME_MOD_SOURCES = build_game_mod_sources()
 
 # =============================================================================
 # REQUEST/RESPONSE MODELS
@@ -310,6 +683,17 @@ class CurseForgeInstallRequest(BaseModel):
     file_id: int
     game_slug: str
 
+class NexusInstallRequest(BaseModel):
+    server_id: str
+    game_slug: str
+    mod_id: int
+    file_id: int
+
+class ModioInstallRequest(BaseModel):
+    server_id: str
+    game_slug: str
+    mod_id: int
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
@@ -325,9 +709,13 @@ def get_mod_source_for_game(game_slug: str) -> Dict[str, Any]:
         "workshop": game_slug in WORKSHOP_GAMES,
         "thunderstore": game_slug in THUNDERSTORE_GAMES,
         "curseforge": game_slug in CURSEFORGE_GAMES,
+        "nexus": game_slug in NEXUS_GAMES,
+        "modio": game_slug in MODIO_GAMES,
         "workshop_config": WORKSHOP_GAMES.get(game_slug),
         "thunderstore_config": THUNDERSTORE_GAMES.get(game_slug),
-        "curseforge_config": CURSEFORGE_GAMES.get(game_slug)
+        "curseforge_config": CURSEFORGE_GAMES.get(game_slug),
+        "nexus_config": NEXUS_GAMES.get(game_slug),
+        "modio_config": MODIO_GAMES.get(game_slug),
     }
     return sources
 
@@ -796,9 +1184,28 @@ async def get_mod_sources(game_slug: str, current_user=Depends(get_current_user)
             "thunderstore": {
                 "available": sources["thunderstore"],
                 "config": sources["thunderstore_config"]
-            }
+            },
+            "curseforge": {
+                "available": sources["curseforge"],
+                "config": sources["curseforge_config"]
+            },
+            "nexus": {
+                "available": sources["nexus"],
+                "has_api_key": bool(NEXUS_API_KEY),
+                "config": sources["nexus_config"]
+            },
+            "modio": {
+                "available": sources["modio"],
+                "has_api_key": bool(MODIO_API_KEY),
+                "config": sources["modio_config"]
+            },
         }
     }
+
+@router.get("/sources-all")
+async def get_all_game_mod_sources(current_user=Depends(get_current_user)):
+    """Get the unified mod sources registry for all games"""
+    return {"games": GAME_MOD_SOURCES}
 
 @router.get("/workshop/search")
 async def search_workshop_mods(
@@ -915,19 +1322,27 @@ async def list_installed_mods(
     current_user=Depends(get_current_user)
 ):
     """List installed mods for a server"""
-    # Determine mod path based on game
+    # Determine mod path based on game - check all source registries
     mod_path = None
+    server_path = get_server_path(server_id)
     
     if game_slug in THUNDERSTORE_GAMES:
         config = THUNDERSTORE_GAMES[game_slug]
-        server_path = get_server_path(server_id)
         mod_path = server_path / config["mod_path"].lstrip("/")
     elif game_slug in WORKSHOP_GAMES:
         config = WORKSHOP_GAMES[game_slug]
-        server_path = get_server_path(server_id)
+        mod_path = server_path / config["mod_path"].lstrip("/")
+    elif game_slug in CURSEFORGE_GAMES:
+        config = CURSEFORGE_GAMES[game_slug]
+        mod_path = server_path / config["mod_path"].lstrip("/")
+    elif game_slug in NEXUS_GAMES:
+        config = NEXUS_GAMES[game_slug]
+        mod_path = server_path / config["mod_path"].lstrip("/")
+    elif game_slug in MODIO_GAMES:
+        config = MODIO_GAMES[game_slug]
         mod_path = server_path / config["mod_path"].lstrip("/")
     else:
-        raise HTTPException(400, f"Game {game_slug} not supported")
+        raise HTTPException(400, f"Game {game_slug} not supported for mod listing")
     
     if not mod_path.exists():
         return {"mods": [], "path": str(mod_path)}
@@ -975,11 +1390,18 @@ async def uninstall_mod(
     current_user=Depends(require_moderator)
 ):
     """Uninstall a mod from a server"""
-    # Determine mod path
+    # Determine mod path from any source registry
+    config = None
     if request.game_slug in THUNDERSTORE_GAMES:
         config = THUNDERSTORE_GAMES[request.game_slug]
     elif request.game_slug in WORKSHOP_GAMES:
         config = WORKSHOP_GAMES[request.game_slug]
+    elif request.game_slug in CURSEFORGE_GAMES:
+        config = CURSEFORGE_GAMES[request.game_slug]
+    elif request.game_slug in NEXUS_GAMES:
+        config = NEXUS_GAMES[request.game_slug]
+    elif request.game_slug in MODIO_GAMES:
+        config = MODIO_GAMES[request.game_slug]
     else:
         raise HTTPException(400, f"Game {request.game_slug} not supported")
     
@@ -1002,38 +1424,546 @@ async def uninstall_mod(
     
     raise HTTPException(404, f"Mod {request.mod_name} not found")
 
+# =============================================================================
+# NEXUS MODS API
+# =============================================================================
+
+NEXUS_API_BASE = "https://api.nexusmods.com/v1"
+
+async def search_nexus(domain: str, search: str = "", page: int = 1) -> Dict[str, Any]:
+    """Search Nexus Mods for a game. Uses the updated mods list as search proxy."""
+    if not NEXUS_API_KEY:
+        return {"results": [], "total": 0, "error": "Nexus Mods API key not configured. Set NEXUS_API_KEY environment variable."}
+
+    headers = {
+        "apikey": NEXUS_API_KEY,
+        "Accept": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            # Nexus doesn't have a true search endpoint in v1, so we use trending/latest + client-side filter
+            # Use "updated" list which returns recently-updated mods
+            url = f"{NEXUS_API_BASE}/games/{domain}/mods/updated.json"
+            params = {"period": "1m"}  # Last month
+            response = await client.get(url, params=params, headers=headers)
+
+            if response.status_code == 403:
+                return {"results": [], "total": 0, "error": "Nexus API key invalid or expired"}
+            if response.status_code != 200:
+                return {"results": [], "total": 0, "error": f"HTTP {response.status_code}"}
+
+            updated_mods = response.json()
+            
+            # Get details for these mods (batch fetch top results)
+            mod_ids = [m.get("mod_id") for m in updated_mods[:60]]
+            
+            results = []
+            # Fetch details in batches of 10
+            for i in range(0, min(len(mod_ids), 60), 10):
+                batch = mod_ids[i:i+10]
+                tasks = []
+                for mid in batch:
+                    task_url = f"{NEXUS_API_BASE}/games/{domain}/mods/{mid}.json"
+                    tasks.append(client.get(task_url, headers=headers))
+                
+                responses = await asyncio.gather(*tasks, return_exceptions=True)
+                for resp in responses:
+                    if isinstance(resp, Exception):
+                        continue
+                    if resp.status_code != 200:
+                        continue
+                    mod = resp.json()
+                    
+                    # Skip if removed/hidden
+                    if mod.get("status") == "removed" or not mod.get("available"):
+                        continue
+                    
+                    results.append({
+                        "id": mod.get("mod_id"),
+                        "mod_id": mod.get("mod_id"),
+                        "name": mod.get("name", ""),
+                        "title": mod.get("name", ""),
+                        "description": mod.get("summary", ""),
+                        "author": mod.get("author", ""),
+                        "downloads": mod.get("mod_downloads", 0),
+                        "endorsements": mod.get("endorsement_count", 0),
+                        "icon_url": mod.get("picture_url", ""),
+                        "version": mod.get("version", ""),
+                        "category_id": mod.get("category_id"),
+                        "page_url": f"https://www.nexusmods.com/{domain}/mods/{mod.get('mod_id')}",
+                        "source": "nexus"
+                    })
+
+            # Client-side filter by search query
+            if search:
+                search_lower = search.lower()
+                results = [r for r in results if
+                           search_lower in r.get("name", "").lower() or
+                           search_lower in r.get("description", "").lower() or
+                           search_lower in r.get("author", "").lower()]
+
+            # Sort by downloads
+            results.sort(key=lambda x: x.get("downloads", 0), reverse=True)
+
+            # Paginate
+            per_page = 20
+            start = (page - 1) * per_page
+            paginated = results[start:start + per_page]
+
+            return {"results": paginated, "total": len(results), "page": page}
+        except Exception as e:
+            return {"results": [], "total": 0, "error": str(e)}
+
+
+async def get_nexus_mod_details(domain: str, mod_id: int) -> Dict[str, Any]:
+    """Get details for a specific Nexus mod"""
+    if not NEXUS_API_KEY:
+        raise HTTPException(400, "Nexus Mods API key not configured")
+
+    headers = {"apikey": NEXUS_API_KEY, "Accept": "application/json"}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{NEXUS_API_BASE}/games/{domain}/mods/{mod_id}.json", headers=headers)
+        if resp.status_code != 200:
+            raise HTTPException(resp.status_code, f"Failed to fetch mod {mod_id}")
+        mod = resp.json()
+
+        return {
+            "id": mod.get("mod_id"),
+            "name": mod.get("name"),
+            "summary": mod.get("summary"),
+            "description": mod.get("description"),
+            "author": mod.get("author"),
+            "version": mod.get("version"),
+            "downloads": mod.get("mod_downloads"),
+            "endorsements": mod.get("endorsement_count"),
+            "icon_url": mod.get("picture_url"),
+            "page_url": f"https://www.nexusmods.com/{domain}/mods/{mod_id}",
+            "category_id": mod.get("category_id"),
+        }
+
+
+async def get_nexus_mod_files(domain: str, mod_id: int) -> List[Dict[str, Any]]:
+    """Get files for a Nexus mod"""
+    if not NEXUS_API_KEY:
+        raise HTTPException(400, "Nexus Mods API key not configured")
+
+    headers = {"apikey": NEXUS_API_KEY, "Accept": "application/json"}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{NEXUS_API_BASE}/games/{domain}/mods/{mod_id}/files.json", headers=headers)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+
+        return [
+            {
+                "id": f.get("file_id"),
+                "name": f.get("file_name"),
+                "version": f.get("version"),
+                "category": f.get("category_name", ""),
+                "description": f.get("description", ""),
+                "file_size": f.get("size_kb", 0) * 1024,
+                "is_primary": f.get("is_primary"),
+                "uploaded_time": f.get("uploaded_time"),
+            }
+            for f in data.get("files", [])
+        ]
+
+
+async def get_nexus_download_link(domain: str, mod_id: int, file_id: int) -> str:
+    """Get a download link for a Nexus mod file (requires Premium or manual download)"""
+    if not NEXUS_API_KEY:
+        raise HTTPException(400, "Nexus Mods API key not configured")
+
+    headers = {"apikey": NEXUS_API_KEY, "Accept": "application/json"}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{NEXUS_API_BASE}/games/{domain}/mods/{mod_id}/files/{file_id}/download_link.json",
+            headers=headers
+        )
+        if resp.status_code == 403:
+            raise HTTPException(403, "Nexus Mods Premium account required for direct downloads. Please download manually from the Nexus website.")
+        if resp.status_code != 200:
+            raise HTTPException(resp.status_code, "Failed to get download link")
+
+        links = resp.json()
+        if links:
+            return links[0].get("URI", "")
+        raise HTTPException(404, "No download link available")
+
+
+async def download_nexus_mod(download_url: str, install_path: Path, filename: str) -> bool:
+    """Download and install a mod from Nexus"""
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        response = await client.get(download_url)
+        if response.status_code != 200:
+            raise HTTPException(500, f"Failed to download: {response.status_code}")
+
+        install_path.mkdir(parents=True, exist_ok=True)
+        file_path = install_path / filename
+
+        with open(file_path, "wb") as f:
+            f.write(response.content)
+
+        # Auto-extract zips
+        if filename.lower().endswith(".zip"):
+            try:
+                extract_dir = install_path / filename.rsplit(".", 1)[0]
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(file_path, "r") as zf:
+                    zf.extractall(extract_dir)
+            except Exception:
+                pass
+
+        return True
+
+
+# =============================================================================
+# MOD.IO API
+# =============================================================================
+
+MODIO_API_BASE = "https://api.mod.io/v1"
+
+async def search_modio(game_id: int, search: str = "", page: int = 1) -> Dict[str, Any]:
+    """Search mod.io for mods"""
+    if not MODIO_API_KEY:
+        return {"results": [], "total": 0, "error": "mod.io API key not configured. Set MODIO_API_KEY environment variable."}
+
+    params = {
+        "api_key": MODIO_API_KEY,
+        "_limit": 20,
+        "_offset": (page - 1) * 20,
+        "_sort": "-popular",
+    }
+    if search:
+        params["_q"] = search
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(f"{MODIO_API_BASE}/games/{game_id}/mods", params=params)
+            if resp.status_code != 200:
+                return {"results": [], "total": 0, "error": f"HTTP {resp.status_code}"}
+
+            data = resp.json()
+            results = []
+            for mod in data.get("data", []):
+                logo = mod.get("logo", {})
+                modfile = mod.get("modfile", {})
+                results.append({
+                    "id": mod.get("id"),
+                    "mod_id": mod.get("id"),
+                    "name": mod.get("name", ""),
+                    "title": mod.get("name", ""),
+                    "description": mod.get("summary", ""),
+                    "author": mod.get("submitted_by", {}).get("username", ""),
+                    "downloads": mod.get("stats", {}).get("downloads_total", 0),
+                    "rating": mod.get("stats", {}).get("ratings_positive", 0),
+                    "icon_url": logo.get("thumb_320x180", logo.get("original", "")),
+                    "version": modfile.get("version", "") if modfile else "",
+                    "page_url": mod.get("profile_url", ""),
+                    "download_url": modfile.get("download", {}).get("binary_url", "") if modfile else "",
+                    "file_size": modfile.get("filesize", 0) if modfile else 0,
+                    "source": "modio"
+                })
+
+            return {
+                "results": results,
+                "total": data.get("result_total", len(results)),
+                "page": page
+            }
+        except Exception as e:
+            return {"results": [], "total": 0, "error": str(e)}
+
+
+async def get_modio_mod_details(game_id: int, mod_id: int) -> Dict[str, Any]:
+    """Get details for a specific mod.io mod"""
+    if not MODIO_API_KEY:
+        raise HTTPException(400, "mod.io API key not configured")
+
+    params = {"api_key": MODIO_API_KEY}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{MODIO_API_BASE}/games/{game_id}/mods/{mod_id}", params=params)
+        if resp.status_code != 200:
+            raise HTTPException(resp.status_code, f"Failed to fetch mod {mod_id}")
+        mod = resp.json()
+        logo = mod.get("logo", {})
+        modfile = mod.get("modfile", {})
+
+        return {
+            "id": mod.get("id"),
+            "name": mod.get("name"),
+            "summary": mod.get("summary"),
+            "description_plaintext": mod.get("description_plaintext"),
+            "author": mod.get("submitted_by", {}).get("username", ""),
+            "version": modfile.get("version", "") if modfile else "",
+            "downloads": mod.get("stats", {}).get("downloads_total", 0),
+            "icon_url": logo.get("thumb_320x180", ""),
+            "page_url": mod.get("profile_url", ""),
+            "download_url": modfile.get("download", {}).get("binary_url", "") if modfile else "",
+            "file_size": modfile.get("filesize", 0) if modfile else 0,
+        }
+
+
+async def download_modio_mod(download_url: str, install_path: Path, filename: str) -> bool:
+    """Download and install a mod from mod.io"""
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        response = await client.get(download_url)
+        if response.status_code != 200:
+            raise HTTPException(500, f"Failed to download: {response.status_code}")
+
+        install_path.mkdir(parents=True, exist_ok=True)
+        file_path = install_path / filename
+
+        with open(file_path, "wb") as f:
+            f.write(response.content)
+
+        # Auto-extract zips
+        if filename.lower().endswith(".zip"):
+            try:
+                extract_dir = install_path / filename.rsplit(".", 1)[0]
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(file_path, "r") as zf:
+                    zf.extractall(extract_dir)
+            except Exception:
+                pass
+
+        return True
+
+
+# =============================================================================
+# NEXUS MODS API ROUTES
+# =============================================================================
+
+@router.get("/nexus/search")
+async def nexus_search_mods(
+    game_slug: str = Query(..., description="Game slug like 'valheim', 'baldurs_gate_3'"),
+    q: str = Query("", description="Search query"),
+    page: int = Query(1, ge=1),
+    current_user=Depends(get_current_user)
+):
+    """Search mods on Nexus Mods for a specific game"""
+    if game_slug not in NEXUS_GAMES:
+        raise HTTPException(400, f"Game '{game_slug}' not supported on Nexus Mods. Supported: {list(set(v['domain'] for v in NEXUS_GAMES.values()))}")
+
+    domain = NEXUS_GAMES[game_slug]["domain"]
+    result = await search_nexus(domain, q, page)
+    return {
+        "mods": result.get("results", []),
+        "total": result.get("total", 0),
+        "page": page,
+        "game": game_slug,
+        "source": "nexus",
+        "error": result.get("error")
+    }
+
+
+@router.get("/nexus/mod/{game_slug}/{mod_id}")
+async def nexus_get_mod(
+    game_slug: str,
+    mod_id: int,
+    current_user=Depends(get_current_user)
+):
+    """Get details for a Nexus Mods mod"""
+    if game_slug not in NEXUS_GAMES:
+        raise HTTPException(400, f"Game '{game_slug}' not supported")
+    domain = NEXUS_GAMES[game_slug]["domain"]
+    return {"mod": await get_nexus_mod_details(domain, mod_id), "source": "nexus"}
+
+
+@router.get("/nexus/mod/{game_slug}/{mod_id}/files")
+async def nexus_get_mod_files(
+    game_slug: str,
+    mod_id: int,
+    current_user=Depends(get_current_user)
+):
+    """Get files for a Nexus Mods mod"""
+    if game_slug not in NEXUS_GAMES:
+        raise HTTPException(400, f"Game '{game_slug}' not supported")
+    domain = NEXUS_GAMES[game_slug]["domain"]
+    files = await get_nexus_mod_files(domain, mod_id)
+    return {"files": files, "total": len(files)}
+
+
+@router.post("/nexus/install")
+async def nexus_install_mod(
+    server_id: str = Query(...),
+    game_slug: str = Query(...),
+    mod_id: int = Query(...),
+    file_id: int = Query(...),
+    current_user=Depends(require_moderator)
+):
+    """Install a mod from Nexus Mods (requires Premium API key)"""
+    if game_slug not in NEXUS_GAMES:
+        raise HTTPException(400, f"Game '{game_slug}' not supported")
+
+    config = NEXUS_GAMES[game_slug]
+    domain = config["domain"]
+    server_path = get_server_path(server_id)
+    mod_path = server_path / config["mod_path"].lstrip("/")
+
+    # Get download link (requires Premium)
+    try:
+        download_url = await get_nexus_download_link(domain, mod_id, file_id)
+    except HTTPException:
+        raise
+
+    # Get file info for filename
+    files = await get_nexus_mod_files(domain, mod_id)
+    filename = f"nexus_mod_{mod_id}_{file_id}"
+    for f in files:
+        if f.get("id") == file_id:
+            filename = f.get("name", filename)
+            break
+
+    await download_nexus_mod(download_url, mod_path, filename)
+
+    return {
+        "success": True,
+        "message": f"Installed {filename}",
+        "path": str(mod_path / filename),
+        "source": "nexus"
+    }
+
+
+# =============================================================================
+# MOD.IO API ROUTES
+# =============================================================================
+
+@router.get("/modio/search")
+async def modio_search_mods(
+    game_slug: str = Query(..., description="Game slug like 'squad', 'mordhau'"),
+    q: str = Query("", description="Search query"),
+    page: int = Query(1, ge=1),
+    current_user=Depends(get_current_user)
+):
+    """Search mods on mod.io for a specific game"""
+    if game_slug not in MODIO_GAMES:
+        raise HTTPException(400, f"Game '{game_slug}' not supported on mod.io. Supported: {list(MODIO_GAMES.keys())}")
+
+    game_id = MODIO_GAMES[game_slug]["game_id"]
+    result = await search_modio(game_id, q, page)
+    return {
+        "mods": result.get("results", []),
+        "total": result.get("total", 0),
+        "page": page,
+        "game": game_slug,
+        "source": "modio",
+        "error": result.get("error")
+    }
+
+
+@router.get("/modio/mod/{game_slug}/{mod_id}")
+async def modio_get_mod(
+    game_slug: str,
+    mod_id: int,
+    current_user=Depends(get_current_user)
+):
+    """Get details for a mod.io mod"""
+    if game_slug not in MODIO_GAMES:
+        raise HTTPException(400, f"Game '{game_slug}' not supported")
+    game_id = MODIO_GAMES[game_slug]["game_id"]
+    return {"mod": await get_modio_mod_details(game_id, mod_id), "source": "modio"}
+
+
+@router.post("/modio/install")
+async def modio_install_mod(
+    server_id: str = Query(...),
+    game_slug: str = Query(...),
+    mod_id: int = Query(...),
+    current_user=Depends(require_moderator)
+):
+    """Install a mod from mod.io"""
+    if game_slug not in MODIO_GAMES:
+        raise HTTPException(400, f"Game '{game_slug}' not supported")
+
+    config = MODIO_GAMES[game_slug]
+    game_id = config["game_id"]
+    server_path = get_server_path(server_id)
+    mod_path = server_path / config["mod_path"].lstrip("/")
+
+    # Get mod details including download URL
+    mod = await get_modio_mod_details(game_id, mod_id)
+    download_url = mod.get("download_url")
+    if not download_url:
+        raise HTTPException(400, "No download available for this mod")
+
+    filename = f"{mod.get('name', f'mod_{mod_id}').replace(' ', '_')}.zip"
+    await download_modio_mod(download_url, mod_path, filename)
+
+    return {
+        "success": True,
+        "message": f"Installed {mod.get('name', filename)}",
+        "path": str(mod_path / filename),
+        "source": "modio"
+    }
+
+
 @router.get("/supported-games")
 async def get_supported_games(current_user=Depends(get_current_user)):
-    """Get list of games with mod support"""
+    """Get list of games with mod support from all sources"""
     games = []
+    seen_slugs = set()
     
     for slug, config in WORKSHOP_GAMES.items():
-        games.append({
-            "slug": slug,
-            "source": "workshop",
-            "appid": config["appid"],
-            "mod_path": config["mod_path"]
-        })
+        if slug not in seen_slugs:
+            games.append({
+                "slug": slug,
+                "source": "workshop",
+                "appid": config["appid"],
+                "mod_path": config["mod_path"]
+            })
+            seen_slugs.add(slug)
     
     for slug, config in THUNDERSTORE_GAMES.items():
-        games.append({
-            "slug": slug,
-            "source": "thunderstore",
-            "community": config["community"],
-            "mod_path": config["mod_path"],
-            "bepinex_required": config.get("bepinex_required", False)
-        })
+        if slug not in seen_slugs:
+            games.append({
+                "slug": slug,
+                "source": "thunderstore",
+                "community": config["community"],
+                "mod_path": config["mod_path"],
+                "bepinex_required": config.get("bepinex_required", False)
+            })
+            seen_slugs.add(slug)
     
     for slug, config in CURSEFORGE_GAMES.items():
-        games.append({
-            "slug": slug,
-            "name": config["name"],
-            "source": "curseforge",
-            "game_id": config["game_id"],
-            "mod_path": config["mod_path"]
-        })
-    
-    return {"games": games}
+        if slug not in seen_slugs:
+            games.append({
+                "slug": slug,
+                "name": config["name"],
+                "source": "curseforge",
+                "game_id": config["game_id"],
+                "mod_path": config["mod_path"]
+            })
+            seen_slugs.add(slug)
+
+    for slug, config in NEXUS_GAMES.items():
+        if slug not in seen_slugs:
+            games.append({
+                "slug": slug,
+                "name": config["name"],
+                "source": "nexus",
+                "domain": config["domain"],
+                "mod_path": config["mod_path"]
+            })
+            seen_slugs.add(slug)
+
+    for slug, config in MODIO_GAMES.items():
+        if slug not in seen_slugs:
+            games.append({
+                "slug": slug,
+                "name": config["name"],
+                "source": "modio",
+                "game_id": config["game_id"],
+                "mod_path": config["mod_path"]
+            })
+            seen_slugs.add(slug)
+
+    # Also include the unified registry for richer data
+    return {"games": games, "registry": GAME_MOD_SOURCES}
 
 @router.post("/bepinex/install")
 async def install_bepinex(

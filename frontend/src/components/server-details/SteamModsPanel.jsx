@@ -1,41 +1,245 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { FaDownload, FaTrash, FaCube, FaSearch, FaTimes, FaSteam, FaBolt, FaExternalLinkAlt, FaCog, FaFolder, FaFire } from 'react-icons/fa';
+import { FaDownload, FaTrash, FaCube, FaSearch, FaTimes, FaSteam, FaBolt, FaExternalLinkAlt, FaCog, FaFolder, FaFire, FaGlobe, FaExchangeAlt } from 'react-icons/fa';
 import { API, getStoredToken } from '../../lib/api';
 
-// Games that support mods
+// Source display config
+const SOURCE_INFO = {
+    thunderstore: { label: 'Thunderstore', icon: FaBolt, color: 'text-blue-400', bg: 'bg-blue-500/20' },
+    workshop:     { label: 'Steam Workshop', icon: FaSteam, color: 'text-blue-400', bg: 'bg-blue-500/20' },
+    curseforge:   { label: 'CurseForge', icon: FaFire, color: 'text-orange-400', bg: 'bg-orange-500/20' },
+    nexus:        { label: 'Nexus Mods', icon: FaGlobe, color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
+    modio:        { label: 'mod.io', icon: FaGlobe, color: 'text-green-400', bg: 'bg-green-500/20' },
+};
+
+// Games mapped to ALL their available mod sources (multi-source support)
 const SUPPORTED_GAMES = {
-    // Thunderstore games
-    valheim: { source: 'thunderstore', community: 'valheim', name: 'Valheim' },
-    lethal_company: { source: 'thunderstore', community: 'lethal-company', name: 'Lethal Company' },
-    risk_of_rain_2: { source: 'thunderstore', community: 'ror2', name: 'Risk of Rain 2' },
-    vrising: { source: 'thunderstore', community: 'v-rising', name: 'V Rising' },
-    sunkenland: { source: 'thunderstore', community: 'sunkenland', name: 'Sunkenland' },
-    palworld: { source: 'thunderstore', community: 'palworld', name: 'Palworld' },
-    content_warning: { source: 'thunderstore', community: 'content-warning', name: 'Content Warning' },
-    core_keeper: { source: 'thunderstore', community: 'core-keeper', name: 'Core Keeper' },
-    // Workshop games
-    gmod: { source: 'workshop', appid: 4000, name: "Garry's Mod" },
-    garrys_mod: { source: 'workshop', appid: 4000, name: "Garry's Mod" },
-    arma3: { source: 'workshop', appid: 107410, name: 'Arma 3' },
-    dont_starve_together: { source: 'workshop', appid: 322330, name: "Don't Starve Together" },
-    project_zomboid: { source: 'workshop', appid: 108600, name: 'Project Zomboid' },
-    space_engineers: { source: 'workshop', appid: 244850, name: 'Space Engineers' },
-    '7_days_to_die': { source: 'workshop', appid: 251570, name: '7 Days to Die' },
-    conan_exiles: { source: 'workshop', appid: 440900, name: 'Conan Exiles' },
-    ark: { source: 'workshop', appid: 346110, name: 'ARK' },
-    rust: { source: 'workshop', appid: 252490, name: 'Rust (Oxide)' },
-    // CurseForge games
-    palworld_cf: { source: 'curseforge', game_id: 83374, slug: 'palworld', name: 'Palworld (CurseForge)' },
-    '7_days_to_die_cf': { source: 'curseforge', game_id: 7, slug: '7_days_to_die', name: '7 Days to Die (CurseForge)' },
-    ark_cf: { source: 'curseforge', game_id: 84698, slug: 'ark', name: 'ARK: Survival Ascended (CurseForge)' },
-    terraria: { source: 'curseforge', game_id: 431, slug: 'terraria', name: 'Terraria' },
-    ksp: { source: 'curseforge', game_id: 4401, slug: 'ksp', name: 'Kerbal Space Program' },
-    stardew_valley: { source: 'curseforge', game_id: 669, slug: 'stardew_valley', name: 'Stardew Valley' },
-    valheim_cf: { source: 'curseforge', game_id: 68940, slug: 'valheim', name: 'Valheim (CurseForge)' },
-    rimworld: { source: 'curseforge', game_id: 73492, slug: 'rimworld', name: 'RimWorld' },
-    satisfactory: { source: 'curseforge', game_id: 78054, slug: 'satisfactory', name: 'Satisfactory' },
-    sims4: { source: 'curseforge', game_id: 78062, slug: 'sims4', name: 'The Sims 4' },
-    among_us: { source: 'curseforge', game_id: 69762, slug: 'among_us', name: 'Among Us' },
+    // ---- Games with multiple sources ----
+    valheim:            { name: 'Valheim', sources: [
+        { type: 'thunderstore', community: 'valheim' },
+        { type: 'curseforge', slug: 'valheim', game_id: 68940 },
+        { type: 'nexus', domain: 'valheim' },
+        { type: 'workshop', appid: 892970 },
+    ]},
+    palworld:           { name: 'Palworld', sources: [
+        { type: 'thunderstore', community: 'palworld' },
+        { type: 'curseforge', slug: 'palworld', game_id: 85196 },
+        { type: 'nexus', domain: 'palworld' },
+    ]},
+    '7_days_to_die':    { name: '7 Days to Die', sources: [
+        { type: 'workshop', appid: 251570 },
+        { type: 'curseforge', slug: '7_days_to_die', game_id: 7 },
+        { type: 'nexus', domain: '7daystodie' },
+    ]},
+    sdtd:               { name: '7 Days to Die', sources: [
+        { type: 'workshop', appid: 251570 },
+        { type: 'curseforge', slug: 'sdtd', game_id: 7 },
+        { type: 'nexus', domain: '7daystodie' },
+    ]},
+    rimworld:           { name: 'RimWorld', sources: [
+        { type: 'workshop', appid: 294100 },
+        { type: 'curseforge', slug: 'rimworld', game_id: 73492 },
+        { type: 'nexus', domain: 'rimworld' },
+    ]},
+    vrising:            { name: 'V Rising', sources: [
+        { type: 'thunderstore', community: 'v-rising' },
+        { type: 'curseforge', slug: 'vrising', game_id: 78135 },
+        { type: 'nexus', domain: 'vrising' },
+    ]},
+    conan_exiles:       { name: 'Conan Exiles', sources: [
+        { type: 'workshop', appid: 440900 },
+        { type: 'curseforge', slug: 'conan_exiles', game_id: 58498 },
+        { type: 'nexus', domain: 'conanexiles' },
+        { type: 'modio', game_id: 42 },
+    ]},
+    core_keeper:        { name: 'Core Keeper', sources: [
+        { type: 'thunderstore', community: 'core-keeper' },
+        { type: 'curseforge', slug: 'core_keeper', game_id: 79917 },
+        { type: 'nexus', domain: 'corekeeper' },
+    ]},
+    satisfactory:       { name: 'Satisfactory', sources: [
+        { type: 'curseforge', slug: 'satisfactory', game_id: 84368 },
+        { type: 'nexus', domain: 'satisfactory' },
+    ]},
+    stardew_valley:     { name: 'Stardew Valley', sources: [
+        { type: 'curseforge', slug: 'stardew_valley', game_id: 669 },
+        { type: 'nexus', domain: 'stardewvalley' },
+        { type: 'thunderstore', community: 'stardew-valley' },
+    ]},
+    lethal_company:     { name: 'Lethal Company', sources: [
+        { type: 'thunderstore', community: 'lethal-company' },
+        { type: 'nexus', domain: 'lethalcompany' },
+        { type: 'curseforge', slug: 'lethal_company', game_id: 83671 },
+    ]},
+    among_us:           { name: 'Among Us', sources: [
+        { type: 'thunderstore', community: 'among-us' },
+        { type: 'curseforge', slug: 'among_us', game_id: 69761 },
+        { type: 'nexus', domain: 'amongus' },
+    ]},
+    terraria:           { name: 'Terraria', sources: [
+        { type: 'curseforge', slug: 'terraria', game_id: 431 },
+        { type: 'nexus', domain: 'terraria' },
+    ]},
+    terraria_tmodloader:{ name: 'Terraria (tModLoader)', sources: [
+        { type: 'workshop', appid: 1281930 },
+        { type: 'curseforge', slug: 'terraria_tmodloader', game_id: 431 },
+        { type: 'nexus', domain: 'terraria' },
+    ]},
+    tmodloader:         { name: 'Terraria (tModLoader)', sources: [
+        { type: 'workshop', appid: 1281930 },
+        { type: 'curseforge', slug: 'terraria_tmodloader', game_id: 431 },
+    ]},
+    rust:               { name: 'Rust', sources: [
+        { type: 'workshop', appid: 252490 },
+        { type: 'curseforge', slug: 'rust', game_id: 69162 },
+        { type: 'nexus', domain: 'rust' },
+    ]},
+    project_zomboid:    { name: 'Project Zomboid', sources: [
+        { type: 'workshop', appid: 108600 },
+        { type: 'curseforge', slug: 'project_zomboid', game_id: 78135 },
+        { type: 'nexus', domain: 'projectzomboid' },
+    ]},
+    dont_starve_together: { name: "Don't Starve Together", sources: [
+        { type: 'workshop', appid: 322330 },
+        { type: 'curseforge', slug: 'dont_starve_together', game_id: 4525 },
+        { type: 'nexus', domain: 'dontstarvetogether' },
+    ]},
+    dayz:               { name: 'DayZ', sources: [
+        { type: 'workshop', appid: 221100 },
+        { type: 'curseforge', slug: 'dayz', game_id: 82002 },
+        { type: 'nexus', domain: 'dayz' },
+    ]},
+    sons_of_the_forest: { name: 'Sons of the Forest', sources: [
+        { type: 'thunderstore', community: 'sons-of-the-forest' },
+        { type: 'curseforge', slug: 'sons_of_the_forest', game_id: 83879 },
+        { type: 'nexus', domain: 'sonsoftheforest' },
+    ]},
+    enshrouded:         { name: 'Enshrouded', sources: [
+        { type: 'thunderstore', community: 'enshrouded' },
+        { type: 'curseforge', slug: 'enshrouded', game_id: 85767 },
+        { type: 'nexus', domain: 'enshrouded' },
+    ]},
+    manor_lords:        { name: 'Manor Lords', sources: [
+        { type: 'curseforge', slug: 'manor_lords', game_id: 85406 },
+        { type: 'nexus', domain: 'manorlords' },
+    ]},
+
+    // ---- Nexus-primary games ----
+    baldurs_gate_3:     { name: "Baldur's Gate 3", sources: [
+        { type: 'nexus', domain: 'baldursgate3' },
+        { type: 'curseforge', slug: 'baldurs_gate_3', game_id: 84299 },
+    ]},
+    bg3:                { name: "Baldur's Gate 3", sources: [
+        { type: 'nexus', domain: 'baldursgate3' },
+        { type: 'curseforge', slug: 'bg3', game_id: 84299 },
+    ]},
+    skyrim:             { name: 'Skyrim Special Edition', sources: [
+        { type: 'nexus', domain: 'skyrimspecialedition' },
+        { type: 'curseforge', slug: 'skyrim', game_id: 73492 },
+    ]},
+    fallout_4:          { name: 'Fallout 4', sources: [
+        { type: 'nexus', domain: 'fallout4' },
+        { type: 'curseforge', slug: 'fallout_4', game_id: 80122 },
+    ]},
+    starfield:          { name: 'Starfield', sources: [
+        { type: 'nexus', domain: 'starfield' },
+        { type: 'curseforge', slug: 'starfield', game_id: 83951 },
+    ]},
+    cyberpunk_2077:     { name: 'Cyberpunk 2077', sources: [
+        { type: 'nexus', domain: 'cyberpunk2077' },
+        { type: 'curseforge', slug: 'cyberpunk_2077', game_id: 78330 },
+    ]},
+    ark_survival_evolved: { name: 'ARK: Survival Evolved', sources: [
+        { type: 'workshop', appid: 346110 },
+        { type: 'nexus', domain: 'arksurvivalevolved' },
+    ]},
+    ark:                { name: 'ARK: Survival Evolved', sources: [
+        { type: 'workshop', appid: 346110 },
+        { type: 'nexus', domain: 'arksurvivalevolved' },
+    ]},
+    ark_survival_ascended: { name: 'ARK: Survival Ascended', sources: [
+        { type: 'curseforge', slug: 'ark_survival_ascended', game_id: 84698 },
+        { type: 'nexus', domain: 'arksurvivalascended' },
+    ]},
+
+    // ---- Workshop-only games ----
+    gmod:               { name: "Garry's Mod", sources: [
+        { type: 'workshop', appid: 4000 },
+        { type: 'nexus', domain: 'garysmod' },
+    ]},
+    garrys_mod:         { name: "Garry's Mod", sources: [
+        { type: 'workshop', appid: 4000 },
+        { type: 'nexus', domain: 'garysmod' },
+    ]},
+    arma3:              { name: 'Arma 3', sources: [{ type: 'workshop', appid: 107410 }] },
+    space_engineers:    { name: 'Space Engineers', sources: [{ type: 'workshop', appid: 244850 }] },
+    cs2:                { name: 'Counter-Strike 2', sources: [{ type: 'workshop', appid: 730 }] },
+    tf2:                { name: 'Team Fortress 2', sources: [{ type: 'workshop', appid: 440 }] },
+    left4dead2:         { name: 'Left 4 Dead 2', sources: [{ type: 'workshop', appid: 550 }] },
+    l4d2:               { name: 'Left 4 Dead 2', sources: [{ type: 'workshop', appid: 550 }] },
+    barotrauma:         { name: 'Barotrauma', sources: [{ type: 'workshop', appid: 602960 }] },
+    unturned:           { name: 'Unturned', sources: [
+        { type: 'workshop', appid: 304930 },
+        { type: 'curseforge', slug: 'unturned', game_id: 79744 },
+    ]},
+    stormworks:         { name: 'Stormworks', sources: [{ type: 'workshop', appid: 573090 }] },
+    assetto_corsa:      { name: 'Assetto Corsa', sources: [{ type: 'workshop', appid: 244210 }] },
+    factorio:           { name: 'Factorio', sources: [
+        { type: 'workshop', appid: 427520 },
+        { type: 'curseforge', slug: 'factorio', game_id: 79148 },
+    ]},
+    avorion:            { name: 'Avorion', sources: [{ type: 'workshop', appid: 445220 }] },
+    eco:                { name: 'Eco', sources: [
+        { type: 'workshop', appid: 382310 },
+        { type: 'curseforge', slug: 'eco', game_id: 79501 },
+        { type: 'modio', game_id: 6 },
+    ]},
+
+    // ---- Thunderstore-only games ----
+    risk_of_rain_2:     { name: 'Risk of Rain 2', sources: [{ type: 'thunderstore', community: 'ror2' }] },
+    sunkenland:         { name: 'Sunkenland', sources: [{ type: 'thunderstore', community: 'sunkenland' }] },
+    content_warning:    { name: 'Content Warning', sources: [{ type: 'thunderstore', community: 'content-warning' }] },
+    inscryption:        { name: 'Inscryption', sources: [{ type: 'thunderstore', community: 'inscryption' }] },
+    gtfo:               { name: 'GTFO', sources: [{ type: 'thunderstore', community: 'gtfo' }] },
+    dyson_sphere_program: { name: 'Dyson Sphere Program', sources: [
+        { type: 'thunderstore', community: 'dyson-sphere-program' },
+        { type: 'curseforge', slug: 'dyson_sphere_program', game_id: 82729 },
+    ]},
+    the_forest:         { name: 'The Forest', sources: [
+        { type: 'thunderstore', community: 'the-forest' },
+        { type: 'curseforge', slug: 'the_forest', game_id: 60028 },
+        { type: 'nexus', domain: 'theforest' },
+    ]},
+
+    // ---- CurseForge-only games ----
+    ksp:                { name: 'Kerbal Space Program', sources: [{ type: 'curseforge', slug: 'ksp', game_id: 4401 }] },
+    kerbal_space_program: { name: 'Kerbal Space Program', sources: [{ type: 'curseforge', slug: 'ksp', game_id: 4401 }] },
+    hogwarts_legacy:    { name: 'Hogwarts Legacy', sources: [
+        { type: 'curseforge', slug: 'hogwarts_legacy', game_id: 80815 },
+        { type: 'nexus', domain: 'hogwartslegacy' },
+    ]},
+    darkest_dungeon:    { name: 'Darkest Dungeon', sources: [{ type: 'curseforge', slug: 'darkest_dungeon', game_id: 608 }] },
+
+    // ---- mod.io-primary games ----
+    squad:              { name: 'Squad', sources: [
+        { type: 'workshop', appid: 393380 },
+        { type: 'modio', game_id: 362 },
+    ]},
+    mordhau:            { name: 'Mordhau', sources: [
+        { type: 'workshop', appid: 629760 },
+        { type: 'modio', game_id: 264 },
+    ]},
+    insurgency_sandstorm: { name: 'Insurgency: Sandstorm', sources: [
+        { type: 'workshop', appid: 581320 },
+        { type: 'modio', game_id: 188 },
+    ]},
+    killing_floor_2:    { name: 'Killing Floor 2', sources: [
+        { type: 'workshop', appid: 232090 },
+        { type: 'modio', game_id: 50 },
+    ]},
+    kf2:                { name: 'Killing Floor 2', sources: [
+        { type: 'workshop', appid: 232090 },
+        { type: 'modio', game_id: 50 },
+    ]},
 };
 
 export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
@@ -53,8 +257,15 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
     const [page, setPage] = useState(1);
     const [totalResults, setTotalResults] = useState(0);
 
+    // Multi-source: selected source index
+    const [activeSourceIdx, setActiveSourceIdx] = useState(0);
+
     const gameConfig = SUPPORTED_GAMES[gameSlug] || null;
     const isSupported = gameConfig !== null;
+    const availableSources = gameConfig?.sources || [];
+    const activeSource = availableSources[activeSourceIdx] || availableSources[0];
+    const sourceType = activeSource?.type;
+    const sourceInfo = SOURCE_INFO[sourceType] || SOURCE_INFO.workshop;
 
     function authHeaders() {
         const token = getStoredToken();
@@ -93,12 +304,16 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
 
         try {
             let url;
-            if (gameConfig.source === 'thunderstore') {
-                url = `${API}/steam-mods/thunderstore/search?community=${encodeURIComponent(gameConfig.community)}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
-            } else if (gameConfig.source === 'curseforge') {
-                url = `${API}/steam-mods/curseforge/search?game_slug=${encodeURIComponent(gameConfig.slug)}&query=${encodeURIComponent(searchQuery)}&page=${newPage}&page_size=20`;
+            if (sourceType === 'thunderstore') {
+                url = `${API}/steam-mods/thunderstore/search?community=${encodeURIComponent(activeSource.community)}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
+            } else if (sourceType === 'curseforge') {
+                url = `${API}/steam-mods/curseforge/search?game_slug=${encodeURIComponent(activeSource.slug || gameSlug)}&query=${encodeURIComponent(searchQuery)}&page=${newPage}&page_size=20`;
+            } else if (sourceType === 'nexus') {
+                url = `${API}/steam-mods/nexus/search?game_slug=${encodeURIComponent(gameSlug)}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
+            } else if (sourceType === 'modio') {
+                url = `${API}/steam-mods/modio/search?game_slug=${encodeURIComponent(gameSlug)}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
             } else {
-                url = `${API}/steam-mods/workshop/search?appid=${gameConfig.appid}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
+                url = `${API}/steam-mods/workshop/search?appid=${activeSource.appid}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
             }
 
             const res = await fetch(url, { headers: authHeaders() });
@@ -107,22 +322,58 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
             
             // Normalize results based on source
             let results = [];
-            if (gameConfig.source === 'curseforge') {
+            if (sourceType === 'curseforge') {
                 results = (data.mods || []).map(mod => ({
                     id: mod.id,
                     mod_id: mod.id,
                     title: mod.name,
                     name: mod.name,
-                    description: mod.summary,
-                    icon_url: mod.logo?.thumbnailUrl || mod.logo?.url,
-                    downloads: mod.downloadCount,
-                    namespace: mod.authors?.[0]?.name || 'Unknown',
+                    description: mod.summary || mod.description,
+                    icon_url: mod.logo?.thumbnailUrl || mod.logo?.url || mod.icon_url,
+                    downloads: mod.downloadCount || mod.downloads,
+                    namespace: mod.authors?.[0]?.name || mod.author || 'Unknown',
                     curseforge_url: mod.links?.websiteUrl,
-                    latest_file: mod.latestFiles?.[0],
-                    categories: mod.categories || []
+                    latest_file: mod.latestFiles?.[0] || mod.latest_file,
+                    categories: mod.categories || [],
+                    source: 'curseforge',
+                }));
+            } else if (sourceType === 'nexus') {
+                results = (data.mods || []).map(mod => ({
+                    id: mod.mod_id || mod.id,
+                    mod_id: mod.mod_id || mod.id,
+                    title: mod.name || mod.title,
+                    name: mod.name || mod.title,
+                    description: mod.description || mod.summary || '',
+                    icon_url: mod.icon_url || mod.picture_url,
+                    downloads: mod.downloads || 0,
+                    namespace: mod.author || 'Unknown',
+                    page_url: mod.page_url,
+                    endorsements: mod.endorsements,
+                    version: mod.version,
+                    source: 'nexus',
+                }));
+            } else if (sourceType === 'modio') {
+                results = (data.mods || []).map(mod => ({
+                    id: mod.mod_id || mod.id,
+                    mod_id: mod.mod_id || mod.id,
+                    title: mod.name || mod.title,
+                    name: mod.name || mod.title,
+                    description: mod.description || '',
+                    icon_url: mod.icon_url,
+                    downloads: mod.downloads || 0,
+                    namespace: mod.author || 'Unknown',
+                    page_url: mod.page_url,
+                    download_url: mod.download_url,
+                    version: mod.version,
+                    source: 'modio',
                 }));
             } else {
                 results = data.results || [];
+            }
+            
+            // Check for API error messages
+            if (data.error) {
+                setSearchError(data.error);
             }
             
             setSearchResults(prev => newPage === 1 ? results : [...prev, ...results]);
@@ -197,7 +448,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                 headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify({
                     server_id: serverId,
-                    game_slug: gameConfig.slug,
+                    game_slug: activeSource.slug || gameSlug,
                     mod_id: mod.mod_id,
                     file_id: fileId
                 })
@@ -209,6 +460,79 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
             }
             
             const data = await res.json();
+            alert(`✅ Installed ${mod.name} successfully!`);
+            await fetchInstalledMods();
+        } catch (e) {
+            alert(`❌ Failed to install: ${e.message}`);
+        } finally {
+            setInstalling(null);
+        }
+    }
+
+    // Install mod from Nexus Mods
+    async function installNexusMod(mod) {
+        setInstalling(mod.id);
+        try {
+            // First get files list
+            const filesRes = await fetch(
+                `${API}/steam-mods/nexus/mod/${encodeURIComponent(gameSlug)}/${mod.mod_id}/files`,
+                { headers: authHeaders() }
+            );
+            if (!filesRes.ok) throw new Error('Failed to get mod files');
+            const filesData = await filesRes.json();
+            const files = filesData.files || [];
+            
+            // Find the primary/main file
+            const primaryFile = files.find(f => f.is_primary) || files[0];
+            if (!primaryFile) {
+                // Fallback: open the Nexus page for manual download
+                if (mod.page_url) {
+                    window.open(mod.page_url, '_blank');
+                    alert('ℹ️ No direct download available. Opening Nexus Mods page for manual download.');
+                } else {
+                    throw new Error('No files available for this mod');
+                }
+                return;
+            }
+
+            const res = await fetch(
+                `${API}/steam-mods/nexus/install?server_id=${encodeURIComponent(serverId)}&game_slug=${encodeURIComponent(gameSlug)}&mod_id=${mod.mod_id}&file_id=${primaryFile.id}`,
+                { method: 'POST', headers: authHeaders() }
+            );
+            
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                // If 403, suggest manual download
+                if (res.status === 403) {
+                    if (mod.page_url) window.open(mod.page_url, '_blank');
+                    throw new Error('Nexus Premium required for direct downloads. Opening Nexus page for manual download.');
+                }
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+            
+            alert(`✅ Installed ${mod.name} successfully!`);
+            await fetchInstalledMods();
+        } catch (e) {
+            alert(`❌ ${e.message}`);
+        } finally {
+            setInstalling(null);
+        }
+    }
+
+    // Install mod from mod.io
+    async function installModioMod(mod) {
+        setInstalling(mod.id);
+        try {
+            const res = await fetch(
+                `${API}/steam-mods/modio/install?server_id=${encodeURIComponent(serverId)}&game_slug=${encodeURIComponent(gameSlug)}&mod_id=${mod.mod_id}`,
+                { method: 'POST', headers: authHeaders() }
+            );
+            
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+            
             alert(`✅ Installed ${mod.name} successfully!`);
             await fetchInstalledMods();
         } catch (e) {
@@ -249,6 +573,15 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
         }
     }, [serverId, gameSlug]);
 
+    // Reset search when switching source
+    useEffect(() => {
+        setSearchResults([]);
+        setSearchQuery('');
+        setSearchError('');
+        setPage(1);
+        setTotalResults(0);
+    }, [activeSourceIdx]);
+
     // Game not supported
     if (!isSupported) {
         return (
@@ -277,7 +610,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                         Mods for {gameConfig.name}
                     </h2>
                     <p className="text-white/50 text-sm mt-1">
-                        Source: {gameConfig.source === 'thunderstore' ? 'Thunderstore' : gameConfig.source === 'curseforge' ? 'CurseForge' : 'Steam Workshop'}
+                        {availableSources.length} mod source{availableSources.length !== 1 ? 's' : ''} available
                     </p>
                 </div>
                 <button
@@ -288,6 +621,31 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                 </button>
             </div>
 
+            {/* Source Selector Tabs (only show when multiple sources) */}
+            {availableSources.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                    {availableSources.map((src, idx) => {
+                        const info = SOURCE_INFO[src.type] || SOURCE_INFO.workshop;
+                        const Icon = info.icon;
+                        const isActive = idx === activeSourceIdx;
+                        return (
+                            <button
+                                key={`${src.type}-${idx}`}
+                                onClick={() => setActiveSourceIdx(idx)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+                                    isActive
+                                        ? `${info.bg} border-current ${info.color}`
+                                        : 'border-white/10 text-white/50 hover:text-white hover:border-white/30'
+                                }`}
+                            >
+                                <Icon className="text-sm" />
+                                {info.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
             {/* Mod Browser Modal */}
             {showSearch && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -295,14 +653,8 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                         {/* Header */}
                         <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
                             <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                {gameConfig.source === 'thunderstore' ? (
-                                    <FaBolt className="text-blue-400" />
-                                ) : gameConfig.source === 'curseforge' ? (
-                                    <FaFire className="text-orange-500" />
-                                ) : (
-                                    <FaSteam className="text-blue-400" />
-                                )}
-                                Browse {gameConfig.source === 'thunderstore' ? 'Thunderstore' : gameConfig.source === 'curseforge' ? 'CurseForge' : 'Workshop'} Mods
+                                {React.createElement(sourceInfo.icon, { className: sourceInfo.color })}
+                                Browse {sourceInfo.label} Mods
                             </h3>
                             <button onClick={() => setShowSearch(false)} className="text-white/60 hover:text-white">
                                 <FaTimes size={20} />
@@ -350,14 +702,19 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                                             mod={mod}
                                             installing={installing === mod.id}
                                             onInstall={() => {
-                                                if (gameConfig.source === 'thunderstore') {
+                                                if (sourceType === 'thunderstore') {
                                                     installThunderstoreMod(mod);
-                                                } else if (gameConfig.source === 'curseforge') {
+                                                } else if (sourceType === 'curseforge') {
                                                     installCurseForgeMod(mod);
+                                                } else if (sourceType === 'nexus') {
+                                                    installNexusMod(mod);
+                                                } else if (sourceType === 'modio') {
+                                                    installModioMod(mod);
                                                 } else {
                                                     alert('Workshop mod installation coming soon');
                                                 }
                                             }}
+                                            source={sourceType}
                                         />
                                     ))}
                                 </div>
@@ -436,20 +793,36 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                 <h4 className="font-semibold text-blue-400 mb-2">💡 Tips</h4>
                 <ul className="text-white/60 text-sm space-y-1">
                     <li>• Most mods require a server restart to take effect</li>
-                    {gameConfig.source === 'thunderstore' && (
+                    {sourceType === 'thunderstore' && (
                         <>
                             <li>• Dependencies are automatically installed</li>
                             <li>• Some mods require BepInEx mod loader</li>
                         </>
                     )}
-                    {gameConfig.source === 'curseforge' && (
+                    {sourceType === 'curseforge' && (
                         <>
                             <li>• CurseForge hosts mods for many popular games</li>
                             <li>• Check mod compatibility with your game version</li>
                         </>
                     )}
-                    {gameConfig.source === 'workshop' && (
+                    {sourceType === 'workshop' && (
                         <li>• Workshop items are downloaded from Steam</li>
+                    )}
+                    {sourceType === 'nexus' && (
+                        <>
+                            <li>• Requires NEXUS_API_KEY environment variable for searching</li>
+                            <li>• Direct downloads require a Nexus Mods Premium account</li>
+                            <li>• Free users can browse and download manually via the Nexus website</li>
+                        </>
+                    )}
+                    {sourceType === 'modio' && (
+                        <>
+                            <li>• Requires MODIO_API_KEY environment variable</li>
+                            <li>• mod.io provides game-specific modding support</li>
+                        </>
+                    )}
+                    {availableSources.length > 1 && (
+                        <li>• This game supports {availableSources.length} mod sources — switch between them using the tabs above</li>
                     )}
                 </ul>
             </div>
@@ -458,7 +831,8 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
 }
 
 // Mod Card Component
-function ModCard({ mod, installing, onInstall }) {
+function ModCard({ mod, installing, onInstall, source }) {
+    const pageUrl = mod.page_url || mod.curseforge_url;
     return (
         <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex gap-4">
             {/* Icon */}
@@ -477,21 +851,37 @@ function ModCard({ mod, installing, onInstall }) {
 
             {/* Info */}
             <div className="flex-1 min-w-0">
-                <h4 className="text-white font-semibold truncate">{mod.title || mod.name}</h4>
+                <div className="flex items-center gap-2">
+                    <h4 className="text-white font-semibold truncate">{mod.title || mod.name}</h4>
+                    {pageUrl && (
+                        <a href={pageUrl} target="_blank" rel="noopener noreferrer"
+                           className="text-white/30 hover:text-white/60 shrink-0" title="Open in browser">
+                            <FaExternalLinkAlt size={11} />
+                        </a>
+                    )}
+                </div>
                 <p className="text-white/50 text-sm line-clamp-2 mt-1">
                     {mod.description || 'No description available'}
                 </p>
                 <div className="flex items-center gap-4 mt-2 text-xs text-white/40">
-                    {mod.downloads && (
+                    {mod.downloads != null && (
                         <span className="flex items-center gap-1">
                             <FaDownload /> {formatNumber(mod.downloads)}
                         </span>
+                    )}
+                    {mod.endorsements != null && (
+                        <span>👍 {formatNumber(mod.endorsements)}</span>
                     )}
                     {mod.version && (
                         <span>v{mod.version}</span>
                     )}
                     {mod.namespace && (
                         <span>by {mod.namespace}</span>
+                    )}
+                    {source && (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${SOURCE_INFO[source]?.bg || 'bg-white/10'} ${SOURCE_INFO[source]?.color || 'text-white/60'}`}>
+                            {SOURCE_INFO[source]?.label || source}
+                        </span>
                     )}
                 </div>
             </div>
