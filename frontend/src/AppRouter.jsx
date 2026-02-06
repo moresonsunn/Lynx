@@ -17,6 +17,9 @@ import {
   FaSteam,
   FaDungeon,
   FaCube,
+  FaChartBar,
+  FaShieldAlt,
+  FaObjectGroup,
 } from 'react-icons/fa';
 
 
@@ -33,6 +36,10 @@ import HytalePage from './pages/HytalePage';
 
 
 import GlobalSearchBar from './components/GlobalSearchBar';
+import NotificationCenter from './components/NotificationCenter';
+import MonitoringPage from './components/MonitoringPage';
+import SecurityPage from './pages/SecurityPage';
+import MultiServerPage from './pages/MultiServerPage';
 
 
 const TemplatesPageLazy = React.lazy(() => import('./pages/TemplatesPage'));
@@ -81,6 +88,9 @@ function AppLayout({ children }) {
       { id: 'minecraft', path: '/templates', label: 'Minecraft', icon: FaCube },
       { id: 'steam', path: '/steam', label: 'Steam', icon: FaSteam },
       { id: 'hytale', path: '/hytale', label: 'Hytale', icon: FaDungeon },
+      { id: 'multi-server', path: '/multi-server', label: 'Multi-Server', icon: FaObjectGroup },
+      { id: 'monitoring', path: '/monitoring', label: t('nav.monitoring') || 'Monitoring', icon: FaChartBar },
+      { id: 'security', path: '/security', label: 'Security', icon: FaShieldAlt },
     ];
 
     if (isAdmin) {
@@ -244,6 +254,7 @@ function AppLayout({ children }) {
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-1 justify-end min-w-0">
               <GlobalSearchBar onNavigate={handleGlobalNavigate} className="w-full max-w-[10rem] sm:max-w-[16rem] md:max-w-[20rem]" />
+              <NotificationCenter />
               <div className="hidden sm:block text-sm text-white/70">
                 Welcome back, {currentUser?.username || 'User'}
               </div>
@@ -560,6 +571,9 @@ function AppRoutes() {
       <Route path="/steam" element={<ProtectedRoute><SteamGamesPage /></ProtectedRoute>} />
       <Route path="/hytale" element={<ProtectedRoute><HytalePage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+      <Route path="/monitoring" element={<ProtectedRoute><MonitoringPage /></ProtectedRoute>} />
+      <Route path="/security" element={<ProtectedRoute><SecurityPage /></ProtectedRoute>} />
+      <Route path="/multi-server" element={<ProtectedRoute><MultiServerPage /></ProtectedRoute>} />
 
       {/* Admin routes */}
       <Route path="/users" element={<AdminRoute><UsersPage /></AdminRoute>} />

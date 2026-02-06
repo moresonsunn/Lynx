@@ -134,6 +134,7 @@ BASE_STEAM_GAMES = {
         },
         "volume": {"container": "/home/steam/cs2-dedicated"},
         "server_commands": {
+            "stop": "quit",
             "restart_match": "mp_restartgame 1",
             "broadcast": "say {message}",
             "kick": "kick {player}",
@@ -177,6 +178,10 @@ BASE_STEAM_GAMES = {
             "RUST_SERVER_DESCRIPTION": "Managed by Lynx",
             "RUST_SERVER_MAXPLAYERS": 32,
             "RUST_RCON_PASSWORD": "change-me",
+            "RUST_RCON_PORT": 28016,
+            "ENABLE_RCON": "true",
+            "RCON_PORT": 28016,
+            "RCON_PASSWORD": "change-me",
             "PUID": 1000,
             "PGID": 1000,
             "TZ": "UTC",

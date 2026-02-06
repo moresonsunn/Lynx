@@ -1,10 +1,21 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '../i18n';
 import { useGlobalData } from '../context/GlobalDataContext';
 import { API, authHeaders } from '../context/AppContext';
 import { normalizeRamInput } from '../utils/ram';
-import { FaChevronRight } from 'react-icons/fa';
+import {
+  FaChevronRight,
+  FaPlay,
+  FaStop,
+  FaServer,
+  FaDownload,
+  FaExclamationTriangle,
+  FaClock,
+  FaShieldAlt,
+  FaInfoCircle,
+  FaCheck,
+} from 'react-icons/fa';
 
 
 export default function DashboardPage() {
@@ -40,6 +51,56 @@ export default function DashboardPage() {
   const [minRam, setMinRam] = useState('2048M');
   const [maxRam, setMaxRam] = useState('4096M');
 
+
+  // --- Activity Feed ---
+  const [activityFeed, setActivityFeed] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setActivityLoading(true);
+      try {
+        const r = await fetch(`${API}/realtime/notifications?limit=8`, { headers: authHeaders() });
+        if (r.ok && !cancelled) {
+          const d = await r.json();
+          setActivityFeed(d.notifications || []);
+        }
+      } catch { }
+      if (!cancelled) setActivityLoading(false);
+    })();
+    // Re-fetch every 30s
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch(`${API}/realtime/notifications?limit=8`, { headers: authHeaders() });
+        if (r.ok && !cancelled) {
+          const d = await r.json();
+          setActivityFeed(d.notifications || []);
+        }
+      } catch { }
+    }, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  // --- Quick Actions ---
+  const [actionLoading, setActionLoading] = useState({});
+
+  const quickPower = useCallback(async (serverId, action, e) => {
+    e.stopPropagation();
+    setActionLoading(prev => ({ ...prev, [serverId]: action }));
+    try {
+      await fetch(`${API}/servers/${serverId}/power`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ signal: action }),
+      });
+    } catch { }
+    // Give Docker a moment then refresh
+    setTimeout(() => {
+      if (globalData?.__refreshServers) globalData.__refreshServers();
+      setActionLoading(prev => ({ ...prev, [serverId]: null }));
+    }, 1500);
+  }, [globalData]);
 
   useEffect(() => {
     if (featuredModpacks?.length > 0) return;
@@ -361,10 +422,11 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Clean Server List */}
-        <div className="space-y-6">
-          <div>
-            <div className="flex items-center justify-between mb-4">
+        {/* Two-column: Servers + Activity Feed */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Server List — 2/3 width */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex items-center justify-between">
               <h2 className="text-lg font-medium text-white">Servers</h2>
               <button
                 onClick={() => navigate('/servers')}
@@ -376,8 +438,9 @@ export default function DashboardPage() {
 
             <div className="glassmorphism rounded-xl divide-y divide-white/10">
               {servers.length > 0 ? (
-                servers.slice(0, 5).map((server) => {
+                servers.slice(0, 6).map((server) => {
                   const isRunning = server.status === 'running';
+                  const loading = actionLoading[server.id];
 
                   return (
                     <div
@@ -386,8 +449,7 @@ export default function DashboardPage() {
                       onClick={() => navigate(`/servers/${server.id}`)}
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-400' : 'bg-gray-500'
-                          }`} />
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isRunning ? 'bg-green-400' : 'bg-gray-500'}`} />
                         <div>
                           <div className="text-white font-medium">{server.name}</div>
                           <div className="text-sm text-white/60">
@@ -396,7 +458,26 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        {isRunning ? (
+                          <button
+                            onClick={(e) => quickPower(server.id, 'stop', e)}
+                            disabled={!!loading}
+                            className="p-1.5 rounded-lg bg-red-500/15 text-red-300 hover:bg-red-500/25 border border-red-500/20 transition-colors disabled:opacity-50"
+                            title="Stop server"
+                          >
+                            {loading === 'stop' ? <span className="w-3 h-3 border-2 border-red-300/40 border-t-red-300 rounded-full animate-spin block" /> : <FaStop className="text-xs" />}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => quickPower(server.id, 'start', e)}
+                            disabled={!!loading}
+                            className="p-1.5 rounded-lg bg-green-500/15 text-green-300 hover:bg-green-500/25 border border-green-500/20 transition-colors disabled:opacity-50"
+                            title="Start server"
+                          >
+                            {loading === 'start' ? <span className="w-3 h-3 border-2 border-green-300/40 border-t-green-300 rounded-full animate-spin block" /> : <FaPlay className="text-xs" />}
+                          </button>
+                        )}
                         <span className={`text-xs px-2 py-1 rounded ${isRunning
                             ? 'bg-green-500/15 text-green-200 border border-green-500/30'
                             : 'bg-white/5 text-white/60 border border-white/10'
@@ -421,6 +502,65 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+
+          {/* Activity Feed — 1/3 width */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-medium text-white">Recent Activity</h2>
+            </div>
+
+            <div className="glassmorphism rounded-xl p-4">
+              {activityFeed.length > 0 ? (
+                <div className="space-y-3">
+                  {activityFeed.map((item) => {
+                    const typeIcons = {
+                      server_start: { icon: FaPlay, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+                      server_stop: { icon: FaStop, color: 'text-red-400', bg: 'bg-red-500/15' },
+                      server_crash: { icon: FaExclamationTriangle, color: 'text-orange-400', bg: 'bg-orange-500/15' },
+                      backup: { icon: FaDownload, color: 'text-blue-400', bg: 'bg-blue-500/15' },
+                      scheduled: { icon: FaClock, color: 'text-purple-400', bg: 'bg-purple-500/15' },
+                      security: { icon: FaShieldAlt, color: 'text-yellow-400', bg: 'bg-yellow-500/15' },
+                    };
+                    const cfg = typeIcons[item.type] || { icon: FaInfoCircle, color: 'text-blue-400', bg: 'bg-blue-500/15' };
+                    const Icon = cfg.icon;
+                    const ago = (() => {
+                      if (!item.created_at) return '';
+                      const s = Math.floor((Date.now() - new Date(item.created_at)) / 1000);
+                      if (s < 60) return 'just now';
+                      const m = Math.floor(s / 60);
+                      if (m < 60) return `${m}m ago`;
+                      const h = Math.floor(m / 60);
+                      if (h < 24) return `${h}h ago`;
+                      return `${Math.floor(h / 24)}d ago`;
+                    })();
+
+                    return (
+                      <div key={item.id} className="flex items-start gap-3">
+                        <div className={`mt-0.5 p-1.5 rounded-lg ${cfg.bg} flex-shrink-0`}>
+                          <Icon className={`text-[10px] ${cfg.color}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-white/80 truncate">{item.title}</div>
+                          <div className="text-[11px] text-white/40">{ago}</div>
+                        </div>
+                        {!item.is_read && <span className="w-1.5 h-1.5 rounded-full bg-brand-500 mt-2 flex-shrink-0" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <FaClock className="text-2xl text-white/20 mx-auto mb-2" />
+                  <div className="text-sm text-white/40">No recent activity</div>
+                  <div className="text-xs text-white/30 mt-1">Server events will appear here</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Alerts */}
+        <div className="space-y-6">
 
           {/* Clean Alerts */}
           {alerts.length > 0 && (

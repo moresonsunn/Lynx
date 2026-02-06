@@ -2288,7 +2288,8 @@ class DockerManager:
         return {"id": container.id, "status": container.status}
 
     def stop_server(self, container_id, timeout: int = 60, force: bool = False):
-        """Gracefully stop the Minecraft server inside the container.
+        """Gracefully stop a game server inside the container.
+        Detects the correct stop command for the game type (e.g. 'quit' for Rust, 'stop' for Minecraft).
         Attempts in order: RCON -> attach_socket -> stdin, then Docker stop/kill as fallback.
         """
         container = self._get_container_any(container_id)
@@ -2301,9 +2302,13 @@ class DockerManager:
         if getattr(container, "status", "unknown") != "running":
             return {"id": container.id, "status": container.status, "method": "noop"}
 
+        # Determine the correct stop command for this game
+        stop_cmd = self._get_game_stop_command(container) or "stop"
+        logger.info(f"Stopping server {server_name} with command: {stop_cmd}")
+
         method_used = None
         try:
-            result = self.send_command(container_id, "stop")
+            result = self.send_command(container_id, stop_cmd)
             method_used = result.get("method") if isinstance(result, dict) else None
         except Exception as e:
             logger.warning(f"Failed to send graceful stop to {container_id}: {e}")
@@ -2600,32 +2605,83 @@ class DockerManager:
         logs = container.logs(tail=tail).decode(errors="ignore")
         return {"id": container.id, "logs": logs}
 
+    def _detect_rcon_config(self, container) -> dict:
+        """Detect RCON configuration from container env vars, supporting multiple game types.
+        Returns dict with keys: enabled, password, port, host.
+        """
+        env_vars = container.attrs.get("Config", {}).get("Env", [])
+        env_dict = dict(var.split("=", 1) for var in env_vars if "=" in var)
+        network_settings = container.attrs.get("NetworkSettings", {}).get("Ports", {})
+
+        # Check for RCON password from various game conventions
+        rcon_password = (
+            env_dict.get("RCON_PASSWORD", "")
+            or env_dict.get("RUST_RCON_PASSWORD", "")      # Rust
+            or env_dict.get("SRCDS_RCONPW", "")             # Source engine
+            or env_dict.get("ARK_ADMIN_PASSWORD", "")       # ARK
+            or env_dict.get("ADMIN_PASSWORD", "")            # Generic
+        )
+
+        # Check if RCON is explicitly enabled or implicitly (password set)
+        rcon_enabled_str = env_dict.get("ENABLE_RCON", "").lower()
+        rcon_enabled = rcon_enabled_str == "true" or (rcon_enabled_str == "" and bool(rcon_password))
+
+        # Detect the RCON port from env vars or well-known defaults
+        rcon_port_env = env_dict.get("RCON_PORT", "") or env_dict.get("RUST_RCON_PORT", "")
+        well_known_rcon_ports = {"25575", "28016", "27015", "27020"}
+        if rcon_port_env:
+            well_known_rcon_ports.add(str(rcon_port_env))
+
+        rcon_port = None
+        for port, mappings in (network_settings or {}).items():
+            if port.endswith("/tcp") and mappings:
+                container_port = port.split("/")[0]
+                if container_port in well_known_rcon_ports:
+                    for mapping in mappings:
+                        if "HostPort" in mapping and mapping["HostPort"].isdigit():
+                            rcon_port = int(mapping["HostPort"])
+                            break
+                if rcon_port:
+                    break
+
+        return {
+            "enabled": rcon_enabled,
+            "password": rcon_password,
+            "port": rcon_port,
+            "host": "localhost",
+            "env_dict": env_dict,
+        }
+
+    def _get_game_stop_command(self, container) -> str | None:
+        """Look up the game-specific stop command from steam_games config using container labels."""
+        labels = (container.attrs.get("Config", {}) or {}).get("Labels", {}) or {}
+        game_slug = labels.get("steam.game", "")
+        if not game_slug:
+            return None
+        try:
+            from steam_games import STEAM_GAMES
+            game_config = STEAM_GAMES.get(game_slug, {})
+            return game_config.get("server_commands", {}).get("stop")
+        except Exception:
+            return None
+
     def send_command(self, container_id: str, command: str) -> dict:
         """
-        Sendet einen Befehl an den Minecraft-Server im Container.
-        Versucht zuerst RCON, dann attach_socket, dann stdin-Fallback.
+        Send a command to a game server container.
+        Tries RCON first, then attach_socket, then stdin fallback.
+        Supports Minecraft, Rust, Source engine, and other game servers.
         """
         container = self._get_container_any(container_id)
 
         try:
-            
-            env_vars = container.attrs.get("Config", {}).get("Env", [])
-            env_dict = dict(var.split("=", 1) for var in env_vars if "=" in var)
-
-            rcon_enabled = env_dict.get("ENABLE_RCON", "false").lower() == "true"
-            rcon_password = env_dict.get("RCON_PASSWORD", "")
-
+            rcon_cfg = self._detect_rcon_config(container)
+            rcon_enabled = rcon_cfg["enabled"]
+            rcon_password = rcon_cfg["password"]
+            rcon_port = rcon_cfg["port"]
+            rcon_host = rcon_cfg["host"]
+            env_dict = rcon_cfg["env_dict"]
             
             network_settings = container.attrs.get("NetworkSettings", {}).get("Ports", {})
-            rcon_port = None
-            rcon_host = "localhost"
-            for port, mappings in (network_settings or {}).items():
-                if port.endswith("/tcp") and mappings:
-                    for mapping in mappings:
-                        if "HostPort" in mapping and mapping["HostPort"].isdigit():
-                            
-                            if port.startswith("25575") or str(env_dict.get("RCON_PORT", "25575")) in port:
-                                rcon_port = int(mapping["HostPort"])
 
             if rcon_enabled and rcon_password and rcon_port:
                 try:
@@ -2915,20 +2971,10 @@ class DockerManager:
             try:
                 from mcrcon import MCRcon
 
-                rcon_enabled = env_dict.get("ENABLE_RCON", "false").lower() == "true"
-                rcon_password = env_dict.get("RCON_PASSWORD", "")
-                rcon_port_env = env_dict.get("RCON_PORT", "25575")
+                rcon_cfg = self._detect_rcon_config(container)
 
-                rcon_port = None
-                for port, mappings in (network_settings or {}).items():
-                    if port.endswith("/tcp") and (port.startswith(str(rcon_port_env)) or port.startswith("25575")):
-                        if mappings and isinstance(mappings, list) and len(mappings) > 0:
-                            hostp = mappings[0].get("HostPort") if isinstance(mappings[0], dict) else None
-                            rcon_port = int(hostp) if hostp else None
-                            break
-
-                if rcon_enabled and rcon_password and rcon_port:
-                    with MCRcon("localhost", rcon_password, port=rcon_port, timeout=2) as mcr:
+                if rcon_cfg["enabled"] and rcon_cfg["password"] and rcon_cfg["port"]:
+                    with MCRcon("localhost", rcon_cfg["password"], port=rcon_cfg["port"], timeout=2) as mcr:
                         output = mcr.command("list") or ""
                         text = str(output)
                         online = 0

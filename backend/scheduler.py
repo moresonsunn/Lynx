@@ -196,6 +196,18 @@ class TaskScheduler:
                 
                 logger.info(f"Backup completed for {server_name}: {result['file']}")
                 
+                try:
+                    from settings_routes import send_notification
+                    size_mb = round(result.get("size", 0) / (1024 * 1024), 1)
+                    send_notification(
+                        "backup",
+                        f"💾 Backup Complete: {server_name}",
+                        f"Automatic backup for **{server_name}** completed ({size_mb} MB).",
+                        color=3447003  # Blue
+                    )
+                except Exception:
+                    pass
+                
             except Exception as e:
                 logger.error(f"Backup task failed for {server_name or 'unknown'}: {e}")
             

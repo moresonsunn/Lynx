@@ -19,6 +19,7 @@ import {
   FaTerminal,
   FaCube,
   FaPlug,
+  FaPuzzlePiece,
 } from 'react-icons/fa';
 
 
@@ -33,6 +34,7 @@ import EditingPanel from '../components/server-details/EditingPanel';
 import ModsPanel from '../components/server-details/ModsPanel';
 import PluginsPanel from '../components/server-details/PluginsPanel';
 import SteamModsPanel from '../components/server-details/SteamModsPanel';
+import ModManagerPanel from '../components/server-details/ModManagerPanel';
 import ConfirmModal from '../components/ConfirmModal';
 
 
@@ -127,6 +129,7 @@ export default function ServerDetailsPage() {
     // Add Mods tab for Fabric/Forge/NeoForge
     if (isModdedServer) {
       base.splice(3, 0, { id: 'mods', label: 'Mods', icon: FaCube });
+      base.splice(4, 0, { id: 'mod-manager', label: 'Mod Manager', icon: FaPuzzlePiece });
     }
 
     // Add Plugins tab for Paper/Purpur/Spigot
@@ -473,6 +476,12 @@ export default function ServerDetailsPage() {
 
         {activeTab === 'plugins' && (
           <PluginsPanel
+            serverName={server.name}
+          />
+        )}
+
+        {activeTab === 'mod-manager' && (
+          <ModManagerPanel
             serverName={server.name}
           />
         )}

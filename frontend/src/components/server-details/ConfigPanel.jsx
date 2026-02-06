@@ -1,11 +1,87 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { FaMemory, FaMicrochip, FaNetworkWired, FaSave } from 'react-icons/fa';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { FaMemory, FaMicrochip, FaNetworkWired, FaSave, FaMagic, FaCheck } from 'react-icons/fa';
 import { useTranslation } from '../../i18n';
 import { API } from '../../lib/api';
+import { authHeaders } from '../../lib/api';
 
 // Simple in-memory cache for Config per server
 const CONFIG_CACHE = {}; // { [serverName]: { ts, propsData, eulaAccepted, javaVersions, currentVersion, propsText } }
 const CACHE_TTL_MS = 60_000;
+
+// ===== Config Templates Component =====
+function ConfigTemplates({ serverName, onApplied }) {
+  const [templates, setTemplates] = useState(null);
+  const [applying, setApplying] = useState(null);
+  const [applied, setApplied] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API}/config-management/templates`, { headers: authHeaders() });
+        if (r.ok && !cancelled) {
+          const d = await r.json();
+          setTemplates(d.templates || []);
+        }
+      } catch { }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const applyTemplate = useCallback(async (templateName) => {
+    setApplying(templateName);
+    setApplied(null);
+    try {
+      const r = await fetch(`${API}/config-management/templates/apply/${encodeURIComponent(serverName)}?template_name=${encodeURIComponent(templateName)}&merge=true`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      });
+      if (r.ok) {
+        setApplied(templateName);
+        onApplied?.();
+        setTimeout(() => setApplied(null), 3000);
+      }
+    } catch { }
+    setApplying(null);
+  }, [serverName, onApplied]);
+
+  if (!templates || templates.length === 0) return null;
+
+  return (
+    <div className="mb-6 p-4 bg-white/5 border border-white/10 rounded-lg">
+      <div className="flex items-center gap-2 mb-3">
+        <FaMagic className="text-brand-400 text-sm" />
+        <div className="text-sm font-medium text-white">Quick Presets</div>
+        <div className="text-xs text-white/40 ml-1">One-click config templates</div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {templates.map((tpl) => {
+          const isApplying = applying === tpl.name;
+          const wasApplied = applied === tpl.name;
+          return (
+            <button
+              key={tpl.name}
+              onClick={() => applyTemplate(tpl.name)}
+              disabled={!!applying}
+              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
+                wasApplied
+                  ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
+                  : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white hover:border-white/20'
+              } disabled:opacity-50`}
+              title={tpl.description}
+            >
+              <span>{tpl.icon || '⚙️'}</span>
+              <span>{tpl.name}</span>
+              {isApplying && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {wasApplied && <FaCheck className="text-emerald-400 text-xs" />}
+            </button>
+          );
+        })}
+      </div>
+      <div className="text-[11px] text-white/30 mt-2">Applies settings to server.properties. Merges with existing config — only matching keys are overwritten. Restart to take effect.</div>
+    </div>
+  );
+}
 
 export default function ConfigPanel({ server, onRestart }) {
   const { t } = useTranslation();
@@ -380,6 +456,9 @@ export default function ConfigPanel({ server, onRestart }) {
         </div>
         {eulaError && <div className="text-xs text-red-400 mt-2">{eulaError}</div>}
       </div>
+
+      {/* Config Templates — One-Click Presets */}
+      <ConfigTemplates serverName={server.name} onApplied={() => setRefreshNonce(n => n + 1)} />
 
       {/* Two-column layout: left = Java/EULA/Icon, right = Quick Settings */}
       <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">

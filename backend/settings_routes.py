@@ -127,7 +127,8 @@ def save_settings(settings: Dict[str, Any]) -> None:
 
 def send_notification(event_type: str, title: str, message: str, color: int = 5814783) -> bool:
     """
-    Send a notification via configured webhook if the event type is enabled.
+    Send a notification via configured webhook AND create in-app notifications
+    for all active users.
     
     event_type: One of 'server_crash', 'server_start', 'server_stop', 'high_cpu', 'high_memory', 'disk_space'
     Returns True if sent successfully, False otherwise.
@@ -135,6 +136,35 @@ def send_notification(event_type: str, title: str, message: str, color: int = 58
     import requests
     import datetime
     
+    # --- Create in-app notification for all users ---
+    try:
+        from database import SessionLocal
+        from models import Notification, User
+        db = SessionLocal()
+        try:
+            users = db.query(User).filter(User.is_active == True).all()
+            # Strip markdown/emoji for clean in-app display
+            clean_title = title.replace("**", "").strip()
+            clean_message = message.replace("**", "").strip()
+            for user in users:
+                notif = Notification(
+                    user_id=user.id,
+                    notification_type=event_type,
+                    title=clean_title,
+                    message=clean_message,
+                    data={"color": color, "event_type": event_type},
+                )
+                db.add(notif)
+            db.commit()
+        except Exception as db_err:
+            db.rollback()
+            print(f"Failed to create in-app notifications: {db_err}")
+        finally:
+            db.close()
+    except Exception as outer_err:
+        print(f"Failed to init DB for notifications: {outer_err}")
+    
+    # --- Send external webhook ---
     settings = load_settings()
     notif = settings.get("notifications", {})
     webhook_url = notif.get("webhook_url", "")
