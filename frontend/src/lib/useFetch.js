@@ -5,6 +5,13 @@ const apiCache = new Map();
 const etagCache = new Map(); // url -> etag
 const DEFAULT_CACHE_DURATION = 30000; // 30s
 
+function _getAuthHeaders() {
+  try {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('lynx_auth_token') : '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch { return {}; }
+}
+
 export function useFetch(url, deps = [], options = {}) {
   const { cacheEnabled = true, cacheDuration = DEFAULT_CACHE_DURATION } = options;
   const [data, setData] = useState(null);
@@ -33,7 +40,7 @@ export function useFetch(url, deps = [], options = {}) {
     setLoading(true);
     setError(null);
 
-    const headers = {};
+    const headers = { ..._getAuthHeaders() };
     const prevEtag = etagCache.get(url);
     if (prevEtag) headers['If-None-Match'] = prevEtag;
 

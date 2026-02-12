@@ -106,18 +106,53 @@ def _download_to(path: Path, url: str, headers: dict | None = None, timeout: int
                     f.write(chunk)
 
 def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
-    """Best-effort removal of client-only mods using metadata, with optional pattern overrides.
+    """Comprehensive removal of client-only mods using the multi-strategy detection engine.
 
-    Rules:
-    - Inspect Fabric/Quilt JSON: environment == "client" => client-only
-    - Inspect Forge mods.toml: client-only hints (side/clientSideOnly/onlyClient)
-    - Inspect NeoForge neoforge.mods.toml: client-only hints
-    - No built-in name patterns. Optional patterns can be supplied via:
-      ENV `CLIENT_ONLY_MOD_PATTERNS` (comma-separated),
-      ENV `CLIENT_ONLY_MOD_PATTERNS_URL` (one per line),
-      files `client-only-mods.txt` in server folder or `/data/servers/client-only-mods.txt`.
-    - Whitelisting via `client-only-allow.txt` in server folder or `/data/servers/client-only-allow.txt`.
+    Detection strategies (in order of reliability):
+    1. JAR metadata (fabric.mod.json environment, quilt.mod.json, mods.toml clientSideOnly, entrypoints)
+    2. Known client-only mod database (800+ known mod IDs)
+    3. Modrinth API lookup (client_side/server_side fields)
+    4. Filename pattern matching (lowest confidence fallback)
+    5. User allow/deny lists from config files and env vars
     """
+    try:
+        from client_mod_filter import filter_client_mods
+
+        # Get CurseForge API key if available
+        cf_api_key = None
+        try:
+            from integrations_store import get_integration_key
+            cf_api_key = get_integration_key("curseforge")
+        except Exception:
+            pass
+
+        summary = filter_client_mods(
+            server_dir=target_dir,
+            use_api=True,
+            cf_api_key=cf_api_key,
+            min_confidence=0.75,
+            dry_run=False,
+            push_event=push_event,
+        )
+
+        moved = summary.get("client_only_moved", 0)
+        if moved:
+            push_event({
+                "type": "progress",
+                "step": "mods",
+                "message": f"Filtered {moved} client-only mods → mods-disabled-client/",
+                "progress": 61,
+            })
+    except Exception as e:
+        # Fallback: best-effort legacy approach if the new engine fails
+        try:
+            _purge_client_only_mods_legacy(target_dir, push_event)
+        except Exception:
+            pass
+
+
+def _purge_client_only_mods_legacy(target_dir: Path, push_event=lambda ev: None):
+    """Legacy fallback for client mod filtering (no API, basic patterns only)."""
     try:
         mods_dir = target_dir / "mods"
         if not mods_dir.exists() or not mods_dir.is_dir():
@@ -125,175 +160,40 @@ def _purge_client_only_mods(target_dir: Path, push_event=lambda ev: None):
         disable_dir = target_dir / "mods-disabled-client"
         disable_dir.mkdir(parents=True, exist_ok=True)
 
-        # Collect optional patterns from env/URL/files (all lowercased)
-        # Extended built-in list of known client-only mods for comprehensive detection
-        patterns: list[str] = [
-            # Rendering/Graphics mods
-            "oculus", "iris", "sodium", "embeddium", "rubidium", "magnesium",
-            "optifine", "optifabric", "lambdynamiclights", "dynamicfps", "dynamic-fps", "dynamic_fps",
-            "canvas-renderer", "immediatelyfast", "entityculling", "fpsreducer", "fps_reducer",
-            "enhancedvisuals", "better-clouds", "falling-leaves", "visuality", "cull-less-leaves",
-            "particlerain", "drippyloadingscreen", "starlight-fabric", "phosphor",
-            
-            # UI/HUD mods (NOTE: jei, rei, emi are dual-sided, NOT client-only)
-            "xaero", "xaeros", "journeymap", "voxelmap", "worldmap", "minimap",
-            "betterf3", "better-f3", "appleskin", "itemphysic", "jade", "hwyla", "waila",
-            "wthit", "justmap", "torohealth",
-            "blur", "controlling", "mod-menu", "modmenu", "configured", "catalogue",
-            "smoothboot", "smooth-boot", "loadingscreen", "mainmenu", "panoramafix",
-            "betterthirdperson", "freelook", "cameraoverhaul", "citresewn", "cit-resewn",
-            
-            # Audio/Sound mods
-            "presence-footsteps", "presencefootsteps", "soundphysics", "ambientsounds",
-            "dynamic-music", "extrasounds", "dripsounds", "auditory",
-            
-            # Recording/Streaming
-            "replaymod", "replay-mod", "replay_mod", "worldedit-cui", "axiom",
-            
-            # Cosmetics
-            "skinlayers3d", "skin-layers", "ears", "figura", "customskinloader",
-            "more-player-models", "playeranimator", "emotes", "emotecraft",
-            
-            # Client utilities
-            "litematica", "minihud", "tweakeroo", "malilib", "itemscroller", "tweakermore",
-            "freecam", "flycam", "keystrokes", "betterpvp", "5zig", "labymod",
-            "schematica", "worldeditcui", "wecui", "light-overlay", "lightoverlay",
-            
-            # Framework keywords (may appear in some client-only libs)
-            "particular", "framework",
-            "reeses_sodium_options", "rrls", "respackopt",
-            "fancymenu", "konkrete",
-        ]
-        
-        # Load Allowed Patterns
-        allowed_patterns: list[str] = []
-        try:
-            for cfg in [target_dir / "client-only-allow.txt", Path("/data/servers/client-only-allow.txt")]:
-                if cfg.exists():
-                    for line in cfg.read_text(encoding="utf-8", errors="ignore").splitlines():
-                        line = (line or "").strip().lower()
-                        if not line or line.startswith("#"):
-                            continue
-                        allowed_patterns.append(line)
-        except Exception:
-            pass
-
-        try:
-            extra_env = os.environ.get("CLIENT_ONLY_MOD_PATTERNS", "").strip()
-            if extra_env:
-                for tok in extra_env.split(","):
-                    tok = tok.strip().lower()
-                    if tok:
-                        patterns.append(tok)
-        except Exception:
-            pass
-        try:
-            url = os.environ.get("CLIENT_ONLY_MOD_PATTERNS_URL", "").strip()
-            if url:
-                try:
-                    rr = requests.get(url, timeout=10)
-                    if rr.ok:
-                        for line in rr.text.splitlines():
-                            line = (line or "").strip().lower()
-                            if not line or line.startswith("#"):
-                                continue
-                            patterns.append(line)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        try:
-            for cfg in [target_dir / "client-only-mods.txt", Path("/data/servers/client-only-mods.txt")]:
-                if cfg.exists():
-                    for line in cfg.read_text(encoding="utf-8", errors="ignore").splitlines():
-                        line = (line or "").strip().lower()
-                        if not line or line.startswith("#"):
-                            continue
-                        patterns.append(line)
-        except Exception:
-            pass
-
         moved = 0
         for jar in mods_dir.glob("*.jar"):
-            name = jar.name.lower()
-            
-            # Check Allow list first
-            if allowed_patterns and any(pat in name for pat in allowed_patterns):
-                continue
-
             client_only = False
-            has_metadata = False
-            # Inspect contents for Fabric/Quilt/Forge/NeoForge metadata flags
             try:
                 with zipfile.ZipFile(jar, 'r') as zf:
-                    try:
-                        if 'fabric.mod.json' in zf.namelist():
-                            has_metadata = True
-                            import json as _json
-                            raw = zf.read('fabric.mod.json')
-                            data = _json.loads(raw.decode('utf-8', errors='ignore'))
-                            env = str((data or {}).get('environment') or '').strip().lower()
-                            if env == 'client':
-                                client_only = True
-                    except Exception:
-                        pass
-                    try:
-                        if not client_only and 'quilt.mod.json' in zf.namelist():
-                            has_metadata = True
-                            import json as _json
-                            raw = zf.read('quilt.mod.json')
-                            data = _json.loads(raw.decode('utf-8', errors='ignore'))
-                            env = str((data or {}).get('environment') or '').strip().lower()
-                            if env == 'client':
-                                client_only = True
-                    except Exception:
-                        pass
-                    try:
-                        if not client_only and 'META-INF/mods.toml' in zf.namelist():
-                            has_metadata = True
-                            txt = zf.read('META-INF/mods.toml').decode('utf-8', errors='ignore').lower()
-                            # Strict Forge heuristic
-                            if ('clientsideonly=true' in txt) or ('onlyclient=true' in txt) or ('client_only=true' in txt):
-                                client_only = True
-                    except Exception:
-                        pass
-                    try:
-                        if not client_only and 'META-INF/neoforge.mods.toml' in zf.namelist():
-                            has_metadata = True
-                            txt = zf.read('META-INF/neoforge.mods.toml').decode('utf-8', errors='ignore').lower()
-                            # NeoForge uses similar TOML structure
-                            if ('clientsideonly=true' in txt) or ('onlyclient=true' in txt) or ('client_only=true' in txt):
-                                client_only = True
-                    except Exception:
-                        pass
+                    names = zf.namelist()
+                    if 'fabric.mod.json' in names:
+                        data = json.loads(zf.read('fabric.mod.json').decode('utf-8', errors='ignore'))
+                        if str(data.get('environment', '')).lower() == 'client':
+                            client_only = True
+                    if not client_only and 'quilt.mod.json' in names:
+                        data = json.loads(zf.read('quilt.mod.json').decode('utf-8', errors='ignore'))
+                        if str(data.get('environment', '')).lower() == 'client':
+                            client_only = True
+                    if not client_only:
+                        for toml in ('META-INF/mods.toml', 'META-INF/neoforge.mods.toml'):
+                            if toml in names:
+                                txt = zf.read(toml).decode('utf-8', errors='ignore').lower()
+                                if 'clientsideonly=true' in txt.replace(' ', '') or 'clientsideonly = true' in txt:
+                                    client_only = True
+                                    break
             except Exception:
                 pass
-            # Optional fallback to provided name-patterns only (only if no metadata at all)
-            if not client_only and not has_metadata and patterns and any(pat in name for pat in patterns):
-                client_only = True
-            
+
             if client_only:
-                dest = disable_dir / jar.name
                 try:
-                    shutil.move(str(jar), str(dest))
+                    shutil.move(str(jar), str(disable_dir / jar.name))
                     moved += 1
-                    push_event({
-                        "type": "progress",
-                        "step": "mods",
-                        "message": f"Disabled likely client-only mod: {jar.name}",
-                        "progress": 60
-                    })
+                    push_event({"type": "progress", "step": "mods", "message": f"Disabled client mod: {jar.name}", "progress": 60})
                 except Exception:
                     continue
         if moved:
-            push_event({
-                "type": "progress",
-                "step": "mods",
-                "message": f"Moved {moved} client-only mods to mods-disabled-client/",
-                "progress": 61
-            })
+            push_event({"type": "progress", "step": "mods", "message": f"Moved {moved} client-only mods to mods-disabled-client/", "progress": 61})
     except Exception:
-        # Best-effort only
         pass
 
 def _ensure_server_jar(

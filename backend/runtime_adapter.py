@@ -388,8 +388,127 @@ class LocalAdapter:
     def get_player_info(self, container_id: str) -> Dict:
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
-            return {"online": 0, "max": 0, "names": []}
-        return {"online": 0, "max": 0, "names": []}
+            try:
+                return self._get_docker().get_player_info(steam_id)
+            except Exception:
+                return {"online": 0, "max": 0, "names": [], "method": "error"}
+
+        # --- Minecraft local-mode player detection ---
+        # Try mcstatus first, then RCON, then log parsing
+        meta = self.local._load_meta(container_id) if hasattr(self.local, '_load_meta') else {}
+        host_port = meta.get("host_port") or MINECRAFT_PORT
+
+        # Strategy 1: mcstatus query
+        try:
+            from mcstatus import JavaServer
+            server = JavaServer("localhost", port=int(host_port))
+            status_resp = server.status(timeout=3)
+            players = getattr(status_resp, "players", None)
+            online = int(getattr(players, "online", 0) or 0) if players else 0
+            maxp = int(getattr(players, "max", 0) or 0) if players else 0
+            names: List[str] = []
+            sample = getattr(players, "sample", None) if players else None
+            if sample:
+                for p in sample:
+                    nm = getattr(p, "name", None)
+                    if nm is None and isinstance(p, dict):
+                        nm = p.get("name")
+                    if nm:
+                        names.append(str(nm))
+            if names or online == 0:
+                return {"online": online, "max": maxp, "names": names, "method": "mcstatus"}
+            # If mcstatus gave a count but no names, keep trying RCON
+            mcstatus_result = {"online": online, "max": maxp, "names": [], "method": "mcstatus"}
+        except Exception:
+            mcstatus_result = None
+
+        # Strategy 2: RCON (read port/password from server.properties)
+        try:
+            server_dir = SERVERS_ROOT / container_id
+            props_file = server_dir / "server.properties"
+            if props_file.exists():
+                props_text = props_file.read_text(encoding="utf-8", errors="ignore")
+                rcon_enabled = False
+                rcon_password = ""
+                rcon_port = 25575
+                for line in props_text.splitlines():
+                    line = line.strip()
+                    if line.startswith("enable-rcon="):
+                        rcon_enabled = line.split("=", 1)[1].strip().lower() == "true"
+                    elif line.startswith("rcon.password="):
+                        rcon_password = line.split("=", 1)[1].strip()
+                    elif line.startswith("rcon.port="):
+                        try:
+                            rcon_port = int(line.split("=", 1)[1].strip())
+                        except Exception:
+                            pass
+
+                if rcon_enabled and rcon_password:
+                    from mcrcon import MCRcon
+                    with MCRcon("localhost", rcon_password, port=rcon_port, timeout=3) as mcr:
+                        output = mcr.command("list") or ""
+                        text = str(output)
+                        online_r = 0
+                        maxp_r = 0
+                        names_r: List[str] = []
+                        m = re.search(r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", text)
+                        if not m:
+                            m = re.search(r"(\d+)\s*/\s*(\d+)\s*players? online", text)
+                        if m:
+                            online_r = int(m.group(1))
+                            maxp_r = int(m.group(2))
+                            colon_idx = text.find(":")
+                            if colon_idx != -1 and colon_idx + 1 < len(text):
+                                names_str = text[colon_idx + 1:].strip()
+                                if names_str:
+                                    names_r = [n.strip() for n in names_str.split(",") if n.strip()]
+                        if names_r:
+                            return {"online": online_r, "max": maxp_r, "names": names_r, "method": "rcon"}
+                        elif mcstatus_result and mcstatus_result["online"] > online_r:
+                            return {"online": mcstatus_result["online"], "max": max(maxp_r, mcstatus_result.get("max", 0)), "names": names_r, "method": "rcon+mcstatus"}
+                        else:
+                            return {"online": online_r, "max": maxp_r, "names": names_r, "method": "rcon"}
+        except Exception:
+            pass
+
+        # Strategy 3: Parse latest.log for online players
+        try:
+            server_dir = SERVERS_ROOT / container_id
+            log_file = server_dir / "logs" / "latest.log"
+            if log_file.exists():
+                log_text = log_file.read_text(encoding="utf-8", errors="ignore")
+                lines = log_text.splitlines()
+                # Track joins and leaves to compute currently-online set
+                online_set: Dict[str, bool] = {}  # name -> True if online
+                joined_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
+                left_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out|lost connection)", re.IGNORECASE)
+                # Also detect server stop/restart which clears all online players
+                stop_re = re.compile(r"(Stopping the server|Stopping server|Server closed|Closing Server)", re.IGNORECASE)
+                for line in lines:
+                    if stop_re.search(line):
+                        online_set.clear()
+                        continue
+                    jm = joined_re.search(line)
+                    if jm:
+                        online_set[jm.group(1)] = True
+                        continue
+                    lm = left_re.search(line)
+                    if lm:
+                        online_set.pop(lm.group(1), None)
+                        continue
+                names_log = [n for n, v in online_set.items() if v]
+                if names_log or mcstatus_result is None:
+                    online_count = len(names_log)
+                    if mcstatus_result and mcstatus_result["online"] > online_count:
+                        online_count = mcstatus_result["online"]
+                    return {"online": online_count, "max": mcstatus_result.get("max", 0) if mcstatus_result else 0, "names": names_log, "method": "log_parse"}
+        except Exception:
+            pass
+
+        # Fallback: return mcstatus partial result or empty
+        if mcstatus_result:
+            return mcstatus_result
+        return {"online": 0, "max": 0, "names": [], "method": "none"}
 
     def get_server_info(self, container_id: str) -> Dict:
         steam_id = self._resolve_steam_id(container_id)

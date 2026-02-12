@@ -69,6 +69,7 @@ from api_management_routes import router as api_management_router
 from plugins_routes import router as plugins_router
 from realtime_routes import router as realtime_router
 from advanced_api_routes import router as advanced_api_router
+from client_mod_routes import router as client_mod_router
 from auth import require_auth, get_current_user, require_admin, require_moderator, get_password_hash, verify_token, get_user_by_username
 from scheduler import get_scheduler
 from models import User
@@ -199,6 +200,7 @@ app.include_router(mods_router)
 app.include_router(analytics_router)
 app.include_router(multi_server_router)
 app.include_router(mods_enhanced_router)
+app.include_router(client_mod_router)
 app.include_router(backup_advanced_router)
 app.include_router(player_enhanced_router)
 # Quality of Life Features
@@ -680,6 +682,14 @@ def start_server(container_id: str):
 def stop_server(container_id: str):
     try:
         return get_docker_manager().stop_server(container_id)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
+
+@app.post("/servers/{container_id}/restart")
+@app.post("/api/servers/{container_id}/restart")
+def restart_server(container_id: str):
+    try:
+        return get_docker_manager().restart_server(container_id)
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 

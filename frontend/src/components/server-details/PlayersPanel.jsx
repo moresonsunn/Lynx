@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useTranslation } from '../../i18n';
-import { API } from '../../lib/api';
+import { API, authHeaders } from '../../context/AppContext';
 /* eslint-disable */
 export default function PlayersPanel({ serverId, serverName, focusPlayer = '', onFocusConsumed }) {
   const { t } = useTranslation();
@@ -21,8 +21,8 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
 
   async function fetchRoster() {
     try {
-      if (!sName) { setPlayers([]); setMethod('missing'); return; }
-      const r = await fetch(`${API}/players/${encodeURIComponent(sName)}/roster`);
+      if (!sName) { setOnline([]); setOffline([]); setMethod('missing'); return; }
+      const r = await fetch(`${API}/players/${encodeURIComponent(sName)}/roster`, { headers: authHeaders() });
       if (!r.ok) {
         setOnline([]);
         setOffline([]);
@@ -90,7 +90,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
     if (!sName) return;
     await fetch(`${API}/players/${encodeURIComponent(sName)}/${endpoint}`, {
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: body ? { 'Content-Type': 'application/json', ...authHeaders() } : authHeaders(),
       body: body ? JSON.stringify(body) : undefined,
     });
   }
@@ -99,7 +99,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
     try {
       if (!sName) return;
       await fetch(`${API}/players/${encodeURIComponent(sName)}/${action}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_name: player, action_type: action, reason: reasonArg })
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ player_name: player, action_type: action, reason: reasonArg })
       });
       await fetchRoster();
     } catch (e) {
@@ -110,7 +110,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
   async function deop(player) {
     try {
       if (!sName) return;
-      await fetch(`${API}/players/${encodeURIComponent(sName)}/op/${encodeURIComponent(player)}`, { method: 'DELETE' });
+      await fetch(`${API}/players/${encodeURIComponent(sName)}/op/${encodeURIComponent(player)}`, { method: 'DELETE', headers: authHeaders() });
       await fetchRoster();
     } catch (e) { console.error(e); }
   }
@@ -119,7 +119,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
     const msg = window.prompt(`Message to ${player}`);
     if (!msg) return;
     try {
-      await fetch(`${API}/servers/${serverId}/command`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: `tell ${player} ${msg}` }) });
+      await fetch(`${API}/servers/${serverId}/command`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ command: `tell ${player} ${msg}` }) });
     } catch (e) { console.error(e); }
   }
 

@@ -158,6 +158,8 @@ async def get_player_roster(server_name: str, current_user: User = Depends(requi
     """
     
     online_names: list[str] = []
+    online_count = 0
+    max_players = 0
     method = None
     try:
         dm = get_docker_manager()
@@ -170,11 +172,15 @@ async def get_player_roster(server_name: str, current_user: User = Depends(requi
             raise HTTPException(status_code=400, detail="Server container not found")
         info = dm.get_player_info(cid)
         online_names = [n for n in (info.get("names") or []) if isinstance(n, str)]
+        online_count = info.get("online") or len(online_names)
+        max_players = info.get("max") or 0
         method = info.get("method") or "unknown"
     except HTTPException:
         raise
     except Exception:
         online_names = []
+        online_count = 0
+        max_players = 0
         method = "error"
 
     
@@ -187,7 +193,13 @@ async def get_player_roster(server_name: str, current_user: User = Depends(requi
         offline.append({"name": rec.get("name"), "last_seen": rec.get("last_seen")})
     
     offline.sort(key=lambda x: (x.get("last_seen") or 0), reverse=True)
-    return {"online": online_names, "offline": offline, "method": method}
+    return {
+        "online": online_names,
+        "offline": offline,
+        "method": method,
+        "count": online_count,
+        "max": max_players,
+    }
 
 @router.get("/{server_name}/actions", response_model=List[PlayerActionResponse])
 async def list_player_actions(

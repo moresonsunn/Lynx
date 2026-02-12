@@ -765,8 +765,42 @@ class DockerManager:
                 java_bin = f"/usr/local/bin/java{java_version}"
             if "mc.env.JAVA_OPTS" in labels:
                 java_opts = labels["mc.env.JAVA_OPTS"]
-            
-            
+
+            # ── Runtime detection of Java version & server version ──
+            # If values are missing or defaulted, try to detect them from
+            # the running container and its filesystem.
+            java_from_label = "mc.java_version" in labels
+            java_from_env = any(
+                e.startswith("JAVA_VERSION=") or e.startswith("JAVA_VERSION_OVERRIDE=")
+                for e in env_vars
+            )
+            if server_kind == "minecraft":
+                # --- Detect Java version from running container ---
+                if not java_from_label and not java_from_env and container.status == "running":
+                    try:
+                        detected_java = self._get_java_version(container)
+                        if detected_java:
+                            java_version = detected_java
+                    except Exception:
+                        pass
+
+                # --- Detect server version / type from logs & filesystem ---
+                if not server_version or not server_type:
+                    try:
+                        detect_out = {
+                            "server_version": server_version,
+                            "server_type": server_type,
+                            "loader_version": loader_version,
+                        }
+                        self._detect_version_from_runtime(
+                            container, labels, mounts, detect_out,
+                        )
+                        server_version = detect_out.get("server_version") or server_version
+                        server_type = detect_out.get("server_type") or server_type
+                        loader_version = detect_out.get("loader_version") or loader_version
+                    except Exception:
+                        pass
+
             port_mappings = {}
             steam_ports: List[Dict[str, object]] = []
             raw_ports = network.get("Ports", {})
@@ -1040,24 +1074,19 @@ class DockerManager:
         Returns None if Java is not found or error occurs.
         """
         try:
-            
             container.reload()
             if container.status != "running":
-                logger.warning(f"Container {container.id} is not running (status: {container.status})")
                 return None
-                
-            exit_code, output = container.exec_run("java -version", stderr=True, stdout=False)
+
+            exit_code, output_bytes = container.exec_run(
+                "java -version", stderr=True, stdout=False
+            )
             if exit_code != 0:
                 return None
-            
-            
-            output_bytes = container.exec_run("java -version", stderr=True, stdout=False)[1]
+
             output_text = output_bytes.decode(errors="ignore")
-            
-            
-            
-            
-            match = re.search(r'version "(.*?)"', output_text)
+            # e.g. 'openjdk version "17.0.8" 2023-07-18'
+            match = re.search(r'version "([^"]+)"', output_text)
             if match:
                 return match.group(1)
             return None
@@ -1070,6 +1099,165 @@ class DockerManager:
         except Exception as e:
             logger.warning(f"Could not get Java version from container {container.id}: {e}")
             return None
+
+    def _detect_version_from_runtime(
+        self,
+        container,
+        labels: dict,
+        mounts: list,
+        out: dict,
+    ) -> None:
+        """Detect server_version, server_type, and loader_version from container
+        logs and the server filesystem.  Writes results into *out* dict.
+
+        Detection strategies (in priority order):
+        1. ``server_meta.json`` on the mounted volume
+        2. Container logs  – ``Starting minecraft server version X.X.X``
+        3. Container logs  – Forge / Fabric / NeoForge / Paper banners
+        4. ``server.properties``  – motd sometimes contains the version
+        """
+        # --- helpers ---
+        def _read_file_from_mount(relative: str) -> str | None:
+            """Try to read a small file from the first server mount."""
+            try:
+                if not mounts:
+                    return None
+                for m in mounts:
+                    src = m.get("Source") if isinstance(m, dict) else None
+                    if src:
+                        p = Path(src) / relative
+                        if p.is_file():
+                            return p.read_text(encoding="utf-8", errors="ignore")[:32768]
+            except Exception:
+                pass
+            return None
+
+        sv = out.get("server_version")
+        st = out.get("server_type")
+        lv = out.get("loader_version")
+
+        # 1) server_meta.json (written by create_server / modpack installer)
+        try:
+            meta_text = _read_file_from_mount("server_meta.json")
+            if meta_text:
+                meta = json.loads(meta_text)
+                if not sv:
+                    sv = (
+                        meta.get("server_version")
+                        or meta.get("detected_version")
+                        or meta.get("version")
+                        or meta.get("mc_version")
+                    )
+                if not st:
+                    st = meta.get("server_type") or meta.get("type") or meta.get("loader")
+                if not lv:
+                    lv = meta.get("loader_version")
+        except Exception:
+            pass
+
+        # 2) Parse recent container logs (only when running)
+        if (not sv or not st) and container.status == "running":
+            try:
+                log_text = container.logs(tail=300, timestamps=False).decode(errors="ignore")
+
+                # "Starting minecraft server version 1.18.2"
+                if not sv:
+                    m = re.search(
+                        r"Starting minecraft server version\s+(\S+)",
+                        log_text, re.IGNORECASE,
+                    )
+                    if m:
+                        sv = m.group(1)
+
+                # Forge: "Forge mod loading, version 40.3.0 ...  for MC 1.18.2"
+                # or: "MinecraftForge v40.3.0"
+                if not st:
+                    if re.search(r"MinecraftForge|Forge mod loading|FML", log_text, re.IGNORECASE):
+                        st = "forge"
+                        fm = re.search(r"(?:MinecraftForge|Forge mod loading)[^\d]*v?(\d[\d.]+)", log_text)
+                        if fm and not lv:
+                            lv = fm.group(1)
+                    elif re.search(r"NeoForge", log_text, re.IGNORECASE):
+                        st = "neoforge"
+                        nm = re.search(r"NeoForge[^\d]*v?(\d[\d.]+)", log_text)
+                        if nm and not lv:
+                            lv = nm.group(1)
+                    elif re.search(r"\[fabric", log_text, re.IGNORECASE):
+                        st = "fabric"
+                        fm2 = re.search(r"fabricloader[^\d]*(\d[\d.]+)", log_text, re.IGNORECASE)
+                        if fm2 and not lv:
+                            lv = fm2.group(1)
+                    elif re.search(r"Paper|Purpur|Spigot|CraftBukkit", log_text, re.IGNORECASE):
+                        for name in ("purpur", "paper", "spigot", "craftbukkit"):
+                            if re.search(name, log_text, re.IGNORECASE):
+                                st = name
+                                break
+
+                # Version from "This server is running ... version ..."
+                if not sv:
+                    m2 = re.search(
+                        r"This server is running .+?version\s+\S*\(MC:\s*([^)]+)\)",
+                        log_text, re.IGNORECASE,
+                    )
+                    if m2:
+                        sv = m2.group(1).strip()
+            except Exception:
+                pass
+
+        # 3) Persist detected values back to labels so future calls are fast
+        if sv or st or lv:
+            try:
+                update_labels: dict[str, str] = {}
+                if sv and not labels.get("mc.version"):
+                    update_labels["mc.version"] = str(sv)
+                if st and not labels.get("mc.type"):
+                    update_labels["mc.type"] = str(st)
+                if lv and not labels.get("mc.loader_version"):
+                    update_labels["mc.loader_version"] = str(lv)
+                # Note: Docker doesn't support updating labels on a running
+                # container, so we only write to server_meta.json.
+                if update_labels:
+                    self._persist_detected_meta(mounts, update_labels)
+            except Exception:
+                pass
+
+        out["server_version"] = sv
+        out["server_type"] = st
+        out["loader_version"] = lv
+
+    @staticmethod
+    def _persist_detected_meta(mounts: list, values: dict) -> None:
+        """Write detected values into server_meta.json on disk so they persist."""
+        try:
+            if not mounts:
+                return
+            for m in mounts:
+                src = m.get("Source") if isinstance(m, dict) else None
+                if not src:
+                    continue
+                meta_path = Path(src) / "server_meta.json"
+                meta: dict = {}
+                if meta_path.is_file():
+                    try:
+                        meta = json.loads(meta_path.read_text(encoding="utf-8", errors="ignore"))
+                    except Exception:
+                        meta = {}
+                changed = False
+                for k, v in values.items():
+                    # Map label names to meta keys
+                    meta_key = k.replace("mc.", "").replace(".", "_")
+                    if meta_key == "version":
+                        meta_key = "server_version"
+                    if meta_key == "type":
+                        meta_key = "server_type"
+                    if not meta.get(meta_key):
+                        meta[meta_key] = v
+                        changed = True
+                if changed:
+                    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+                return  # only first mount
+        except Exception:
+            pass
 
     def _is_java_version_compatible(self, java_version: str, server_type: str, server_version: str) -> bool:
         """
@@ -2930,6 +3118,7 @@ class DockerManager:
             network_settings = container.attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
 
             
+            mcstatus_result = None
             try:
                 primary = network_settings.get("25565/tcp") if isinstance(network_settings, dict) else None
                 host_port = None
@@ -2963,7 +3152,13 @@ class DockerManager:
                             if nm:
                                 names.append(str(nm))
 
-                    return {"online": online, "max": maxp, "names": names, "method": "mcstatus"}
+                    # If we have names or no players online, return immediately.
+                    # Otherwise, save the count and try RCON/attach to get actual names.
+                    if names or online == 0:
+                        return {"online": online, "max": maxp, "names": names, "method": "mcstatus"}
+                    else:
+                        mcstatus_result = {"online": online, "max": maxp, "names": [], "method": "mcstatus"}
+                        logger.debug(f"mcstatus got count={online} but no names for {container_id}, trying RCON/list")
             except Exception as mc_err:
                 logger.debug(f"mcstatus failed for {container_id}: {mc_err}")
 
@@ -2994,7 +3189,13 @@ class DockerManager:
                                 if names_str:
                                     names = [n.strip() for n in names_str.split(",") if n.strip()]
 
-                        return {"online": online, "max": maxp, "names": names, "method": "rcon"}
+                        # If RCON got names, great. If not but mcstatus had a count, merge.
+                        if names:
+                            return {"online": online, "max": maxp, "names": names, "method": "rcon"}
+                        elif mcstatus_result and mcstatus_result["online"] > online:
+                            return {"online": mcstatus_result["online"], "max": max(maxp, mcstatus_result.get("max", 0)), "names": names, "method": "rcon+mcstatus"}
+                        else:
+                            return {"online": online, "max": maxp, "names": names, "method": "rcon"}
             except Exception as rcon_err:
                 logger.debug(f"RCON list failed for {container_id}: {rcon_err}")
 
@@ -3009,15 +3210,45 @@ class DockerManager:
                         "stream": True
                     })
                     sock._sock.setblocking(True)
+                    sock._sock.settimeout(3)
                     cmd_with_newline = "list\n"
                     sock._sock.send(cmd_with_newline.encode("utf-8"))
-                    time.sleep(0.2)
-                    try:
-                        output = sock._sock.recv(4096).decode(errors="ignore")
-                    except Exception:
-                        output = ""
+                    # Read in a loop to collect all output (Docker stream framing may split data)
+                    collected = b""
+                    deadline = time.time() + 2.0
+                    while time.time() < deadline:
+                        time.sleep(0.15)
+                        try:
+                            chunk = sock._sock.recv(8192)
+                            if chunk:
+                                collected += chunk
+                            else:
+                                break
+                        except Exception:
+                            break
+                        # Stop early if we got the player-list response
+                        if b"players online" in collected or b"of a max" in collected:
+                            break
                     sock.close()
-                    text = str(output)
+                    # Strip Docker stream framing bytes (8-byte header per frame)
+                    raw = collected
+                    cleaned_parts = []
+                    idx = 0
+                    while idx + 8 <= len(raw):
+                        stream_type = raw[idx]
+                        if stream_type in (0, 1, 2):
+                            frame_len = int.from_bytes(raw[idx+4:idx+8], byteorder='big')
+                            frame_data = raw[idx+8:idx+8+frame_len]
+                            cleaned_parts.append(frame_data)
+                            idx += 8 + frame_len
+                        else:
+                            # Not framed output, use raw
+                            cleaned_parts = [raw]
+                            break
+                    if cleaned_parts:
+                        text = b"".join(cleaned_parts).decode(errors="ignore")
+                    else:
+                        text = raw.decode(errors="ignore")
                     import re as _re2
                     m = _re2.search(r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", text)
                     if not m:
@@ -3025,29 +3256,95 @@ class DockerManager:
                     if m:
                         online = int(m.group(1))
                         maxp = int(m.group(2))
-                        colon_idx = text.find(":")
+                        colon_idx = text.find(":", m.end())
+                        if colon_idx == -1:
+                            colon_idx = text.find(":")
                         names = []
                         if colon_idx != -1 and colon_idx + 1 < len(text):
-                            names_str = text[colon_idx + 1:].strip()
+                            # Take text after colon up to end-of-line
+                            rest = text[colon_idx + 1:]
+                            eol = rest.find("\n")
+                            names_str = (rest[:eol] if eol != -1 else rest).strip()
                             if names_str:
                                 names = [n.strip() for n in names_str.split(",") if n.strip()]
-                        return {"online": online, "max": maxp, "names": names, "method": "attach_socket"}
+                        if names or not mcstatus_result:
+                            return {"online": online, "max": maxp, "names": names, "method": "attach_socket"}
+                        elif mcstatus_result:
+                            return {"online": max(online, mcstatus_result["online"]), "max": max(maxp, mcstatus_result.get("max", 0)), "names": names, "method": "attach_socket+mcstatus"}
                 except Exception:
                     pass
 
                 
+                # stdin via exec_run: send "list" command then read server logs for the response
                 try:
                     safe_command = "list\n"
                     exec_cmd = ["sh", "-c", f'echo {shlex.quote(safe_command)} > /proc/1/fd/0']
-                    exit_code, output = container.exec_run(exec_cmd)
+                    exit_code, _ = container.exec_run(exec_cmd)
                     if exit_code == 0:
-                        return {"online": 0, "max": 0, "names": [], "method": "stdin"}
+                        # Wait for server to process command and check recent logs
+                        time.sleep(0.8)
+                        try:
+                            log_output = container.logs(tail=30, timestamps=False).decode(errors="ignore")
+                            import re as _re3
+                            m = _re3.search(r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", log_output)
+                            if not m:
+                                m = _re3.search(r"(\d+)\s*/\s*(\d+)\s*players? online", log_output)
+                            if m:
+                                online = int(m.group(1))
+                                maxp = int(m.group(2))
+                                names = []
+                                colon_idx = log_output.find(":", m.end())
+                                if colon_idx == -1:
+                                    colon_idx = log_output.find(":", m.start())
+                                if colon_idx != -1 and colon_idx + 1 < len(log_output):
+                                    rest = log_output[colon_idx + 1:]
+                                    eol = rest.find("\n")
+                                    names_str = (rest[:eol] if eol != -1 else rest).strip()
+                                    if names_str:
+                                        names = [n.strip() for n in names_str.split(",") if n.strip()]
+                                if names or not mcstatus_result:
+                                    return {"online": online, "max": maxp, "names": names, "method": "stdin_logs"}
+                                elif mcstatus_result:
+                                    return {"online": max(online, mcstatus_result["online"]), "max": max(maxp, mcstatus_result.get("max", 0)), "names": names, "method": "stdin_logs+mcstatus"}
+                        except Exception:
+                            pass
                 except Exception:
                     pass
             except Exception:
                 pass
 
             
+            # Strategy 5: Parse recent container logs for join/leave events
+            try:
+                log_output = container.logs(tail=200, timestamps=False).decode(errors="ignore")
+                lines = log_output.splitlines()
+                online_set = {}
+                joined_re_docker = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
+                left_re_docker = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out|lost connection)", re.IGNORECASE)
+                stop_re_docker = re.compile(r"(Stopping the server|Stopping server|Server closed|Closing Server)", re.IGNORECASE)
+                for line in lines:
+                    if stop_re_docker.search(line):
+                        online_set.clear()
+                        continue
+                    jm = joined_re_docker.search(line)
+                    if jm:
+                        online_set[jm.group(1)] = True
+                        continue
+                    lm = left_re_docker.search(line)
+                    if lm:
+                        online_set.pop(lm.group(1), None)
+                names_from_logs = list(online_set.keys())
+                if names_from_logs:
+                    count = len(names_from_logs)
+                    if mcstatus_result and mcstatus_result["online"] > count:
+                        count = mcstatus_result["online"]
+                    return {"online": count, "max": mcstatus_result.get("max", 0) if mcstatus_result else 0, "names": names_from_logs, "method": "docker_logs"}
+            except Exception:
+                pass
+
+            # If mcstatus got a count but no other method got names, still return the count
+            if mcstatus_result and mcstatus_result["online"] > 0:
+                return mcstatus_result
             return {"online": 0, "max": 0, "names": [], "method": "none"}
         except Exception as e:
             logger.warning(f"Failed to get player info for container {container_id}: {e}")
