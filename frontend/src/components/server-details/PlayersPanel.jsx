@@ -16,6 +16,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
     try { return localStorage.getItem('rcon_hint_dismissed') === '1'; } catch { return false; }
   });
   const avatarCache = useRef({});
+  const [avatarUrls, setAvatarUrls] = useState({});
   const highlightRefs = useRef({});
   const [highlightedPlayer, setHighlightedPlayer] = useState('');
 
@@ -58,18 +59,11 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
   async function getAvatar(player) {
     if (!player) return null;
     if (avatarCache.current[player]) return avatarCache.current[player];
-    try {
-      const r = await fetch(`https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(player)}`);
-      if (!r.ok) { avatarCache.current[player] = null; return null; }
-      const jd = await r.json();
-      const uuid = jd.id;
-      const url = `https://crafatar.com/avatars/${uuid}?size=64&overlay=true`;
-      avatarCache.current[player] = url;
-      return url;
-    } catch (e) {
-      avatarCache.current[player] = null;
-      return null;
-    }
+    // Use mc-heads.net which resolves by username directly (no UUID lookup needed)
+    const url = `https://mc-heads.net/avatar/${encodeURIComponent(player)}/64`;
+    avatarCache.current[player] = url;
+    setAvatarUrls(prev => ({ ...prev, [player]: url }));
+    return url;
   }
 
   useEffect(() => {
@@ -166,29 +160,30 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
             {online.map((p) => {
               const key = p.toLowerCase();
               const isHighlighted = highlightedPlayer && highlightedPlayer === key;
+              const avatar = avatarUrls[p];
               return (
                 <div
                   key={p}
                   ref={(el) => { if (el) highlightRefs.current[key] = el; }}
-                  className={`bg-white/5 border border-white/10 rounded p-3 flex items-center justify-between hover:shadow-lg transition ${isHighlighted ? 'ring-2 ring-brand-500/60 animate-pulse-glow' : ''}`}
+                  className={`bg-white/5 border border-white/10 rounded-lg p-3 space-y-3 hover:shadow-lg transition ${isHighlighted ? 'ring-2 ring-brand-500/60 animate-pulse-glow' : ''}`}
                 >
                   <div className="flex items-center gap-3">
-                    {avatarCache.current[p] ? (
-                      <img src={avatarCache.current[p]} alt={p} className="w-12 h-12 rounded-full" />
+                    {avatar ? (
+                      <img src={avatar} alt={p} className="w-10 h-10 rounded" />
                     ) : (
-                      <div className="w-12 h-12 rounded-full bg-brand-600 flex items-center justify-center text-base font-semibold text-white">{p.slice(0, 1).toUpperCase()}</div>
+                      <div className="w-10 h-10 rounded bg-brand-600 flex items-center justify-center text-base font-semibold text-white flex-shrink-0">{p.slice(0, 1).toUpperCase()}</div>
                     )}
-                    <div>
-                      <div className="text-sm text-white font-semibold">{p}</div>
-                      <div className="text-xs text-white/60">{serverName}</div>
+                    <div className="min-w-0">
+                      <div className="text-sm text-white font-semibold truncate">{p}</div>
+                      <div className="text-xs text-green-400">online</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button title={t('playerManagement.message')} onClick={() => sendTell(p)} className="px-2 py-1 bg-white/5 rounded text-xs text-sky-300 hover:bg-white/10">{t('playerManagement.message')}</button>
-                    <button title={t('playerManagement.deop')} onClick={() => deop(p)} className="px-2 py-1 bg-white/5 rounded text-xs text-orange-300 hover:bg-white/10">{t('playerManagement.deop')}</button>
-                    <button title={t('playerManagement.op')} onClick={() => postAction('op', p)} className="px-2 py-1 bg-white/5 rounded text-xs text-green-300 hover:bg-white/10">{t('playerManagement.op')}</button>
-                    <button title={t('playerManagement.kick')} onClick={() => postAction('kick', p)} className="px-2 py-1 bg-yellow-800 rounded text-xs text-yellow-100 hover:bg-yellow-700">{t('playerManagement.kick')}</button>
-                    <button title={t('playerManagement.ban')} onClick={() => postAction('ban', p)} className="px-2 py-1 bg-red-800 rounded text-xs text-red-100 hover:bg-red-700">{t('playerManagement.ban')}</button>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button title={t('playerManagement.message')} onClick={() => sendTell(p)} className="px-2 py-1 bg-sky-500/20 border border-sky-500/30 rounded text-xs text-sky-300 hover:bg-sky-500/30 transition">{t('playerManagement.message')}</button>
+                    <button title={t('playerManagement.op')} onClick={() => postAction('op', p)} className="px-2 py-1 bg-green-500/20 border border-green-500/30 rounded text-xs text-green-300 hover:bg-green-500/30 transition">OP</button>
+                    <button title={t('playerManagement.deop')} onClick={() => deop(p)} className="px-2 py-1 bg-orange-500/20 border border-orange-500/30 rounded text-xs text-orange-300 hover:bg-orange-500/30 transition">DEOP</button>
+                    <button title={t('playerManagement.kick')} onClick={() => postAction('kick', p)} className="px-2 py-1 bg-yellow-600 rounded text-xs text-white hover:bg-yellow-500 transition">{t('playerManagement.kick')}</button>
+                    <button title={t('playerManagement.ban')} onClick={() => postAction('ban', p)} className="px-2 py-1 bg-red-600 rounded text-xs text-white hover:bg-red-500 transition">{t('playerManagement.ban')}</button>
                   </div>
                 </div>
               );
@@ -206,17 +201,18 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
             {offline.map((o) => {
               const key = o.name.toLowerCase();
               const isHighlighted = highlightedPlayer && highlightedPlayer === key;
+              const avatar = avatarUrls[o.name];
               return (
                 <div
                   key={o.name}
                   ref={(el) => { if (el) highlightRefs.current[key] = el; }}
-                  className={`bg-white/3 border border-white/6 rounded p-3 flex items-center justify-between opacity-90 ${isHighlighted ? 'ring-2 ring-brand-500/60 animate-pulse-glow' : ''}`}
+                  className={`bg-white/3 border border-white/6 rounded-lg p-3 flex items-center justify-between opacity-90 ${isHighlighted ? 'ring-2 ring-brand-500/60 animate-pulse-glow' : ''}`}
                 >
                   <div className="flex items-center gap-3">
-                    {avatarCache.current[o.name] ? (
-                      <img src={avatarCache.current[o.name]} alt={o.name} className="w-10 h-10 rounded-full" />
+                    {avatar ? (
+                      <img src={avatar} alt={o.name} className="w-10 h-10 rounded" />
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center text-sm font-semibold text-white">{o.name.slice(0, 1).toUpperCase()}</div>
+                      <div className="w-10 h-10 rounded bg-gray-600 flex items-center justify-center text-sm font-semibold text-white flex-shrink-0">{o.name.slice(0, 1).toUpperCase()}</div>
                     )}
                     <div>
                       <div className="text-sm text-white">{o.name}</div>

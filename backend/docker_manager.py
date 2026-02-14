@@ -356,6 +356,9 @@ def fix_server_jar(server_dir: Path, server_type: str, version: str, loader_vers
             url = get_forge_download_url(version)
         elif server_type.lower() == "neoforge":
             url = get_neoforge_download_url(version)
+        # Hybrid server types – fall through to generic provider-based download
+        elif server_type.lower() in ("mohist", "magma", "banner", "catserver", "spongeforge"):
+            pass  # handled by the else branch via prepare_server_files
 
         if url:
             diag: list = []
@@ -1382,7 +1385,7 @@ class DockerManager:
         }
         
         try:
-            preferred_names = ["server.jar", "fabric-server-launch.jar"] if server_type.lower() == "fabric" else ["server.jar"]
+            preferred_names = ["server.jar", "fabric-server-launch.jar"] if server_type.lower() in ("fabric", "banner") else ["server.jar"]
             for fname in preferred_names:
                 fpath = server_dir / fname
                 if fpath.exists() and fpath.stat().st_size > 0:

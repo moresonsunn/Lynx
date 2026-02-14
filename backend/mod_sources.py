@@ -29,6 +29,20 @@ CURSEFORGE_LOADERS = {
     "neoforge": 6,
 }
 
+# Map hybrid server types to their underlying mod loader
+HYBRID_LOADER_MAP = {
+    "mohist": "forge",
+    "magma": "neoforge",
+    "banner": "fabric",
+    "catserver": "forge",
+    "spongeforge": "forge",
+}
+
+
+def _resolve_loader(loader: str) -> str:
+    """Resolve a hybrid server type to its underlying mod loader name."""
+    return HYBRID_LOADER_MAP.get(loader.lower(), loader.lower())
+
 # User agent for API requests
 USER_AGENT = "Lynx-Server-Manager/1.0 (https://github.com/moresonsunn/Lynx)"
 
@@ -59,10 +73,14 @@ class ModrinthClient:
         if loader:
             # Normalize loader name
             loader_lower = loader.lower()
+            resolved = _resolve_loader(loader_lower)
             if loader_lower in ("paper", "spigot", "bukkit", "purpur"):
                 facets.append([f'categories:paper', f'categories:spigot', f'categories:bukkit'])
-            elif loader_lower in ("fabric", "forge", "neoforge", "quilt"):
-                facets.append([f'categories:{loader_lower}'])
+            elif resolved in ("fabric", "forge", "neoforge", "quilt"):
+                facets.append([f'categories:{resolved}'])
+            # Hybrid servers also match plugin categories for plugin searches
+            if loader_lower in HYBRID_LOADER_MAP:
+                facets[-1].extend([f'categories:paper', f'categories:spigot', f'categories:bukkit'])
         
         import json
         params = {
@@ -112,11 +130,22 @@ class ModrinthClient:
         loader: Optional[str] = None,
     ) -> list:
         """Get available versions/files for a project."""
+        import json as _json
+
+        # Bukkit-family loaders are all compatible with each other
+        BUKKIT_FAMILY = {"paper", "spigot", "bukkit", "purpur"}
+
         params = {}
         if game_version:
             params["game_versions"] = f'["{game_version}"]'
         if loader:
-            params["loaders"] = f'["{loader.lower()}"]'
+            loader_lower = loader.lower()
+            resolved = _resolve_loader(loader_lower)
+            if loader_lower in BUKKIT_FAMILY or resolved in BUKKIT_FAMILY:
+                # For plugin-type servers, query all bukkit-compatible loaders
+                params["loaders"] = _json.dumps(["paper", "spigot", "bukkit", "purpur"])
+            else:
+                params["loaders"] = _json.dumps([resolved])
         
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
@@ -188,8 +217,10 @@ class CurseForgeClient:
         if game_version:
             params["gameVersion"] = game_version
         
-        if loader and loader.lower() in CURSEFORGE_LOADERS:
-            params["modLoaderType"] = CURSEFORGE_LOADERS[loader.lower()]
+        if loader:
+            resolved = _resolve_loader(loader)
+            if resolved in CURSEFORGE_LOADERS:
+                params["modLoaderType"] = CURSEFORGE_LOADERS[resolved]
         
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
@@ -245,8 +276,10 @@ class CurseForgeClient:
         params = {}
         if game_version:
             params["gameVersion"] = game_version
-        if loader and loader.lower() in CURSEFORGE_LOADERS:
-            params["modLoaderType"] = CURSEFORGE_LOADERS[loader.lower()]
+        if loader:
+            resolved = _resolve_loader(loader)
+            if resolved in CURSEFORGE_LOADERS:
+                params["modLoaderType"] = CURSEFORGE_LOADERS[resolved]
         
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
@@ -427,6 +460,7 @@ async def search_plugins(
     query: str,
     source: str = "modrinth",
     game_version: Optional[str] = None,
+    server_type: Optional[str] = None,
     limit: int = 20,
     offset: int = 0,
 ) -> dict:
@@ -436,8 +470,10 @@ async def search_plugins(
         return await client.search(query, limit, offset)
     else:
         client = ModrinthClient()
-        # For plugins, use paper/spigot/bukkit loaders
-        return await client.search(query, "plugin", game_version, "paper", limit, offset)
+        # For plugin searches, always use paper/spigot/bukkit loader categories
+        # even for hybrid servers (they still use Bukkit-based plugins)
+        loader = "paper"
+        return await client.search(query, "plugin", game_version, loader, limit, offset)
 
 
 async def get_mod_versions(

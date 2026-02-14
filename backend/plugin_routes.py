@@ -130,6 +130,7 @@ async def search_plugins(
     query: str,
     source: str = "modrinth",
     version: Optional[str] = None,
+    server_type: Optional[str] = None,
     limit: int = 20,
     offset: int = 0,
     current_user: User = Depends(require_auth),
@@ -144,6 +145,7 @@ async def search_plugins(
             query=query,
             source=source,
             game_version=version,
+            server_type=server_type,
             limit=limit,
             offset=offset,
         )

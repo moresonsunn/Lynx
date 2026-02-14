@@ -107,6 +107,7 @@ export default function ServerDetailsPage() {
   const [editPath, setEditPath] = useState('');
   const [editContent, setEditContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [filesPath, setFilesPath] = useState('.');
   const [logReset, setLogReset] = useState(0);
   const [actionLoading, setActionLoading] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -168,6 +169,8 @@ export default function ServerDetailsPage() {
     const serverType = (typeVersionData?.server_type || server?.type || '').toLowerCase();
     const isModdedServer = ['fabric', 'forge', 'neoforge'].includes(serverType);
     const isPluginServer = ['paper', 'purpur', 'spigot', 'bukkit'].includes(serverType);
+    // Hybrid servers support BOTH mods and plugins
+    const isHybridServer = ['mohist', 'magma', 'banner', 'catserver', 'spongeforge'].includes(serverType);
 
     const base = [
       { id: 'overview', label: t('tabs.overview'), icon: FaServer },
@@ -181,14 +184,14 @@ export default function ServerDetailsPage() {
     ];
 
     // Add Mods tab for Fabric/Forge/NeoForge
-    if (isModdedServer) {
+    if (isModdedServer || isHybridServer) {
       base.splice(3, 0, { id: 'mods', label: 'Mods', icon: FaCube });
       base.splice(4, 0, { id: 'mod-manager', label: 'Mod Manager', icon: FaPuzzlePiece });
       base.splice(5, 0, { id: 'client-mod-filter', label: 'Client Mod Filter', icon: FaShieldAlt });
     }
 
-    // Add Plugins tab for Paper/Purpur/Spigot
-    if (isPluginServer) {
+    // Add Plugins tab for Paper/Purpur/Spigot and hybrid servers
+    if (isPluginServer || isHybridServer) {
       base.splice(3, 0, { id: 'plugins', label: 'Plugins', icon: FaPlug });
     }
 
@@ -266,6 +269,10 @@ export default function ServerDetailsPage() {
   const handleEditStart = useCallback((filePath, content) => {
     setEditPath(filePath);
     setEditContent(content);
+    // Remember the directory this file is in so we restore it after editing
+    const parts = filePath.split('/');
+    parts.pop();
+    setFilesPath(parts.length ? parts.join('/') : '.');
     setIsEditing(true);
     setFilesEditing(true);
   }, []);
@@ -834,6 +841,8 @@ export default function ServerDetailsPage() {
             serverName={server.name}
             serverId={server.id}
             onEdit={handleEditStart}
+            initialPath={filesPath}
+            onPathChange={setFilesPath}
           />
         )}
 
@@ -894,6 +903,8 @@ export default function ServerDetailsPage() {
           ) : (
             <ModsPanel
               serverName={server.name}
+              serverVersion={typeVersionData?.server_version || server?.version || ''}
+              serverLoader={(typeVersionData?.server_type || server?.type || '').toLowerCase()}
             />
           )
         )}
@@ -901,6 +912,8 @@ export default function ServerDetailsPage() {
         {activeTab === 'plugins' && (
           <PluginsPanel
             serverName={server.name}
+            serverVersion={typeVersionData?.server_version || server?.version || ''}
+            serverType={(typeVersionData?.server_type || server?.type || '').toLowerCase()}
           />
         )}
 

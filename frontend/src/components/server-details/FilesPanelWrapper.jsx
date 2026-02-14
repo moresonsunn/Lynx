@@ -1,16 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FaFolder, FaUpload, FaSave, FaEdit, FaTimes, FaCheck, FaBan, FaArrowUp, FaSyncAlt, FaFolderPlus } from 'react-icons/fa';
+import { FaFolder, FaUpload, FaSave, FaEdit, FaTimes, FaCheck, FaBan, FaArrowUp, FaSyncAlt, FaFolderPlus, FaFileAlt } from 'react-icons/fa';
 import { useTranslation } from '../../i18n';
 import { API, getStoredToken } from '../../lib/api';
 import { authHeaders } from '../../context/AppContext';
 
-export default function FilesPanelWrapper({ serverName, initialItems = null, isBlockedFile, onEditStart, onEdit, onBlockedFileError }) {
+export default function FilesPanelWrapper({ serverName, initialItems = null, isBlockedFile, onEditStart, onEdit, onBlockedFileError, initialPath, onPathChange }) {
   const { t } = useTranslation();
   // Accept both `onEditStart` (old name) and `onEdit` (used by pages)
   const onEditCallback = onEditStart || onEdit;
   // Defensive alias to avoid accidental ReferenceError when prop is missing
   const sName = serverName || '';
-  const [path, setPath] = useState('.');
+  const [path, _setPath] = useState(initialPath || '.');
+  // Wrap setPath to also notify parent of path changes
+  function setPath(p) {
+    _setPath(p);
+    onPathChange?.(p);
+  }
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
@@ -37,8 +42,9 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
   useEffect(() => {
     // clear cache when server changes
     cacheRef.current = {};
-    const key = `${sName}::.`;
-    if (Array.isArray(initialItems) && initialItems.length) {
+    const startPath = initialPath || '.';
+    const key = `${sName}::${startPath}`;
+    if (Array.isArray(initialItems) && initialItems.length && startPath === '.') {
       // hydrate immediately for instant render
       cacheRef.current[key] = { items: initialItems, ts: Date.now(), etag: undefined };
       setItems(initialItems);
@@ -46,7 +52,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
       // revalidate in background
       loadDir('.', { force: true });
     } else {
-      loadDir('.', { force: true });
+      loadDir(startPath, { force: true });
     }
   }, [serverName, initialItems]);
 
@@ -261,6 +267,22 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     });
     loadDir(path, { force: true });
   }
+
+  async function createFile() {
+    const filename = window.prompt('New file name (e.g. config.yml)');
+    if (!filename || !filename.trim()) return;
+    const p = path === '.' ? filename.trim() : `${path}/${filename.trim()}`;
+    try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
+    if (!sName) throw new Error('Server name missing');
+    const formData = new FormData();
+    formData.append('content', '');
+    await fetch(
+      `${API}/servers/${encodeURIComponent(sName)}/file?path=${encodeURIComponent(p)}`,
+      { method: 'POST', headers: authHeaders(), body: formData }
+    );
+    loadDir(path, { force: true });
+  }
+
   // ---------- Upload with progress (XHR per file) ----------
   const [uploads, setUploads] = useState([]);
   const [aggregate, setAggregate] = useState({ totalBytes: 0, sentBytes: 0, inProgress: false, error: '' });
@@ -519,6 +541,9 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
                 </button>
                 <button onClick={createFolder} className={btn} title={t('fileBrowser.createFolder')} aria-label="New Folder">
                   <FaFolderPlus /> <span className="hidden sm:inline">New Folder</span>
+                </button>
+                <button onClick={createFile} className={btn} title="Create new file" aria-label="New File">
+                  <FaFileAlt /> <span className="hidden sm:inline">New File</span>
                 </button>
                 <label className={`${btnPrimary} cursor-pointer`} title={t('fileBrowser.uploadFiles')} aria-label="Upload files">
                   <FaUpload /> <span className="hidden sm:inline">Upload</span>

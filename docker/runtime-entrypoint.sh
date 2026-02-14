@@ -26,8 +26,8 @@ select_java_version() {
                 echo "DEBUG: select_java_version: vanilla/paper/purpur no explicit match; keeping default ${java_version}" >&2
             fi
             ;;
-  "fabric"|"quilt")
-      # Fabric/Quilt: 1.8-1.16 -> Java 8; 1.17-1.18 -> Java 17; 1.19+ -> Java 21
+  "fabric"|"quilt"|"banner")
+      # Fabric/Quilt/Banner: 1.8-1.16 -> Java 8; 1.17-1.18 -> Java 17; 1.19+ -> Java 21
       if [[ "$version" == 1.19* ]] || [[ "$version" == 1.20* ]] || [[ "$version" == 1.21* ]]; then
   echo "DEBUG: select_java_version: fabric/quilt matched 1.19+ -> Java 21" >&2
         java_version="21"
@@ -39,16 +39,16 @@ select_java_version() {
         java_version="8"
       fi
       ;;
-  "forge"|"neoforge")
-      # Forge/NeoForge: <=1.12 -> Java 8; 1.13-1.20.4 -> Java 17; 1.20.5+/1.21+ -> Java 21
+  "forge"|"neoforge"|"mohist"|"magma"|"catserver"|"spongeforge")
+      # Forge-based hybrids: <=1.12 -> Java 8; 1.13-1.20.4 -> Java 17; 1.20.5+/1.21+ -> Java 21
       if [[ "$version" == 1.8* ]] || [[ "$version" == 1.9* ]] || [[ "$version" == 1.10* ]] || [[ "$version" == 1.11* ]] || [[ "$version" == 1.12* ]]; then
-                echo "DEBUG: select_java_version: forge/neoforge matched <=1.12 -> Java 8" >&2
+                echo "DEBUG: select_java_version: forge-hybrid matched <=1.12 -> Java 8" >&2
                 java_version="8"
       elif [[ "$version" == 1.20.5* ]] || [[ "$version" == 1.20.6* ]] || [[ "$version" == 1.21* ]]; then
-  echo "DEBUG: select_java_version: forge/neoforge matched 1.20.5+/1.21+ -> Java 21" >&2
+  echo "DEBUG: select_java_version: forge-hybrid matched 1.20.5+/1.21+ -> Java 21" >&2
         java_version="21"
             else
-                echo "DEBUG: select_java_version: forge/neoforge matched 1.13-1.20.4 -> Java 17" >&2
+                echo "DEBUG: select_java_version: forge-hybrid matched 1.13-1.20.4 -> Java 17" >&2
                 java_version="17"
             fi
             ;;
@@ -892,10 +892,10 @@ fi
 
 # Check for specific JAR patterns in order of preference, tailored by server type
 if [ -z "$start_jar" ]; then
-  if [ "$SERVER_TYPE" = "forge" ] || [ "$SERVER_TYPE" = "neoforge" ]; then
-    patterns="server.jar neoforge-*-universal.jar *forge-*-universal.jar forge-*-server.jar *server*.jar"
-  elif [ "$SERVER_TYPE" = "fabric" ] || [ "$SERVER_TYPE" = "quilt" ]; then
-    patterns="server.jar *fabric*.jar *quilt*.jar *server*.jar"
+  if [ "$SERVER_TYPE" = "forge" ] || [ "$SERVER_TYPE" = "neoforge" ] || [ "$SERVER_TYPE" = "mohist" ] || [ "$SERVER_TYPE" = "magma" ] || [ "$SERVER_TYPE" = "catserver" ] || [ "$SERVER_TYPE" = "spongeforge" ]; then
+    patterns="server.jar neoforge-*-universal.jar *forge-*-universal.jar forge-*-server.jar *mohist*.jar *magma*.jar *catserver*.jar *spongeforge*.jar *server*.jar"
+  elif [ "$SERVER_TYPE" = "fabric" ] || [ "$SERVER_TYPE" = "quilt" ] || [ "$SERVER_TYPE" = "banner" ]; then
+    patterns="server.jar *fabric*.jar *quilt*.jar *banner*.jar *server*.jar"
   else
     patterns="server.jar *paper*.jar *purpur*.jar *server*.jar"
   fi

@@ -3,7 +3,7 @@ import { FaUpload, FaTrash, FaPlug, FaSearch, FaDownload, FaTimes, FaExternalLin
 import { useTranslation } from '../../i18n';
 import { API, getStoredToken } from '../../lib/api';
 
-export default function PluginsPanel({ serverName, serverVersion }) {
+export default function PluginsPanel({ serverName, serverVersion, serverType }) {
   const { t } = useTranslation();
   const sName = serverName || '';
   const [plugins, setPlugins] = useState([]);
@@ -93,6 +93,7 @@ export default function PluginsPanel({ serverName, serverVersion }) {
         limit: '20',
       });
       if (serverVersion) params.append('version', serverVersion);
+      if (serverType) params.append('server_type', serverType);
 
       const r = await fetch(
         `${API}/plugins/${encodeURIComponent(sName)}/search?${params}`,
@@ -118,6 +119,8 @@ export default function PluginsPanel({ serverName, serverVersion }) {
       if (plugin.source === 'modrinth') {
         const versionParams = new URLSearchParams({ source: 'modrinth' });
         if (serverVersion) versionParams.append('version', serverVersion);
+        // For plugin servers, always filter for bukkit/paper/spigot loader
+        versionParams.append('loader', 'paper');
 
         // Need to call mods versions endpoint since plugins also use it
         const vr = await fetch(

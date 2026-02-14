@@ -4,7 +4,7 @@ import { normalizeRamInput } from '../utils/ram';
 import { useTranslation } from '../i18n/I18nContext';
 
 const SERVER_TYPES_WITH_LOADER = ['fabric', 'forge', 'neoforge'];
-const SERVER_TYPES = ['paper', 'purpur', 'vanilla', 'snapshot', 'fabric', 'forge', 'neoforge', 'bungeecord', 'velocity'];
+const SERVER_TYPES = ['paper', 'purpur', 'vanilla', 'snapshot', 'fabric', 'forge', 'neoforge', 'mohist', 'magma', 'banner', 'catserver', 'spongeforge', 'bungeecord', 'velocity'];
 
 export default function TemplatesPage({
   API,
