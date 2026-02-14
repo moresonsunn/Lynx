@@ -271,16 +271,25 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
   async function createFile() {
     const filename = window.prompt('New file name (e.g. config.yml)');
     if (!filename || !filename.trim()) return;
-    const p = path === '.' ? filename.trim() : `${path}/${filename.trim()}`;
-    try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
-    if (!sName) throw new Error('Server name missing');
-    const formData = new FormData();
-    formData.append('content', '');
-    await fetch(
-      `${API}/servers/${encodeURIComponent(sName)}/file?path=${encodeURIComponent(p)}`,
-      { method: 'POST', headers: authHeaders(), body: formData }
-    );
-    loadDir(path, { force: true });
+    const name = filename.trim();
+    const p = path === '.' ? name : `${path}/${name}`;
+    if (!sName) { setErr('Server name missing'); return; }
+    try {
+      const formData = new FormData();
+      formData.append('content', ' ');
+      const r = await fetch(
+        `${API}/servers/${encodeURIComponent(sName)}/file?path=${encodeURIComponent(p)}`,
+        { method: 'POST', headers: authHeaders(), body: formData }
+      );
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.detail || `HTTP ${r.status}`);
+      }
+      try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
+      await loadDir(path, { force: true });
+    } catch (e) {
+      setErr(`Failed to create file: ${e.message || e}`);
+    }
   }
 
   // ---------- Upload with progress (XHR per file) ----------

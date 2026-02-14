@@ -1069,7 +1069,7 @@ def file_read(name: str, request: Request, path: str):
 
 @app.post("/servers/{name}/file")
 @app.post("/api/servers/{name}/file")
-def file_write(name: str, path: str, content: str = Form(...)):
+def file_write(name: str, path: str, content: str = Form("")):
     fm_write_file(name, path, content)
     return {"ok": True}
 
