@@ -24,7 +24,7 @@ def _random_password(length: int = 12) -> str:
     return "".join(random.choice(alphabet) for _ in range(length))
 
 
-def _make_dir_writable(path: Path) -> None:
+def _make_dir_writable(path: Path, uid: int = 1000, gid: int = 1000) -> None:
     """Ensure the directory exists and is writable by unprivileged users."""
 
     path.mkdir(parents=True, exist_ok=True)
@@ -51,7 +51,7 @@ def _make_dir_writable(path: Path) -> None:
         except Exception:
             pass
         try:
-            os.chown(path, 1000, 1000)
+            os.chown(path, uid, gid)
         except PermissionError:
             pass
         except AttributeError:
@@ -245,7 +245,15 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
             pass
 
     server_root = SERVERS_ROOT / payload.name
-    _make_dir_writable(server_root)
+    # Determine UID/GID from game env for proper directory ownership
+    dir_uid = 1000
+    dir_gid = 1000
+    try:
+        dir_uid = int(env.get("UID") or env.get("PUID") or 1000)
+        dir_gid = int(env.get("GID") or env.get("PGID") or 1000)
+    except (ValueError, TypeError):
+        pass
+    _make_dir_writable(server_root, uid=dir_uid, gid=dir_gid)
     host_dir = server_root
 
     # For remote Docker hosts (STEAM_DOCKER_HOST), use STEAM_SERVERS_HOST_ROOT
