@@ -184,7 +184,7 @@ BASE_STEAM_GAMES = {
             "RUST_SERVER_MAXPLAYERS": 32,
             "RUST_RCON_PASSWORD": "change-me",
             "RUST_RCON_PORT": 28016,
-            "RUST_SERVER_STARTUP_ARGUMENTS": "-batchmode -nographics -logfile /dev/stdout +server.secure 1",
+            "RUST_SERVER_STARTUP_ARGUMENTS": "-batchmode -load -nographics +server.secure 1 -logFile /dev/stdout",
             "TZ": "UTC",
         },
         "volume": {"container": "/steamcmd/rust"},
