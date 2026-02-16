@@ -2490,10 +2490,156 @@ class DockerManager:
             logger.error(f"Failed to start container {container_id}: {e}")
         return {"id": container.id, "status": container.status}
 
+    # ------------------------------------------------------------------
+    # Container environment variable updates
+    # ------------------------------------------------------------------
+
+    def update_container_env(self, container_id: str, env_updates: dict[str, str]) -> dict:
+        """Update a container's environment variables.
+
+        Docker does not support live env-var updates; this recreates the
+        container with the same configuration (image, volumes, ports,
+        labels, restart-policy, etc.) but with the updated env vars.
+
+        The container **does not need to be stopped** first – if it is
+        running we stop it, swap out the container, and re-start it.
+
+        Returns a dict with the new container id and status.
+        """
+        self._ensure_client()
+        client = self._get_steam_client() or self.client
+
+        try:
+            container = client.containers.get(container_id)
+        except docker.errors.NotFound:
+            # Try by name
+            try:
+                container = client.containers.get(container_id)
+            except Exception:
+                return {"error": f"Container {container_id} not found"}
+
+        was_running = container.status == "running"
+        attrs = container.attrs or {}
+        config = attrs.get("Config", {}) or {}
+        host_config = attrs.get("HostConfig", {}) or {}
+        network_settings = attrs.get("NetworkSettings", {}) or {}
+        name = container.name
+
+        # ---- Build merged env list ----
+        old_env = config.get("Env") or []
+        env_dict: dict[str, str] = {}
+        for item in old_env:
+            if "=" in item:
+                k, v = item.split("=", 1)
+                env_dict[k] = v
+        env_dict.update(env_updates)
+        new_env = [f"{k}={v}" for k, v in env_dict.items()]
+
+        # ---- Extract other config ----
+        image = config.get("Image", "")
+        labels = config.get("Labels") or {}
+        command = config.get("Cmd")
+        entrypoint = config.get("Entrypoint")
+        working_dir = config.get("WorkingDir") or None
+        tty = config.get("Tty", True)
+        stdin_open = config.get("OpenStdin", True)
+        exposed_ports = config.get("ExposedPorts") or {}
+
+        # Port bindings
+        port_bindings = host_config.get("PortBindings") or {}
+
+        # Volumes / mounts
+        mounts_raw = attrs.get("Mounts") or []
+        volumes_dict: dict[str, dict] = {}
+        for m in mounts_raw:
+            src = m.get("Source", "")
+            dst = m.get("Destination", "")
+            mode = m.get("Mode", "rw")
+            if src and dst:
+                volumes_dict[src] = {"bind": dst, "mode": mode}
+
+        # Restart policy
+        restart_policy = host_config.get("RestartPolicy") or {}
+
+        # Network
+        network_mode = host_config.get("NetworkMode") or None
+        networks_config = network_settings.get("Networks") or {}
+
+        # ---- Stop & remove old container ----
+        if was_running:
+            try:
+                container.stop(timeout=30)
+            except Exception as e:
+                logger.warning(f"Failed to stop container {container_id} during env update: {e}")
+
+        try:
+            container.remove(force=True)
+        except Exception as e:
+            logger.warning(f"Failed to remove container {container_id}: {e}")
+            return {"error": f"Failed to remove old container: {e}"}
+
+        # ---- Create new container with updated env ----
+        run_kwargs: dict = {
+            "image": image,
+            "name": name,
+            "detach": True,
+            "tty": tty,
+            "stdin_open": stdin_open,
+            "environment": new_env,
+            "labels": labels,
+        }
+        if port_bindings and network_mode != "host":
+            run_kwargs["ports"] = port_bindings
+        if volumes_dict:
+            run_kwargs["volumes"] = volumes_dict
+        if restart_policy and restart_policy.get("Name"):
+            run_kwargs["restart_policy"] = restart_policy
+        if command:
+            run_kwargs["command"] = command
+        if entrypoint:
+            run_kwargs["entrypoint"] = entrypoint
+        if working_dir:
+            run_kwargs["working_dir"] = working_dir
+        if network_mode == "host":
+            run_kwargs["network_mode"] = "host"
+        elif network_mode and network_mode != "default":
+            run_kwargs["network"] = network_mode
+
+        try:
+            new_container = client.containers.run(**run_kwargs)
+        except Exception as e:
+            logger.error(f"Failed to recreate container {name} with updated env: {e}")
+            return {"error": f"Failed to recreate container: {e}"}
+
+        # If the container was running before, it's already started by containers.run
+        # If it was stopped, stop it again
+        if not was_running:
+            try:
+                new_container.stop(timeout=5)
+            except Exception:
+                pass
+
+        try:
+            new_container.reload()
+        except Exception:
+            pass
+
+        logger.info(f"Container {name} recreated with updated env vars (was_running={was_running})")
+
+        return {
+            "id": new_container.id,
+            "name": new_container.name,
+            "status": new_container.status if was_running else "exited",
+            "updated_env_keys": list(env_updates.keys()),
+        }
+
     def stop_server(self, container_id, timeout: int = 60, force: bool = False):
         """Gracefully stop a game server inside the container.
         Detects the correct stop command for the game type (e.g. 'quit' for Rust, 'stop' for Minecraft).
         Attempts in order: RCON -> attach_socket -> stdin, then Docker stop/kill as fallback.
+
+        For Steam servers with restart_policy=unless-stopped, after the game process
+        exits we must explicitly docker-stop the container to prevent auto-restart.
         """
         container = self._get_container_any(container_id)
         server_name = container.name
@@ -2504,6 +2650,10 @@ class DockerManager:
 
         if getattr(container, "status", "unknown") != "running":
             return {"id": container.id, "status": container.status, "method": "noop"}
+
+        # Detect if this is a Steam server (needs special stop handling)
+        labels = (container.attrs.get("Config", {}) or {}).get("Labels", {}) or {}
+        is_steam = str(labels.get("steam.server", "")).lower() == "true"
 
         # Determine the correct stop command for this game
         stop_cmd = self._get_game_stop_command(container) or "stop"
@@ -2516,30 +2666,54 @@ class DockerManager:
         except Exception as e:
             logger.warning(f"Failed to send graceful stop to {container_id}: {e}")
 
-        
+        # For Steam servers: give the game process a few seconds to save state,
+        # then explicitly docker-stop the container so restart_policy doesn't
+        # kick in and re-download everything.
+        if is_steam:
+            grace = min(15, max(3, int(timeout * 0.25)))
+            logger.info(f"Steam server {server_name}: waiting {grace}s for game to save, then docker-stopping")
+            time.sleep(grace)
+            try:
+                container.reload()
+                if container.status == "running":
+                    container.stop(timeout=max(10, timeout - grace))
+                container.reload()
+            except Exception as e:
+                logger.warning(f"Docker stop failed for Steam server {container_id}: {e}")
+            try:
+                from settings_routes import send_notification
+                send_notification(
+                    "server_stop",
+                    f"🔴 Server Stopped: {server_name}",
+                    f"Server **{server_name}** has been stopped.",
+                    color=15158332
+                )
+            except Exception:
+                pass
+            return {"id": container.id, "status": getattr(container, "status", "exited"), "method": method_used or "docker-stop"}
+
+        # Minecraft / non-Steam: wait for the container to exit on its own
         deadline = time.time() + max(1, int(timeout))
         while time.time() < deadline:
             try:
                 container.reload()
                 if container.status != "running":
-                    
                     try:
                         from settings_routes import send_notification
                         send_notification(
                             "server_stop",
                             f"🔴 Server Stopped: {server_name}",
                             f"Server **{server_name}** has been stopped.",
-                            color=15158332  
+                            color=15158332
                         )
                     except Exception:
                         pass
                     return {"id": container.id, "status": container.status, "method": method_used or "graceful"}
             except Exception:
-                
                 pass
             time.sleep(1)
 
-        
+        # Fallback: force stop
         try:
             if force:
                 container.kill()
@@ -2552,28 +2726,73 @@ class DockerManager:
             container.reload()
         except Exception:
             pass
-        
-        
+
         try:
             from settings_routes import send_notification
             send_notification(
                 "server_stop",
                 f"🔴 Server Stopped: {server_name}",
                 f"Server **{server_name}** has been stopped (forced).",
-                color=15158332  
+                color=15158332
             )
         except Exception:
             pass
-        
+
         return {"id": container.id, "status": container.status, "method": method_used or ("kill" if force else "docker-stop")}
 
     def restart_server(self, container_id, stop_timeout: int = 60):
-        """Restart the server using a graceful stop then start."""
+        """Restart the server using a graceful stop then start.
+
+        For Steam servers we use Docker's native container.restart() which
+        sends SIGTERM, waits, then restarts the same container. This avoids
+        the entrypoint thinking it needs a fresh install/download.
+        """
+        container = self._get_container_any(container_id)
+        labels = (container.attrs.get("Config", {}) or {}).get("Labels", {}) or {}
+        is_steam = str(labels.get("steam.server", "")).lower() == "true"
+        server_name = container.name
+
+        if is_steam:
+            # For Steam: send the game's graceful stop command first to save
+            # world data, then use Docker restart to bring it back cleanly.
+            stop_cmd = self._get_game_stop_command(container)
+            if stop_cmd:
+                try:
+                    self.send_command(container_id, stop_cmd)
+                    # Give the game a few seconds to finish saving
+                    time.sleep(5)
+                except Exception as e:
+                    logger.warning(f"Failed to send pre-restart save command to {server_name}: {e}")
+            try:
+                container.restart(timeout=stop_timeout)
+                container.reload()
+            except Exception as e:
+                logger.error(f"Docker restart failed for Steam server {container_id}: {e}")
+                # Fallback to stop + start
+                try:
+                    container.stop(timeout=stop_timeout)
+                except Exception:
+                    pass
+                return self.start_server(container_id)
+
+            try:
+                from settings_routes import send_notification
+                send_notification(
+                    "server_restart",
+                    f"🔄 Server Restarted: {server_name}",
+                    f"Server **{server_name}** has been restarted.",
+                    color=3447003
+                )
+            except Exception:
+                pass
+            return {"id": container.id, "status": container.status}
+
+        # Minecraft / non-Steam: stop then start
         try:
             self.stop_server(container_id, timeout=stop_timeout, force=False)
         except Exception as e:
             logger.warning(f"Graceful stop failed during restart for {container_id}: {e}")
-        
+
         return self.start_server(container_id)
 
     def kill_server(self, container_id):

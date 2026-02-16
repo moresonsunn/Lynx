@@ -29,6 +29,7 @@ import {
   FaShieldAlt,
   FaInfoCircle,
   FaMicrochip,
+  FaSlidersH,
 } from 'react-icons/fa';
 
 
@@ -43,6 +44,7 @@ import EditingPanel from '../components/server-details/EditingPanel';
 import ModsPanel from '../components/server-details/ModsPanel';
 import PluginsPanel from '../components/server-details/PluginsPanel';
 import SteamModsPanel from '../components/server-details/SteamModsPanel';
+import SteamSettingsPanel from '../components/server-details/SteamSettingsPanel';
 import ModManagerPanel from '../components/server-details/ModManagerPanel';
 import ClientModFilterPanel from '../components/server-details/ClientModFilterPanel';
 import ConfirmModal from '../components/ConfirmModal';
@@ -199,10 +201,14 @@ export default function ServerDetailsPage() {
       const allowed = new Set(['overview', 'console', 'files', 'mods', 'backup', 'schedule']);
       // Add mods tab for Steam games
       const steamBase = base.filter(tab => allowed.has(tab.id));
-      // Insert mods tab after files
+      // Insert settings tab after files
       const filesIdx = steamBase.findIndex(t => t.id === 'files');
-      if (filesIdx !== -1 && !steamBase.find(t => t.id === 'mods')) {
-        steamBase.splice(filesIdx + 1, 0, { id: 'mods', label: 'Mods', icon: FaCube });
+      if (filesIdx !== -1) {
+        steamBase.splice(filesIdx + 1, 0, { id: 'settings', label: 'Settings', icon: FaSlidersH });
+        // Insert mods tab after settings
+        if (!steamBase.find(t => t.id === 'mods')) {
+          steamBase.splice(filesIdx + 2, 0, { id: 'mods', label: 'Mods', icon: FaCube });
+        }
       }
       return steamBase;
     }
@@ -890,6 +896,14 @@ export default function ServerDetailsPage() {
           <SchedulePanel
             serverName={server.name}
             serverId={server.id}
+          />
+        )}
+
+        {activeTab === 'settings' && isSteam && (
+          <SteamSettingsPanel
+            serverName={server.name}
+            serverId={server.id}
+            gameSlug={typeVersionData?.steam_game || server?.steam_game || server?.type || ''}
           />
         )}
 

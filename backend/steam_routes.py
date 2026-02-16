@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from auth import require_moderator, require_auth
 from docker_manager import DockerManager, DEFAULT_STEAM_PORT_START
 from config import SERVERS_ROOT
@@ -11,6 +11,9 @@ import random
 import string
 import json
 import logging
+import re
+import configparser
+import io
 
 from steam_games import STEAM_GAMES
 
@@ -205,6 +208,7 @@ async def list_games(
             "volume": meta.get("volume"),
             "default_name": meta.get("default_name") or slug,
             "category": meta.get("category"),
+            "has_game_settings": bool(meta.get("game_settings")),
         })
     return {"games": games}
 
@@ -395,3 +399,549 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
         except Exception:
             pass
         raise HTTPException(status_code=500, detail=f"Failed to start {game}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Game Settings helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_server_dir(server_name: str) -> Path:
+    """Resolve the host directory for a server by name or container ID.
+
+    Lookup order:
+    1. Direct match under SERVERS_ROOT
+    2. Scan server_meta.json files for matching id or name
+    3. Ask Docker for the container's volume mount source
+    """
+    direct = SERVERS_ROOT / server_name
+    if direct.exists():
+        return direct
+    # Try to find by reading server_meta.json files
+    if SERVERS_ROOT.exists():
+        for child in SERVERS_ROOT.iterdir():
+            meta_path = child / "server_meta.json"
+            if meta_path.exists():
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}")
+                    if meta.get("id", "").startswith(server_name) or meta.get("name") == server_name:
+                        return child
+                except Exception:
+                    pass
+    # Fallback: inspect Docker container for mount source
+    try:
+        from docker_manager import DockerManager
+        dm = DockerManager()
+        container = dm._get_container_any(server_name)
+        mounts = (container.attrs or {}).get("Mounts", [])
+        if mounts:
+            source = next((m.get("Source") for m in mounts if isinstance(m, dict) and m.get("Source")), None)
+            if source:
+                p = Path(source)
+                if p.exists():
+                    return p
+        # Also try SERVERS_ROOT / container.name
+        name_dir = SERVERS_ROOT / container.name
+        if name_dir.exists():
+            return name_dir
+    except Exception:
+        pass
+    return direct
+
+
+def _detect_game_slug(server_name: str) -> str | None:
+    """Detect the game slug for a server.
+
+    Lookup order:
+    1. server_meta.json in the server directory
+    2. Docker container label ``steam.game``
+    """
+    server_dir = _resolve_server_dir(server_name)
+    meta_path = server_dir / "server_meta.json"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}")
+            slug = meta.get("steam_game")
+            if slug:
+                return slug
+        except Exception:
+            pass
+    # Fallback: inspect Docker container labels
+    try:
+        from docker_manager import DockerManager
+        dm = DockerManager()
+        container = dm._get_container_any(server_name)
+        labels = (container.attrs.get("Config", {}) or {}).get("Labels", {}) or {}
+        slug = labels.get("steam.game")
+        if slug:
+            # Backfill server_meta.json so future lookups are faster
+            try:
+                server_dir.mkdir(parents=True, exist_ok=True)
+                existing: dict = {}
+                if meta_path.exists():
+                    existing = json.loads(meta_path.read_text(encoding="utf-8") or "{}")
+                existing["steam_game"] = slug
+                existing.setdefault("name", container.name)
+                existing.setdefault("server_kind", "steam")
+                existing.setdefault("id", container.id)
+                meta_path.write_text(json.dumps(existing), encoding="utf-8")
+            except Exception:
+                pass
+            return slug
+    except Exception:
+        pass
+    return None
+
+
+def _parse_palworld_settings(content: str) -> dict:
+    """Parse PalWorld's one-line ini format:
+    [/Script/Pal.PalGameWorldSettings]
+    OptionSettings=(Key1=Val1,Key2=Val2,...)
+    """
+    settings: dict = {}
+    # Find OptionSettings=(...) block
+    m = re.search(r'OptionSettings\s*=\s*\(([^)]*)\)', content)
+    if not m:
+        return settings
+    inner = m.group(1)
+    # Parse Key=Value pairs (values can contain quotes)
+    for pair in re.finditer(r'(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|[^,)]*)', inner):
+        key = pair.group(1)
+        val = pair.group(2).strip('"')
+        settings[key] = val
+    return settings
+
+
+def _serialize_palworld_settings(existing_content: str, updates: dict) -> str:
+    """Update PalWorld's one-line ini format with new values."""
+    current = _parse_palworld_settings(existing_content)
+    current.update(updates)
+
+    pairs = []
+    for k, v in current.items():
+        # Booleans in PalWorld config
+        if isinstance(v, bool):
+            pairs.append(f"{k}={'True' if v else 'False'}")
+        elif isinstance(v, str) and v.lower() in ("true", "false"):
+            pairs.append(f"{k}={v}")
+        else:
+            pairs.append(f"{k}={v}")
+
+    option_str = f"OptionSettings=({','.join(pairs)})"
+    section = "[/Script/Pal.PalGameWorldSettings]"
+    return f"{section}\n{option_str}\n"
+
+
+def _parse_keyvalue_config(content: str) -> dict:
+    """Parse simple key=value or key value config files (Rust server.cfg, CS2 server.cfg)."""
+    settings: dict = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        # Try key=value first, then key "value", then key value
+        m = re.match(r'^(\S+)\s*[=]\s*"?([^"]*)"?\s*$', line)
+        if not m:
+            m = re.match(r'^(\S+)\s+"([^"]*)"\s*$', line)
+        if not m:
+            m = re.match(r'^(\S+)\s+(\S+)\s*$', line)
+        if m:
+            settings[m.group(1)] = m.group(2)
+    return settings
+
+
+def _serialize_keyvalue_config(existing_content: str, updates: dict) -> str:
+    """Update key=value config, preserving comments and structure."""
+    lines = existing_content.splitlines()
+    updated_keys: set = set()
+    result_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("//") and not stripped.startswith("#"):
+            m = re.match(r'^(\S+)\s*[= ]\s*', stripped)
+            if m and m.group(1) in updates:
+                key = m.group(1)
+                val = updates[key]
+                if isinstance(val, bool):
+                    val = "1" if val else "0"
+                # Preserve format: if original had quotes, use quotes
+                if '"' in stripped:
+                    result_lines.append(f'{key} "{val}"')
+                elif '=' in stripped:
+                    result_lines.append(f'{key}={val}')
+                else:
+                    result_lines.append(f'{key} {val}')
+                updated_keys.add(key)
+                continue
+        result_lines.append(line)
+
+    # Append new keys that weren't in the file
+    for key, val in updates.items():
+        if key not in updated_keys:
+            if isinstance(val, bool):
+                val = "1" if val else "0"
+            result_lines.append(f'{key} "{val}"')
+
+    return "\n".join(result_lines) + "\n"
+
+
+def _parse_env_config(content: str) -> dict:
+    """Parse .env-style config files."""
+    settings: dict = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, val = line.partition("=")
+            settings[key.strip()] = val.strip().strip('"').strip("'")
+    return settings
+
+
+def _serialize_env_config(existing_content: str, updates: dict) -> str:
+    """Update .env-style config, preserving comments."""
+    lines = existing_content.splitlines()
+    updated_keys: set = set()
+    result_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in updates:
+                val = updates[key]
+                if isinstance(val, bool):
+                    val = "true" if val else "false"
+                result_lines.append(f"{key}={val}")
+                updated_keys.add(key)
+                continue
+        result_lines.append(line)
+
+    for key, val in updates.items():
+        if key not in updated_keys:
+            if isinstance(val, bool):
+                val = "true" if val else "false"
+            result_lines.append(f"{key}={val}")
+
+    return "\n".join(result_lines) + "\n"
+
+
+def _parse_json_config(content: str) -> dict:
+    """Parse JSON config files."""
+    try:
+        return json.loads(content)
+    except Exception:
+        return {}
+
+
+def _serialize_json_config(existing_content: str, updates: dict) -> str:
+    """Update JSON config, merging with existing values."""
+    try:
+        data = json.loads(existing_content)
+    except Exception:
+        data = {}
+    data.update(updates)
+    return json.dumps(data, indent=2) + "\n"
+
+
+def _parse_ini_config(content: str, section: str | None = None) -> dict:
+    """Parse standard INI config files."""
+    parser = configparser.ConfigParser(strict=False)
+    parser.read_string(content)
+    target_section = section or (parser.sections()[0] if parser.sections() else "DEFAULT")
+    settings: dict = {}
+    if parser.has_section(target_section):
+        for key, val in parser.items(target_section):
+            settings[key] = val
+    return settings
+
+
+def _serialize_ini_config(existing_content: str, updates: dict, section: str | None = None) -> str:
+    """Update INI config, preserving structure."""
+    parser = configparser.ConfigParser(strict=False)
+    parser.read_string(existing_content)
+    target_section = section or (parser.sections()[0] if parser.sections() else "DEFAULT")
+    if not parser.has_section(target_section):
+        parser.add_section(target_section)
+    for key, val in updates.items():
+        if isinstance(val, bool):
+            val = "True" if val else "False"
+        parser.set(target_section, key, str(val))
+    output = io.StringIO()
+    parser.write(output)
+    return output.getvalue()
+
+
+def _parse_xml_7dtd(content: str) -> dict:
+    """Parse 7 Days to Die serverconfig.xml format:
+    <property name="ServerName" value="My Server"/>
+    """
+    settings: dict = {}
+    for m in re.finditer(r'<property\s+name="([^"]+)"\s+value="([^"]*)"', content):
+        settings[m.group(1)] = m.group(2)
+    return settings
+
+
+def _serialize_xml_7dtd(existing_content: str, updates: dict) -> str:
+    """Update 7 Days to Die serverconfig.xml format."""
+    content = existing_content
+    updated_keys: set = set()
+    for key, val in updates.items():
+        if isinstance(val, bool):
+            val = "true" if val else "false"
+        pattern = re.compile(
+            r'(<property\s+name="' + re.escape(key) + r'"\s+value=")([^"]*)("/>)',
+            re.IGNORECASE,
+        )
+        new_content = pattern.sub(rf'\g<1>{val}\g<3>', content)
+        if new_content != content:
+            updated_keys.add(key)
+            content = new_content
+    return content
+
+
+def _read_game_settings(server_dir: Path, game_slug: str) -> dict:
+    """Read current game settings from the config file."""
+    game_meta = STEAM_GAMES.get(game_slug, {})
+    gs = game_meta.get("game_settings")
+    if not gs:
+        return {"error": "No game settings defined for this game", "settings": {}, "schema": []}
+
+    config_path = server_dir / gs["config_file"]
+    fmt = gs.get("config_format", "keyvalue")
+    schema = gs.get("settings", [])
+
+    current: dict = {}
+    if config_path.exists():
+        try:
+            content = config_path.read_text(encoding="utf-8")
+        except Exception:
+            content = ""
+
+        if fmt == "ini-oneline":
+            current = _parse_palworld_settings(content)
+        elif fmt == "keyvalue":
+            current = _parse_keyvalue_config(content)
+        elif fmt == "env":
+            current = _parse_env_config(content)
+        elif fmt == "json":
+            current = _parse_json_config(content)
+        elif fmt == "ini":
+            current = _parse_ini_config(content, gs.get("config_section"))
+        elif fmt == "xml-7dtd":
+            current = _parse_xml_7dtd(content)
+
+    # Build result with defaults filled in
+    values: dict = {}
+    for field in schema:
+        key = field["key"]
+        raw_val = current.get(key)
+        if raw_val is not None:
+            # Coerce to the proper type
+            if field["type"] == "float":
+                try:
+                    raw_val = float(raw_val)
+                except Exception:
+                    raw_val = field.get("default")
+            elif field["type"] == "int":
+                try:
+                    raw_val = int(float(raw_val))
+                except Exception:
+                    raw_val = field.get("default")
+            elif field["type"] == "bool":
+                if isinstance(raw_val, str):
+                    raw_val = raw_val.lower() in ("true", "1", "yes", "on")
+            values[key] = raw_val
+        else:
+            values[key] = field.get("default")
+
+    return {
+        "settings": values,
+        "schema": schema,
+        "config_file": gs["config_file"],
+        "config_exists": config_path.exists(),
+    }
+
+
+def _write_game_settings(server_dir: Path, game_slug: str, updates: dict) -> dict:
+    """Write updated game settings to the config file."""
+    game_meta = STEAM_GAMES.get(game_slug, {})
+    gs = game_meta.get("game_settings")
+    if not gs:
+        return {"error": "No game settings defined for this game"}
+
+    config_path = server_dir / gs["config_file"]
+    fmt = gs.get("config_format", "keyvalue")
+    section = gs.get("config_section")
+
+    # Ensure parent directory exists
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    existing_content = ""
+    if config_path.exists():
+        try:
+            existing_content = config_path.read_text(encoding="utf-8")
+        except Exception:
+            existing_content = ""
+
+    # Type-coerce updates based on schema
+    schema = {f["key"]: f for f in gs.get("settings", [])}
+    coerced: dict = {}
+    for key, val in updates.items():
+        field = schema.get(key)
+        if not field:
+            coerced[key] = val
+            continue
+        try:
+            if field["type"] == "float":
+                coerced[key] = float(val)
+            elif field["type"] == "int":
+                coerced[key] = int(float(val))
+            elif field["type"] == "bool":
+                if isinstance(val, str):
+                    coerced[key] = val.lower() in ("true", "1", "yes", "on")
+                else:
+                    coerced[key] = bool(val)
+            else:
+                coerced[key] = str(val)
+        except Exception:
+            coerced[key] = val
+
+    if fmt == "ini-oneline":
+        new_content = _serialize_palworld_settings(existing_content, coerced)
+    elif fmt == "keyvalue":
+        new_content = _serialize_keyvalue_config(existing_content, coerced)
+    elif fmt == "env":
+        new_content = _serialize_env_config(existing_content, coerced)
+    elif fmt == "json":
+        new_content = _serialize_json_config(existing_content, coerced)
+    elif fmt == "ini":
+        new_content = _serialize_ini_config(existing_content, coerced, section)
+    elif fmt == "xml-7dtd":
+        new_content = _serialize_xml_7dtd(existing_content, coerced)
+    else:
+        return {"error": f"Unknown config format: {fmt}"}
+
+    try:
+        config_path.write_text(new_content, encoding="utf-8")
+    except Exception as e:
+        return {"error": f"Failed to write config: {e}"}
+
+    return {"success": True, "config_file": gs["config_file"]}
+
+
+# ---------------------------------------------------------------------------
+# Game Settings API endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/games/{game_slug}/settings-schema")
+async def get_game_settings_schema(game_slug: str, current_user=Depends(require_auth)):
+    """Return the settings schema for a specific game."""
+    game_slug = game_slug.lower()
+    if game_slug not in STEAM_GAMES:
+        raise HTTPException(status_code=404, detail=f"Unknown game: {game_slug}")
+    meta = STEAM_GAMES[game_slug]
+    gs = meta.get("game_settings")
+    if not gs:
+        return {"has_settings": False, "schema": [], "game": game_slug}
+    return {
+        "has_settings": True,
+        "schema": gs.get("settings", []),
+        "config_file": gs.get("config_file"),
+        "config_format": gs.get("config_format"),
+        "game": game_slug,
+        "display_name": meta.get("display_name", game_slug),
+    }
+
+
+class GameSettingsUpdate(BaseModel):
+    settings: Dict[str, Any] = Field(..., description="Key-value pairs of settings to update")
+
+
+@router.get("/server/{server_name}/settings")
+async def get_server_game_settings(server_name: str, game: str | None = None, current_user=Depends(require_auth)):
+    """Read current game settings for a running server.
+
+    The frontend may pass ``?game=palworld`` so detection is not needed.
+    """
+    game_slug = game or _detect_game_slug(server_name)
+    if not game_slug:
+        raise HTTPException(status_code=404, detail="Cannot detect game type for this server")
+
+    server_dir = _resolve_server_dir(server_name)
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Server directory not found: {server_name}")
+
+    result = _read_game_settings(server_dir, game_slug)
+    result["game"] = game_slug
+    result["display_name"] = STEAM_GAMES.get(game_slug, {}).get("display_name", game_slug)
+    return result
+
+
+@router.put("/server/{server_name}/settings")
+async def update_server_game_settings(
+    server_name: str,
+    payload: GameSettingsUpdate,
+    game: str | None = None,
+    current_user=Depends(require_moderator),
+):
+    """Update game settings for a server. Requires a restart to apply.
+
+    For Docker images that regenerate configs from env vars on startup
+    (e.g. Palworld), this also updates the container's environment
+    variables so the settings survive restarts.
+    """
+    game_slug = game or _detect_game_slug(server_name)
+    if not game_slug:
+        raise HTTPException(status_code=404, detail="Cannot detect game type for this server")
+
+    server_dir = _resolve_server_dir(server_name)
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Server directory not found: {server_name}")
+
+    result = _write_game_settings(server_dir, game_slug, payload.settings)
+    if result.get("error"):
+        raise HTTPException(status_code=500, detail=result["error"])
+
+    # ------------------------------------------------------------------
+    # Sync env vars on the Docker container so images that regenerate
+    # configs from env vars (e.g. Palworld) pick up the new values
+    # when the container restarts.
+    # ------------------------------------------------------------------
+    env_synced = False
+    game_meta = STEAM_GAMES.get(game_slug, {})
+    gs = game_meta.get("game_settings", {})
+    schema_list = gs.get("settings", [])
+    env_updates: dict[str, str] = {}
+    for field in schema_list:
+        env_var = field.get("env_var")
+        key = field["key"]
+        if env_var and key in payload.settings:
+            val = payload.settings[key]
+            # Docker env vars are always strings
+            if isinstance(val, bool):
+                env_updates[env_var] = str(val).lower()
+            elif isinstance(val, float):
+                env_updates[env_var] = f"{val:.6f}"
+            else:
+                env_updates[env_var] = str(val)
+    if env_updates:
+        try:
+            dm = DockerManager()
+            container = dm._get_container_any(server_name)
+            env_result = dm.update_container_env(container.id, env_updates)
+            if env_result.get("error"):
+                logger.warning(f"Env sync warning for {server_name}: {env_result['error']}")
+            else:
+                env_synced = True
+                logger.info(f"Synced {len(env_updates)} env vars for {server_name}")
+        except Exception as e:
+            logger.warning(f"Could not sync env vars for {server_name}: {e}")
+
+    return {
+        "success": True,
+        "message": "Settings saved. Restart the server to apply changes.",
+        "config_file": result.get("config_file"),
+        "game": game_slug,
+        "env_synced": env_synced,
+    }
