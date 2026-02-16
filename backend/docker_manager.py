@@ -1845,11 +1845,13 @@ class DockerManager:
         command: list[str] | None = None,
         restart_policy: dict | None = None,
         extra_labels: dict | None = None,
+        network_mode: str | None = None,
     ) -> dict:
         """Create a non-Minecraft container (Steam or other dedicated server).
 
         ports: list of {"container": 27015, "protocol": "udp"|"tcp", "host": optional int}
         volume: {"host": Path, "container": "/data"}
+        network_mode: optional, e.g. "host" to use host networking (skips port mapping)
         """
         self._ensure_client()
 
@@ -2025,7 +2027,16 @@ class DockerManager:
             run_kwargs["restart_policy"] = restart_policy
 
         effective_network = None
-        if client is self.client:
+        if network_mode == "host":
+            # Host networking: no port mapping, no Docker network
+            effective_network = None
+            port_binding = {}
+            # Record the container ports as-is for metadata
+            for item in normalized_ports:
+                cport = int(item["cport"])
+                proto = str(item["proto"]).lower()
+                port_binding[f"{cport}/{proto}"] = cport
+        elif client is self.client:
             effective_network = COMPOSE_NETWORK if COMPOSE_NETWORK else None
 
         container = client.containers.run(
@@ -2035,9 +2046,10 @@ class DockerManager:
             tty=True,
             stdin_open=True,
             environment={k: str(v) for k, v in (env or {}).items()},
-            ports=port_binding,
+            ports=port_binding if network_mode != "host" else None,
             volumes=volume_mounts,
             network=effective_network,
+            network_mode=network_mode if network_mode else None,
             command=command,
             labels=labels,
             **run_kwargs,

@@ -327,6 +327,7 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
                 volume=volume,
                 restart_policy=restart_policy,
                 extra_labels={"steam.game": game},
+                network_mode=meta.get("network_mode"),
             )
             if compose_error:
                 result["casaos_compose_error"] = compose_error
