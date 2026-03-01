@@ -48,9 +48,12 @@ const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
   const displayKind = isSteam
     ? `Steam · ${normalizeLabel(steamGame || server.type || 'Dedicated')}`
     : normalizeLabel(server.type || typeVersionData?.server_type || 'Minecraft');
-  const primaryHostPort = typeVersionData?.primary_host_port
-    ?? server.primary_host_port
-    ?? server.host_port;
+  const primaryHostPort = typeVersionData?.host_port
+    ?? server.host_port
+    ?? typeVersionData?.primary_host_port
+    ?? server.primary_host_port;
+  const gamePortProto = isSteam && typeVersionData?.game_port?.protocol
+    ? `/${typeVersionData.game_port.protocol}` : '';
   const dataPath = typeVersionData?.data_path || server.data_path;
   
   const handleMouseEnter = useCallback(() => {
@@ -85,7 +88,7 @@ const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
                 Version: {typeVersionData?.server_version || server.version || <span className="text-white/40">Unknown</span>}
               </span>
               {primaryHostPort ? (
-                <span>Port: {primaryHostPort}</span>
+                <span>Port: {primaryHostPort}{gamePortProto}</span>
               ) : null}
             </div>
             {dataPath ? (

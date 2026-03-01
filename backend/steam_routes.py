@@ -201,6 +201,7 @@ def _build_games_list() -> list[dict]:
             "steam_appid": meta.get("steam_appid"),
             "game_image": meta.get("game_image"),
             "ports": sanitized_ports,
+            "game_port": meta.get("game_port"),
             "env": env_defaults,
             "volume": meta.get("volume"),
             "default_name": meta.get("default_name") or slug,

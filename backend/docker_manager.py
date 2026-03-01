@@ -631,6 +631,40 @@ class DockerManager:
                         steam_ports = []
                         steam_port_summary = []
 
+                    # ── Resolve the game connect port from STEAM_GAMES catalog ──
+                    game_port_host = None
+                    game_port_info = None
+                    if is_steam and steam_game:
+                        try:
+                            from steam_games import STEAM_GAMES as _sg_catalog
+                            game_def = _sg_catalog.get(steam_game, {})
+                            gp = game_def.get("game_port")
+                            # Fallback: if no game_port defined, use first port entry
+                            if not gp and game_def.get("ports"):
+                                fp = game_def["ports"][0]
+                                gp = {"port": fp["container"], "protocol": fp.get("protocol", "udp")}
+                            if gp:
+                                gp_container = int(gp["port"])
+                                gp_proto = gp.get("protocol", "udp").lower()
+                                for sp in steam_ports:
+                                    if sp.get("container_port") == gp_container and sp.get("protocol", "").lower() == gp_proto:
+                                        game_port_host = int(sp["host_port"]) if sp.get("host_port") and str(sp["host_port"]).isdigit() else sp.get("host_port")
+                                        break
+                                if game_port_host is None:
+                                    for sp in steam_ports:
+                                        if sp.get("container_port") == gp_container and sp.get("host_port"):
+                                            game_port_host = int(sp["host_port"]) if str(sp["host_port"]).isdigit() else sp.get("host_port")
+                                            break
+                                if game_port_host is None and game_def.get("network_mode") == "host":
+                                    game_port_host = gp_container
+                                game_port_info = {
+                                    "container_port": gp_container,
+                                    "protocol": gp_proto,
+                                    "host_port": game_port_host,
+                                }
+                        except Exception:
+                            pass
+
                     result.append({
                         "id": c.id,
                         "name": c.name,
@@ -649,7 +683,8 @@ class DockerManager:
                         "data_path": data_path,
                         "steam_ports": steam_ports,
                         "port_summary": steam_port_summary,
-                        "host_port": primary_host_port,
+                        "host_port": game_port_host or primary_host_port,
+                        "game_port": game_port_info,
                         "created_at": attrs.get("Created"),
                         "engine": engine,
                         
@@ -864,7 +899,55 @@ class DockerManager:
                         data_path = first_mount.get("Source")
             except Exception:
                 data_path = None
-            
+
+            # ── Build port_summary (same as get_all_servers) ──
+            steam_port_summary: List[str] = []
+            try:
+                for sp in steam_ports:
+                    hp = sp.get("host_port")
+                    proto = sp.get("protocol", "tcp")
+                    if hp:
+                        steam_port_summary.append(f"{hp}/{proto}")
+            except Exception:
+                steam_port_summary = []
+
+            # ── Resolve the game connect port from STEAM_GAMES catalog ──
+            game_port_host = None
+            game_port_info = None
+            if server_kind == "steam" and steam_game:
+                try:
+                    from steam_games import STEAM_GAMES as _sg_catalog
+                    game_def = _sg_catalog.get(steam_game, {})
+                    gp = game_def.get("game_port")
+                    # Fallback: if no game_port defined, use first port entry
+                    if not gp and game_def.get("ports"):
+                        fp = game_def["ports"][0]
+                        gp = {"port": fp["container"], "protocol": fp.get("protocol", "udp")}
+                    if gp:
+                        gp_container = int(gp["port"])
+                        gp_proto = gp.get("protocol", "udp").lower()
+                        # Find the matching host port from steam_ports
+                        for sp in steam_ports:
+                            if sp.get("container_port") == gp_container and sp.get("protocol", "").lower() == gp_proto:
+                                game_port_host = int(sp["host_port"]) if sp.get("host_port") and str(sp["host_port"]).isdigit() else sp.get("host_port")
+                                break
+                        # If not found by exact protocol, try just matching the container port
+                        if game_port_host is None:
+                            for sp in steam_ports:
+                                if sp.get("container_port") == gp_container and sp.get("host_port"):
+                                    game_port_host = int(sp["host_port"]) if str(sp["host_port"]).isdigit() else sp.get("host_port")
+                                    break
+                        # For network_mode=host, container port IS the host port
+                        if game_port_host is None and game_def.get("network_mode") == "host":
+                            game_port_host = gp_container
+                        game_port_info = {
+                            "container_port": gp_container,
+                            "protocol": gp_proto,
+                            "host_port": game_port_host,
+                        }
+                except Exception as e:
+                    logger.debug(f"Could not resolve game_port for {steam_game}: {e}")
+
             return {
                 "id": container.id,
                 "name": container.name,
@@ -880,8 +963,11 @@ class DockerManager:
                 "server_kind": server_kind,
                 "steam_game": steam_game,
                 "primary_host_port": primary_host_port,
+                "host_port": game_port_host or primary_host_port,
+                "game_port": game_port_info,
                 "data_path": data_path,
                 "steam_ports": steam_ports,
+                "port_summary": steam_port_summary,
                 "java_version": java_version,
                 "java_bin": java_bin,
                 "java_args": java_opts,

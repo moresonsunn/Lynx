@@ -20,6 +20,7 @@ BASE_STEAM_GAMES = {
         "notes": "Set a strong admin password and monitor CPU usage as bases grow.",
         "default_name": "palworld",
         "image": "thijsvanloef/palworld-server-docker:latest",
+        "game_port": {"port": 8211, "protocol": "udp"},
         "ports": [
             {"container": 8211, "protocol": "udp"},
             {"container": 27015, "protocol": "udp"},
@@ -90,6 +91,7 @@ BASE_STEAM_GAMES = {
         "notes": "Watch RAM usage for large maps. First start downloads ~2 GB.",
         "default_name": "zomboid",
         "image": "ghcr.io/ich777/steamcmd:projectzomboid",
+        "game_port": {"port": 16261, "protocol": "udp"},
         "ports": [
             {"container": 16261, "protocol": "udp"},
             {"container": 16262, "protocol": "udp"},
@@ -117,6 +119,7 @@ BASE_STEAM_GAMES = {
         "notes": "Configure world name and server password; open UDP ports 2456-2458.",
         "default_name": "valheim",
         "image": "lloesche/valheim-server:latest",
+        "game_port": {"port": 2456, "protocol": "udp"},
         "ports": [
             {"container": 2456, "protocol": "udp"},
             {"container": 2457, "protocol": "udp"},
@@ -154,6 +157,7 @@ BASE_STEAM_GAMES = {
         "notes": "Set world seed, max players, and password as desired.",
         "default_name": "tmodloader",
         "image": "ghcr.io/beardedio/terraria:latest",
+        "game_port": {"port": 7777, "protocol": "tcp"},
         "ports": [
             {"container": 7777, "protocol": "tcp"},
         ],
@@ -176,6 +180,7 @@ BASE_STEAM_GAMES = {
         "notes": "Downloads ~35 GB on first start. A Game Server Login Token (SRCDS_TOKEN) is REQUIRED for the server to be publicly listed — get one at steamcommunity.com/dev/managegameservers.",
         "default_name": "cs2",
         "image": "cm2network/cs2:latest",
+        "game_port": {"port": 27015, "protocol": "udp"},
         "ports": [
             {"container": 27015, "protocol": "udp"},
             {"container": 27015, "protocol": "tcp"},
@@ -226,6 +231,7 @@ BASE_STEAM_GAMES = {
         "notes": "Enable save/backups and set a server password if needed.",
         "default_name": "factorio",
         "image": "factoriotools/factorio:stable",
+        "game_port": {"port": 34197, "protocol": "udp"},
         "ports": [
             {"container": 34197, "protocol": "udp"},
         ],
@@ -244,6 +250,7 @@ BASE_STEAM_GAMES = {
         "notes": "Requires at least 8 GB RAM (12+ recommended). Uses web RCON (port 28016). First start downloads ~6 GB of game files.",
         "default_name": "rust",
         "image": "indifferentbroccoli/rust-server-docker:latest",
+        "game_port": {"port": 28015, "protocol": "udp"},
         "ports": [
             {"container": 28015, "protocol": "udp"},
             {"container": 28015, "protocol": "tcp"},
@@ -301,6 +308,7 @@ BASE_STEAM_GAMES = {
         "notes": "Back up saves frequently. Requires 8–16 GB RAM. Auto-updates on container restart.",
         "default_name": "satisfactory",
         "image": "wolveix/satisfactory-server:latest",
+        "game_port": {"port": 7777, "protocol": "udp"},
         "ports": [
             {"container": 7777, "protocol": "udp"},
             {"container": 15000, "protocol": "udp"},
@@ -322,6 +330,7 @@ BASE_STEAM_GAMES = {
         "notes": "Uses LinuxGSM with auto-backups and monitoring. Edit sdtdserver.xml in ServerFiles for advanced config.",
         "default_name": "7d2d",
         "image": "vinanrra/7dtd-server:latest",
+        "game_port": {"port": 26900, "protocol": "udp"},
         "ports": [
             {"container": 26900, "protocol": "udp"},
             {"container": 26900, "protocol": "tcp"},
@@ -368,6 +377,7 @@ BASE_STEAM_GAMES = {
         "notes": "Uses Proton. No Steam login needed (anonymous). Volume must be owned by 10000:10000 for bind mounts. Ports 15636 AND 15637 must both be open.",
         "default_name": "enshrouded",
         "image": "sknnr/enshrouded-dedicated-server:latest",
+        "game_port": {"port": 15637, "protocol": "udp"},
         "ports": [
             {"container": 15637, "protocol": "udp"},
         ],
@@ -400,6 +410,7 @@ BASE_STEAM_GAMES = {
         "notes": "⚠️ ARCHIVED IMAGE — this Docker image is no longer maintained (last updated 2019). REQUIRES Steam credentials (STEAM_USER/STEAM_PASSWORD) with Steam Guard DISABLED. May not work with modern SteamCMD.",
         "default_name": "assetto",
         "image": "germanrcuriel/assetto-corsa-server:latest",
+        "game_port": {"port": 9600, "protocol": "udp"},
         "ports": [
             {"container": 8081, "protocol": "tcp"},
             {"container": 9600, "protocol": "tcp"},
@@ -425,6 +436,7 @@ BASE_STEAM_GAMES = {
         "notes": "Peer port is game+1; allow at least 16 GB RAM. IMPORTANT: Run 'sysctl -w vm.max_map_count=262144' on the host or the server will hang on startup.",
         "default_name": "ark-sa",
         "image": "acekorneya/asa_server:latest",
+        "game_port": {"port": 7777, "protocol": "udp"},
         "ports": [
             {"container": 7777, "protocol": "udp"},
             {"container": 7778, "protocol": "udp"},
@@ -476,6 +488,7 @@ BASE_STEAM_GAMES = {
         "notes": "Do not append flags after the password flag; server tags limited to five entries.",
         "default_name": "the-front",
         "image": "mcltn/thefrontdedicated:latest",
+        "game_port": {"port": 27015, "protocol": "udp"},
         "ports": [
             {"container": 27015, "protocol": "udp"},
             {"container": 27016, "protocol": "udp"},
@@ -500,6 +513,7 @@ BASE_STEAM_GAMES = {
         "notes": "REQUIRES Steam credentials (USERNAME/PASSWRD) with Steam Guard DISABLED. Downloads ~20 GB.",
         "default_name": "dayz",
         "image": "ghcr.io/ich777/steamcmd:dayz",
+        "game_port": {"port": 2302, "protocol": "udp"},
         "ports": [
             {"container": 2302, "protocol": "udp"},
             {"container": 2303, "protocol": "udp"},
@@ -525,6 +539,7 @@ BASE_STEAM_GAMES = {
         "notes": "Downloads ~15 GB on first start. Allow high CPU/RAM for larger maps.",
         "default_name": "ark-se",
         "image": "ghcr.io/ich777/steamcmd:arkse",
+        "game_port": {"port": 7777, "protocol": "udp"},
         "ports": [
             {"container": 7777, "protocol": "udp"},
             {"container": 7778, "protocol": "udp"},
@@ -555,6 +570,7 @@ BASE_STEAM_GAMES = {
         "notes": "Downloads ~40 GB on first start. Runs under Wine/Proton.",
         "default_name": "conan-exiles",
         "image": "ghcr.io/ich777/steamcmd:conanexiles",
+        "game_port": {"port": 7777, "protocol": "udp"},
         "ports": [
             {"container": 7777, "protocol": "udp"},
             {"container": 7778, "protocol": "udp"},
@@ -578,6 +594,7 @@ BASE_STEAM_GAMES = {
         "notes": "Set RCON password; ensure UDP ports are forwarded.",
         "default_name": "squad",
         "image": "cm2network/squad:latest",
+        "game_port": {"port": 7787, "protocol": "udp"},
         "ports": [
             {"container": 7787, "protocol": "udp"},
             {"container": 27165, "protocol": "udp"},
@@ -599,6 +616,7 @@ BASE_STEAM_GAMES = {
         "notes": "Downloads ~1.5 GB on first start. Config files are in serverfiles/Configs.",
         "default_name": "eco",
         "image": "ghcr.io/ich777/steamcmd:eco",
+        "game_port": {"port": 3000, "protocol": "tcp"},
         "ports": [
             {"container": 3000, "protocol": "tcp"},
             {"container": 3001, "protocol": "udp"},
@@ -621,6 +639,7 @@ BASE_STEAM_GAMES = {
         "notes": "⚠️ Experimental — runs under Wine with known stability issues. Requires pre-configured world from Windows SE Dedicated Server Tool. Image is ~2 GB. RAM may be capped at 4 GB on some hosts.",
         "default_name": "space-engineers",
         "image": "devidian/spaceengineers:latest",
+        "game_port": {"port": 27016, "protocol": "udp"},
         "ports": [
             {"container": 27016, "protocol": "udp"},
         ],
@@ -639,6 +658,7 @@ BASE_STEAM_GAMES = {
         "notes": "Downloads ~3 GB on first start. Set RCON password in server.cfg after install.",
         "default_name": "l4d2",
         "image": "ghcr.io/ich777/steamcmd:l4d2",
+        "game_port": {"port": 27015, "protocol": "udp"},
         "ports": [
             {"container": 27015, "protocol": "udp"},
             {"container": 27015, "protocol": "tcp"},
@@ -662,6 +682,7 @@ BASE_STEAM_GAMES = {
         "notes": "Single TCP port; for mods use tModLoader entry.",
         "default_name": "terraria",
         "image": "ghcr.io/beardedio/terraria:latest",
+        "game_port": {"port": 7777, "protocol": "tcp"},
         "ports": [
             {"container": 7777, "protocol": "tcp"},
         ],
@@ -680,6 +701,7 @@ BASE_STEAM_GAMES = {
         "notes": "⚠️ Minimally maintained image with sparse documentation. Uses Wine internally (Windows server exe). First start may take time to initialize.",
         "default_name": "stormworks",
         "image": "bensonjohnson/swserver:latest",
+        "game_port": {"port": 25564, "protocol": "udp"},
         "ports": [
             {"container": 25564, "protocol": "udp"},
             {"container": 25564, "protocol": "tcp"},
@@ -697,6 +719,7 @@ BASE_STEAM_GAMES = {
         "notes": "Handles stdin/stdout for console. Crash detection with auto-restart built in.",
         "default_name": "unturned",
         "image": "imperialplugins/unturned:latest",
+        "game_port": {"port": 27015, "protocol": "udp"},
         "ports": [
             {"container": 27015, "protocol": "udp"},
             {"container": 27016, "protocol": "udp"},
@@ -715,6 +738,7 @@ BASE_STEAM_GAMES = {
         "notes": "REQUIRES Steam credentials (USERNAME/PASSWRD) with Steam Guard DISABLED. Downloads ~8 GB.",
         "default_name": "arma3",
         "image": "ghcr.io/ich777/steamcmd:arma3",
+        "game_port": {"port": 2302, "protocol": "udp"},
         "ports": [
             {"container": 2302, "protocol": "udp"},
             {"container": 2303, "protocol": "udp"},
@@ -741,6 +765,7 @@ BASE_STEAM_GAMES = {
         "notes": "Add a GSLT (Game Server Login Token) for public server listing. Downloads ~5 GB.",
         "default_name": "gmod",
         "image": "ghcr.io/ich777/steamcmd:gmod",
+        "game_port": {"port": 27015, "protocol": "udp"},
         "ports": [
             {"container": 27015, "protocol": "udp"},
             {"container": 27015, "protocol": "tcp"},
@@ -765,6 +790,7 @@ BASE_STEAM_GAMES = {
         "notes": "Downloads ~30 GB on first start. Configure maps via startup arguments.",
         "default_name": "sandstorm",
         "image": "ghcr.io/ich777/steamcmd:insurgency",
+        "game_port": {"port": 27102, "protocol": "udp"},
         "ports": [
             {"container": 27102, "protocol": "udp"},
             {"container": 27131, "protocol": "udp"},
@@ -788,6 +814,7 @@ BASE_STEAM_GAMES = {
         "notes": "Downloads ~10 GB on first start. Webadmin available on port 8080 after manual config.",
         "default_name": "kf2",
         "image": "ghcr.io/ich777/steamcmd:kf2",
+        "game_port": {"port": 7777, "protocol": "udp"},
         "ports": [
             {"container": 7777, "protocol": "udp"},
             {"container": 27015, "protocol": "udp"},
@@ -811,6 +838,7 @@ BASE_STEAM_GAMES = {
         "notes": "Volume dirs must be chmod 777 or owned by the container user. Uses net=host recommended but works with port mapping.",
         "default_name": "mordhau",
         "image": "cm2network/mordhau:latest",
+        "game_port": {"port": 7777, "protocol": "udp"},
         "ports": [
             {"container": 7777, "protocol": "udp"},
             {"container": 27015, "protocol": "udp"},
@@ -835,6 +863,7 @@ BASE_STEAM_GAMES = {
         "notes": "Add a GSLT for public server listing. Downloads ~7 GB on first start.",
         "default_name": "tf2",
         "image": "cm2network/tf2:latest",
+        "game_port": {"port": 27015, "protocol": "udp"},
         "ports": [
             {"container": 27015, "protocol": "udp"},
             {"container": 27015, "protocol": "tcp"},
@@ -856,6 +885,7 @@ BASE_STEAM_GAMES = {
         "notes": "Query is game+1; keep both UDP ports forwarded. Passworded servers can only be joined via in-game server browser (not Steam).",
         "default_name": "vrising",
         "image": "trueosiris/vrising:latest",
+        "game_port": {"port": 9876, "protocol": "udp"},
         "ports": [
             {"container": 9876, "protocol": "udp"},
             {"container": 9877, "protocol": "udp"},

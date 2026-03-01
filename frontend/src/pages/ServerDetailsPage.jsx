@@ -416,6 +416,9 @@ export default function ServerDetailsPage() {
           const onlineCount = playerData?.count || onlinePlayers.length;
           const maxPlayers = playerData?.max || 0;
           const connectPort = server.host_port || typeVersionData?.host_port;
+          const steamPorts = typeVersionData?.steam_ports || server?.steam_ports || [];
+          const gamePortInfo = typeVersionData?.game_port || server?.game_port;
+          const portSummary = typeVersionData?.port_summary || server?.port_summary || [];
 
           return (
           <div className="space-y-5">
@@ -429,6 +432,11 @@ export default function ServerDetailsPage() {
                   <div>
                     <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider">Quick Connect</h3>
                     <p className="text-white font-mono text-lg mt-0.5">localhost:{connectPort}</p>
+                    {isSteam && portSummary.length > 1 && (
+                      <p className="text-white/40 text-xs mt-1 font-mono">
+                        All ports: {portSummary.join(', ')}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <button
@@ -475,8 +483,22 @@ export default function ServerDetailsPage() {
                   </div>
                   {connectPort && (
                     <div className="flex justify-between items-center">
-                      <span className="text-white/50">{t('servers.port')}</span>
-                      <span className="text-white font-mono">{connectPort}</span>
+                      <span className="text-white/50">{isSteam ? 'Game Port' : t('servers.port')}</span>
+                      <span className="text-white font-mono">{connectPort}{gamePortInfo?.protocol ? `/${gamePortInfo.protocol}` : ''}</span>
+                    </div>
+                  )}
+                  {isSteam && steamPorts.length > 1 && (
+                    <div className="flex justify-between items-start">
+                      <span className="text-white/50">All Ports</span>
+                      <div className="text-right">
+                        {steamPorts.map((sp, i) => (
+                          <span key={i} className="text-white/70 font-mono text-xs block">
+                            {sp.host_port || sp.container_port}/{sp.protocol}
+                            {gamePortInfo && sp.container_port === gamePortInfo.container_port && sp.protocol === gamePortInfo.protocol
+                              ? ' (game)' : ''}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
                   <div className="flex justify-between items-center">

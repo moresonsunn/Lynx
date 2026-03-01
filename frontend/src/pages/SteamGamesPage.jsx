@@ -272,10 +272,12 @@ export default function SteamGamesPage() {
                                         value={hostPort}
                                         onChange={(e) => setHostPort(e.target.value)}
                                         className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-brand-500"
-                                        placeholder={t('steamGames.autoAssign')}
+                                        placeholder={selectedGame?.game_port ? `Default: ${selectedGame.game_port.port}/${selectedGame.game_port.protocol}` : t('steamGames.autoAssign')}
                                     />
                                     <p className="text-xs text-white/40 mt-1">
-                                        Correct port mapping will be handled automatically if left blank.
+                                        {selectedGame?.game_port
+                                          ? `Game connects on port ${selectedGame.game_port.port}/${selectedGame.game_port.protocol}. Leave blank for auto-assign.`
+                                          : 'Correct port mapping will be handled automatically if left blank.'}
                                     </p>
                                 </div>
 
