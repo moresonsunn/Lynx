@@ -14,6 +14,7 @@ import logging
 import re
 import configparser
 import io
+import time
 
 from steam_games import STEAM_GAMES
 
@@ -165,23 +166,19 @@ def _prepare_tmodloader_files(
     except Exception:
         pass
 
-@router.get("/games")
-async def list_games(
-    limit: int = 9,
-    offset: int = 0,
-    include_all: bool = False,
-    current_user=Depends(require_auth),
-):
+# ---------------------------------------------------------------------------
+# Games list cache – the catalog is static at runtime so we build the
+# serialised list once and reuse it on every request.
+# ---------------------------------------------------------------------------
+_games_cache: list[dict] | None = None
+_games_cache_ts: float = 0.0
+_GAMES_CACHE_TTL = 300  # seconds
+
+
+def _build_games_list() -> list[dict]:
+    """Build the full games list once from STEAM_GAMES catalog."""
     games: list[dict] = []
-    items = list(STEAM_GAMES.items())
-    if not include_all:
-        if offset < 0:
-            offset = 0
-        items = items[offset: offset + limit if limit > 0 else None]
-    else:
-        if offset > 0:
-            items = items[offset:]
-    for slug, meta in items:
+    for slug, meta in STEAM_GAMES.items():
         env_defaults = {}
         for key, value in (meta.get("env") or {}).items():
             try:
@@ -210,7 +207,33 @@ async def list_games(
             "category": meta.get("category"),
             "has_game_settings": bool(meta.get("game_settings")),
         })
-    return {"games": games}
+    return games
+
+
+def _get_games_cache() -> list[dict]:
+    global _games_cache, _games_cache_ts
+    now = time.monotonic()
+    if _games_cache is None or (now - _games_cache_ts) > _GAMES_CACHE_TTL:
+        _games_cache = _build_games_list()
+        _games_cache_ts = now
+    return _games_cache
+
+
+@router.get("/games")
+async def list_games(
+    limit: int = 9,
+    offset: int = 0,
+    include_all: bool = False,
+    current_user=Depends(require_auth),
+):
+    all_games = _get_games_cache()
+    if not include_all:
+        if offset < 0:
+            offset = 0
+        games = all_games[offset: offset + limit if limit > 0 else None]
+    else:
+        games = all_games[offset:] if offset > 0 else all_games
+    return {"games": games, "total": len(all_games)}
 
 
 @router.post("/install")

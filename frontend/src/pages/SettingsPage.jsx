@@ -6,7 +6,8 @@ import {
   FaPalette, FaDocker, FaTachometerAlt, FaTrash, FaSync,
   FaCheck, FaTimes, FaExclamationTriangle, FaJava, FaHdd,
   FaDiscord, FaSlack, FaEnvelope, FaUndo, FaDownload, FaUpload,
-  FaKey, FaClock, FaMemory, FaMicrochip, FaGlobe, FaBroom
+  FaKey, FaClock, FaMemory, FaMicrochip, FaGlobe, FaBroom,
+  FaSteam
 } from 'react-icons/fa';
 import { useToast } from '../context/ToastContext';
 
@@ -139,7 +140,15 @@ export default function SettingsPage() {
   const [sessions, setSessions] = useState([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [curseforgeKey, setCurseforgeKey] = useState('');
-  const [providersStatus, setProvidersStatus] = useState({ curseforge: { configured: false } });
+  const [nexusKey, setNexusKey] = useState('');
+  const [modioKey, setModioKey] = useState('');
+  const [steamKey, setSteamKey] = useState('');
+  const [providersStatus, setProvidersStatus] = useState({
+    curseforge: { configured: false },
+    nexus: { configured: false },
+    modio: { configured: false },
+    steam: { configured: false },
+  });
 
   
   useEffect(() => {
@@ -317,6 +326,26 @@ export default function SettingsPage() {
         showToast('success', 'CurseForge API key saved');
         loadIntegrations();
         setCurseforgeKey('');
+      } else {
+        const err = await r.json().catch(() => ({}));
+        showToast('error', err.detail || 'Failed to save key');
+      }
+    } catch (e) {
+      showToast('error', 'Failed to save key');
+    }
+  }
+
+  async function saveIntegrationKey(provider, key, setter, label) {
+    try {
+      const r = await fetch(`${API}/integrations/${provider}-key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ api_key: key })
+      });
+      if (r.ok) {
+        showToast('success', `${label} API key saved`);
+        loadIntegrations();
+        setter('');
       } else {
         const err = await r.json().catch(() => ({}));
         showToast('error', err.detail || 'Failed to save key');
@@ -997,6 +1026,141 @@ export default function SettingsPage() {
                         className="underline"
                       >
                         CurseForge
+                      </a>
+                    </span>
+                  </>
+                )}
+              </div>
+            </Section>
+
+            <Section title="Nexus Mods" description="API access for Nexus Mods integration" icon={FaGlobe}>
+              <div className="flex gap-4 items-end">
+                <div className="flex-1">
+                  <Input
+                    label="API Key"
+                    type="password"
+                    value={nexusKey}
+                    onChange={setNexusKey}
+                    placeholder={providersStatus?.nexus?.configured ? '••••••••••••••••' : 'Enter your Nexus Mods API key'}
+                  />
+                </div>
+                <button
+                  onClick={() => saveIntegrationKey('nexus', nexusKey, setNexusKey, 'Nexus Mods')}
+                  disabled={!nexusKey}
+                  className="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2 text-white"
+                >
+                  <FaSave className="w-4 h-4" />
+                  Save Key
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                {providersStatus?.nexus?.configured ? (
+                  <>
+                    <FaCheck className="text-green-500 w-4 h-4" />
+                    <span className="text-green-400 text-sm">Nexus Mods API configured</span>
+                  </>
+                ) : (
+                  <>
+                    <FaTimes className="text-yellow-500 w-4 h-4" />
+                    <span className="text-yellow-400 text-sm">
+                      Not configured - Get a key from{' '}
+                      <a
+                        href="https://www.nexusmods.com/users/myaccount?tab=api+access"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline"
+                      >
+                        Nexus Mods
+                      </a>
+                    </span>
+                  </>
+                )}
+              </div>
+            </Section>
+
+            <Section title="mod.io" description="API access for mod.io integration" icon={FaKey}>
+              <div className="flex gap-4 items-end">
+                <div className="flex-1">
+                  <Input
+                    label="API Key"
+                    type="password"
+                    value={modioKey}
+                    onChange={setModioKey}
+                    placeholder={providersStatus?.modio?.configured ? '••••••••••••••••' : 'Enter your mod.io API key'}
+                  />
+                </div>
+                <button
+                  onClick={() => saveIntegrationKey('modio', modioKey, setModioKey, 'mod.io')}
+                  disabled={!modioKey}
+                  className="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2 text-white"
+                >
+                  <FaSave className="w-4 h-4" />
+                  Save Key
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                {providersStatus?.modio?.configured ? (
+                  <>
+                    <FaCheck className="text-green-500 w-4 h-4" />
+                    <span className="text-green-400 text-sm">mod.io API configured</span>
+                  </>
+                ) : (
+                  <>
+                    <FaTimes className="text-yellow-500 w-4 h-4" />
+                    <span className="text-yellow-400 text-sm">
+                      Not configured - Get a key from{' '}
+                      <a
+                        href="https://mod.io/me/access"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline"
+                      >
+                        mod.io
+                      </a>
+                    </span>
+                  </>
+                )}
+              </div>
+            </Section>
+
+            <Section title="Steam Web API" description="API access for Steam Workshop integration" icon={FaSteam}>
+              <div className="flex gap-4 items-end">
+                <div className="flex-1">
+                  <Input
+                    label="API Key"
+                    type="password"
+                    value={steamKey}
+                    onChange={setSteamKey}
+                    placeholder={providersStatus?.steam?.configured ? '••••••••••••••••' : 'Enter your Steam Web API key'}
+                  />
+                </div>
+                <button
+                  onClick={() => saveIntegrationKey('steam', steamKey, setSteamKey, 'Steam')}
+                  disabled={!steamKey}
+                  className="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg flex items-center gap-2 text-white"
+                >
+                  <FaSave className="w-4 h-4" />
+                  Save Key
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                {providersStatus?.steam?.configured ? (
+                  <>
+                    <FaCheck className="text-green-500 w-4 h-4" />
+                    <span className="text-green-400 text-sm">Steam Web API configured</span>
+                  </>
+                ) : (
+                  <>
+                    <FaTimes className="text-yellow-500 w-4 h-4" />
+                    <span className="text-yellow-400 text-sm">
+                      Not configured - Get a key from{' '}
+                      <a
+                        href="https://steamcommunity.com/dev/apikey"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline"
+                      >
+                        Steam
                       </a>
                     </span>
                   </>

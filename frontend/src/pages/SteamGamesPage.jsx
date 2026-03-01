@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '../i18n';
 import { FaSteam, FaSearch, FaDownload, FaTimes, FaServer, FaInfoCircle } from 'react-icons/fa';
@@ -105,10 +105,19 @@ export default function SteamGamesPage() {
         }
     };
 
-    const filteredGames = games.filter(g =>
+    const filteredGames = useMemo(() => games.filter(g =>
         g.name.toLowerCase().includes(search.toLowerCase()) ||
         g.slug.toLowerCase().includes(search.toLowerCase())
-    );
+    ), [games, search]);
+
+    const availableCategories = useMemo(() => {
+        const allCategories = ['Survival', 'Sandbox', 'Shooter', 'Simulation', 'Racing', 'Action', 'Strategy', 'Other'];
+        return allCategories.filter(cat => games.some(g => (g.category || 'Other') === cat));
+    }, [games]);
+
+    const handleInstallClickCb = useCallback((game) => {
+        handleInstallClick(game);
+    }, []);
 
     return (
         <div className="p-6 max-w-7xl mx-auto">
@@ -146,26 +155,18 @@ export default function SteamGamesPage() {
                 >
                     All Games
                 </button>
-                {(() => {
-                    const allCategories = ['Survival', 'Sandbox', 'Shooter', 'Simulation', 'Racing', 'Action', 'Strategy', 'Other'];
-                    // Only show categories that have games
-                    const availableCategories = allCategories.filter(cat =>
-                        games.some(g => (g.category || 'Other') === cat)
-                    );
-
-                    return availableCategories.map(cat => (
-                        <button
-                            key={cat}
-                            onClick={() => setActiveCategory(cat)}
-                            className={`px-4 py-2 rounded-lg font-medium transition-all ${activeCategory === cat
-                                ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/20'
-                                : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
-                                }`}
-                        >
-                            {cat}
-                        </button>
-                    ));
-                })()}
+                {availableCategories.map(cat => (
+                    <button
+                        key={cat}
+                        onClick={() => setActiveCategory(cat)}
+                        className={`px-4 py-2 rounded-lg font-medium transition-all ${activeCategory === cat
+                            ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/20'
+                            : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                            }`}
+                    >
+                        {cat}
+                    </button>
+                ))}
             </div>
 
             {loading ? (
@@ -391,7 +392,7 @@ function getGameInitials(name) {
     return name.substring(0, 2).toUpperCase();
 }
 
-function GameTile({ game, onInstall }) {
+const GameTile = memo(function GameTile({ game, onInstall }) {
     const gradient = getGameGradient(game.name);
     const initials = getGameInitials(game.name);
     // Use steam_appid to generate URL, or fall back to game_image if provided
@@ -454,4 +455,4 @@ function GameTile({ game, onInstall }) {
             </h3>
         </div>
     );
-}
+});

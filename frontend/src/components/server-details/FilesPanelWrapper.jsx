@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FaFolder, FaUpload, FaSave, FaEdit, FaTimes, FaCheck, FaBan, FaArrowUp, FaSyncAlt, FaFolderPlus, FaFileAlt } from 'react-icons/fa';
+import { FaFolder, FaUpload, FaSave, FaEdit, FaTimes, FaCheck, FaBan, FaArrowUp, FaSyncAlt, FaFolderPlus, FaFileAlt, FaSearch } from 'react-icons/fa';
 import { useTranslation } from '../../i18n';
 import { API, getStoredToken } from '../../lib/api';
 import { authHeaders } from '../../context/AppContext';
@@ -22,6 +22,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
   const [blockedFileErrorLocal, setBlockedFileErrorLocal] = useState('');
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Simple in-memory cache for directory listings per server
   // cacheRef.current[key] = { items, ts }
@@ -483,16 +484,20 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
   function onDragLeave(ev) { ev.preventDefault(); ev.stopPropagation(); setIsDropping(false); }
 
   const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
+    const sorted = [...items].sort((a, b) => {
       if (a.is_dir && !b.is_dir) return -1;
       if (!a.is_dir && b.is_dir) return 1;
       return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     });
-  }, [items]);
+    if (!searchQuery.trim()) return sorted;
+    const q = searchQuery.trim().toLowerCase();
+    return sorted.filter(it => it.name.toLowerCase().includes(q));
+  }, [items, searchQuery]);
 
-  // Reset scroll position when items change (e.g., after upload or path change)
+  // Reset scroll position and clear search when items change (e.g., after upload or path change)
   useEffect(() => {
     setScrollTop(0);
+    setSearchQuery('');
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [items]);
 
@@ -569,6 +574,29 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
             );
           })()}
         </div>
+      </div>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="relative flex-1">
+          <FaSearch className="absolute left-2 top-1/2 -translate-y-1/2 text-white/40 w-3 h-3" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search files…"
+            className="w-full bg-white/5 border border-white/10 rounded-md pl-7 pr-7 py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/30"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+            >
+              <FaTimes className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <span className="text-xs text-white/50 whitespace-nowrap">{sortedItems.length} result{sortedItems.length !== 1 ? 's' : ''}</span>
+        )}
       </div>
       {isDropping && (
         <div className="mb-2 text-xs text-white/70 italic">Drop files to upload…</div>

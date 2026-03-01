@@ -16,15 +16,43 @@ from pathlib import Path
 
 from auth import get_current_user, require_moderator
 from database import get_db
+from integrations_store import get_integration_key as _store_key
 
 router = APIRouter(prefix="/steam-mods", tags=["Steam Mods"])
+
+# =============================================================================
+# SAFE ZIP EXTRACTION (Zip Slip protection)
+# =============================================================================
+
+def _safe_extractall(zf: zipfile.ZipFile, target_dir: Path) -> None:
+    """Extract ZIP with path-traversal protection (Zip Slip prevention)."""
+    resolved_target = target_dir.resolve()
+    for member in zf.namelist():
+        member_path = (target_dir / member).resolve()
+        if not str(member_path).startswith(str(resolved_target)):
+            raise ValueError(f"Zip Slip detected – refusing to extract: {member}")
+    zf.extractall(target_dir)
+
+
+def _safe_extract_member(zf: zipfile.ZipFile, name: str, target_dir: Path) -> Path:
+    """Extract a single ZIP member with path-traversal protection."""
+    resolved_target = target_dir.resolve()
+    member_path = (target_dir / name).resolve()
+    if not str(member_path).startswith(str(resolved_target)):
+        raise ValueError(f"Zip Slip detected – refusing to extract: {name}")
+    member_path.parent.mkdir(parents=True, exist_ok=True)
+    with zf.open(name) as src, open(member_path, "wb") as dst:
+        dst.write(src.read())
+    return member_path
 
 # =============================================================================
 # EXTERNAL API KEYS
 # =============================================================================
 
-NEXUS_API_KEY = os.environ.get("NEXUS_API_KEY", "d4ZrYNBdi8dxEVn1un7k20fk4eKx6aDK7bfpXZOSQNEq--Ws1540amhF+txm3K--gYljtzo8RKI/K9hDh3qssg==")
-MODIO_API_KEY = os.environ.get("MODIO_API_KEY", "")
+def _api_key(provider: str) -> str:
+    """Resolve API key: env var takes precedence, then integration store."""
+    env_name = f"{provider.upper()}_API_KEY"
+    return os.environ.get(env_name, "") or _store_key(provider) or ""
 
 # =============================================================================
 # MOD SOURCE CONFIGURATIONS
@@ -226,12 +254,8 @@ CURSEFORGE_GAMES = {
         "mod_path": "/ConanSandbox/Mods",
         "name": "Conan Exiles"
     },
-    # Project Zomboid - 78135
-    "project_zomboid": {
-        "game_id": 78135,
-        "mod_path": "/Zomboid/mods",
-        "name": "Project Zomboid"
-    },
+    # Project Zomboid - NOT on CurseForge; use Steam Workshop (app 108600) instead
+    # "project_zomboid": { ... },  # removed: 78135 was V Rising's ID, not PZ
     # Don't Starve Together - 4525
     "dont_starve_together": {
         "game_id": 4525,
@@ -723,11 +747,13 @@ def get_mod_source_for_game(game_slug: str) -> Dict[str, Any]:
 # CURSEFORGE API
 # =============================================================================
 
-CURSEFORGE_API_KEY = os.environ.get("CURSEFORGE_API_KEY", "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm")
 CURSEFORGE_API = "https://api.curseforge.com/v1"
 
 async def search_curseforge(game_id: int, search: str = "", page: int = 1, class_id: int = None) -> Dict[str, Any]:
     """Search CurseForge for mods"""
+    cf_key = _api_key("curseforge")
+    if not cf_key:
+        return {"results": [], "total": 0, "error": "CurseForge API key not configured. Add it in Settings → Integrations."}
     url = f"{CURSEFORGE_API}/mods/search"
     
     params = {
@@ -743,7 +769,7 @@ async def search_curseforge(game_id: int, search: str = "", page: int = 1, class
         params["classId"] = class_id
     
     headers = {
-        "x-api-key": CURSEFORGE_API_KEY,
+        "x-api-key": cf_key,
         "Accept": "application/json"
     }
     
@@ -793,7 +819,7 @@ async def get_curseforge_mod(mod_id: int) -> Dict[str, Any]:
     url = f"{CURSEFORGE_API}/mods/{mod_id}"
     
     headers = {
-        "x-api-key": CURSEFORGE_API_KEY,
+        "x-api-key": _api_key("curseforge"),
         "Accept": "application/json"
     }
     
@@ -830,7 +856,7 @@ async def get_curseforge_mod_files(mod_id: int) -> List[Dict[str, Any]]:
     url = f"{CURSEFORGE_API}/mods/{mod_id}/files"
     
     headers = {
-        "x-api-key": CURSEFORGE_API_KEY,
+        "x-api-key": _api_key("curseforge"),
         "Accept": "application/json"
     }
     
@@ -880,9 +906,11 @@ async def download_curseforge_mod(
                 extract_dir = install_path / filename.replace(".zip", "")
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 with zipfile.ZipFile(file_path, "r") as zf:
-                    zf.extractall(extract_dir)
+                    _safe_extractall(zf, extract_dir)
                 # Optionally remove the zip after extraction
                 # file_path.unlink()
+            except ValueError as e:
+                import logging; logging.getLogger(__name__).warning(str(e))
             except Exception:
                 pass  # Keep the zip if extraction fails
         
@@ -892,15 +920,14 @@ async def download_curseforge_mod(
 # STEAM WORKSHOP API
 # =============================================================================
 
-STEAM_API_KEY = os.environ.get("STEAM_API_KEY", "")
-
 async def search_workshop(appid: int, search_text: str, page: int = 1) -> Dict[str, Any]:
     """Search Steam Workshop for mods"""
     # Steam Workshop Web API
     url = "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/"
     
+    steam_key = _api_key("steam")
     params = {
-        "key": STEAM_API_KEY,
+        "key": steam_key,
         "query_type": 9,  # All public files
         "page": page,
         "numperpage": 20,
@@ -914,7 +941,7 @@ async def search_workshop(appid: int, search_text: str, page: int = 1) -> Dict[s
     
     async with httpx.AsyncClient(timeout=30) as client:
         # If no API key, use alternative scraping method
-        if not STEAM_API_KEY:
+        if not steam_key:
             return await scrape_workshop(appid, search_text, page)
         
         response = await client.get(url, params=params)
@@ -980,8 +1007,9 @@ async def get_workshop_item_details(workshop_id: str) -> Dict[str, Any]:
     """Get details for a specific workshop item"""
     url = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/"
     
+    steam_key = _api_key("steam")
     params = {
-        "key": STEAM_API_KEY,
+        "key": steam_key,
         "publishedfileids[0]": workshop_id,
         "includetags": True,
         "includeadditionalpreviews": True,
@@ -994,7 +1022,7 @@ async def get_workshop_item_details(workshop_id: str) -> Dict[str, Any]:
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        if not STEAM_API_KEY:
+        if not steam_key:
             # Fallback to scraping details page
             return {"id": workshop_id, "title": f"Workshop Item {workshop_id}"}
         
@@ -1026,64 +1054,83 @@ async def get_workshop_item_details(workshop_id: str) -> Dict[str, Any]:
 
 THUNDERSTORE_API = "https://thunderstore.io/api/experimental"
 
-async def search_thunderstore(community: str, search: str = "", page: int = 1) -> Dict[str, Any]:
-    """Search Thunderstore for mods"""
+# Cache Thunderstore package lists per community (avoids re-downloading MBs on every search)
+import time as _time
+_thunderstore_cache: Dict[str, Any] = {}         # community -> list[package]
+_thunderstore_cache_ts: Dict[str, float] = {}    # community -> timestamp
+_THUNDERSTORE_CACHE_TTL = 600                     # 10 minutes
+
+
+async def _get_thunderstore_packages(community: str) -> list:
+    """Fetch Thunderstore package list with caching."""
+    now = _time.time()
+    if community in _thunderstore_cache and (now - _thunderstore_cache_ts.get(community, 0)) < _THUNDERSTORE_CACHE_TTL:
+        return _thunderstore_cache[community]
+
     url = f"{THUNDERSTORE_API}/community/{community}/packages/"
-    
     async with httpx.AsyncClient(timeout=30) as client:
-        try:
-            response = await client.get(url)
-            if response.status_code != 200:
-                return {"results": [], "total": 0}
-            
-            packages = response.json()
-            
-            # Filter by search term if provided
-            if search:
-                search_lower = search.lower()
-                packages = [
-                    p for p in packages 
-                    if search_lower in p.get("name", "").lower() 
-                    or search_lower in p.get("owner", "").lower()
-                    or search_lower in (p.get("description") or "").lower()
-                ]
-            
-            # Sort by downloads
-            packages.sort(key=lambda x: x.get("total_downloads", 0), reverse=True)
-            
-            # Paginate
-            per_page = 20
-            start = (page - 1) * per_page
-            end = start + per_page
-            paginated = packages[start:end]
-            
-            results = []
-            for pkg in paginated:
-                latest = pkg.get("latest", {})
-                results.append({
-                    "id": f"{pkg.get('owner')}-{pkg.get('name')}",
-                    "namespace": pkg.get("owner", ""),
-                    "name": pkg.get("name", ""),
-                    "title": pkg.get("name", "").replace("_", " ").replace("-", " "),
-                    "description": latest.get("description", ""),
-                    "version": latest.get("version_number", ""),
-                    "downloads": pkg.get("total_downloads", 0),
-                    "rating": pkg.get("rating_score", 0),
-                    "icon_url": latest.get("icon", ""),
-                    "dependencies": latest.get("dependencies", []),
-                    "categories": pkg.get("categories", []),
-                    "date_updated": pkg.get("date_updated", ""),
-                    "source": "thunderstore"
-                })
-            
-            return {
-                "results": results,
-                "total": len(packages),
-                "page": page,
-                "per_page": per_page
-            }
-        except Exception as e:
-            return {"results": [], "total": 0, "error": str(e)}
+        response = await client.get(url)
+        if response.status_code != 200:
+            return _thunderstore_cache.get(community, [])
+        packages = response.json()
+
+    _thunderstore_cache[community] = packages
+    _thunderstore_cache_ts[community] = now
+    return packages
+
+async def search_thunderstore(community: str, search: str = "", page: int = 1) -> Dict[str, Any]:
+    """Search Thunderstore for mods (uses cached package list)"""
+    try:
+        packages = await _get_thunderstore_packages(community)
+        if not packages:
+            return {"results": [], "total": 0}
+        
+        # Filter by search term if provided
+        if search:
+            search_lower = search.lower()
+            packages = [
+                p for p in packages 
+                if search_lower in p.get("name", "").lower() 
+                or search_lower in p.get("owner", "").lower()
+                or search_lower in (p.get("description") or "").lower()
+        ]
+        
+        # Sort by downloads
+        packages.sort(key=lambda x: x.get("total_downloads", 0), reverse=True)
+        
+        # Paginate
+        per_page = 20
+        start = (page - 1) * per_page
+        end = start + per_page
+        paginated = packages[start:end]
+        
+        results = []
+        for pkg in paginated:
+            latest = pkg.get("latest", {})
+            results.append({
+                "id": f"{pkg.get('owner')}-{pkg.get('name')}",
+                "namespace": pkg.get("owner", ""),
+                "name": pkg.get("name", ""),
+                "title": pkg.get("name", "").replace("_", " ").replace("-", " "),
+                "description": latest.get("description", ""),
+                "version": latest.get("version_number", ""),
+                "downloads": pkg.get("total_downloads", 0),
+                "rating": pkg.get("rating_score", 0),
+                "icon_url": latest.get("icon", ""),
+                "dependencies": latest.get("dependencies", []),
+                "categories": pkg.get("categories", []),
+                "date_updated": pkg.get("date_updated", ""),
+                "source": "thunderstore"
+            })
+        
+        return {
+            "results": results,
+            "total": len(packages),
+            "page": page,
+            "per_page": per_page
+        }
+    except Exception as e:
+        return {"results": [], "total": 0, "error": str(e)}
 
 async def get_thunderstore_package(community: str, namespace: str, name: str) -> Dict[str, Any]:
     """Get details for a specific Thunderstore package"""
@@ -1146,18 +1193,15 @@ async def download_thunderstore_mod(
                 
                 # Thunderstore mods often have plugins/ folder
                 if any(n.startswith("plugins/") for n in namelist):
-                    # Extract only plugins content
+                    # Extract only plugins content (with Zip Slip protection)
                     for name in namelist:
                         if name.startswith("plugins/") and not name.endswith("/"):
-                            # Get the relative path after plugins/
-                            target = install_path / name[8:]  # Skip "plugins/"
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            with zf.open(name) as src, open(target, "wb") as dst:
-                                dst.write(src.read())
+                            relative = name[8:]  # Skip "plugins/"
+                            _safe_extract_member(zf, name, install_path)
                 else:
                     # Extract to mod folder
                     mod_dir.mkdir(parents=True, exist_ok=True)
-                    zf.extractall(mod_dir)
+                    _safe_extractall(zf, mod_dir)
         finally:
             # Clean up zip
             if temp_zip.exists():
@@ -1191,12 +1235,12 @@ async def get_mod_sources(game_slug: str, current_user=Depends(get_current_user)
             },
             "nexus": {
                 "available": sources["nexus"],
-                "has_api_key": bool(NEXUS_API_KEY),
+                "has_api_key": bool(_api_key("nexus")),
                 "config": sources["nexus_config"]
             },
             "modio": {
                 "available": sources["modio"],
-                "has_api_key": bool(MODIO_API_KEY),
+                "has_api_key": bool(_api_key("modio")),
                 "config": sources["modio_config"]
             },
         }
@@ -1432,11 +1476,12 @@ NEXUS_API_BASE = "https://api.nexusmods.com/v1"
 
 async def search_nexus(domain: str, search: str = "", page: int = 1) -> Dict[str, Any]:
     """Search Nexus Mods for a game. Uses the updated mods list as search proxy."""
-    if not NEXUS_API_KEY:
-        return {"results": [], "total": 0, "error": "Nexus Mods API key not configured. Set NEXUS_API_KEY environment variable."}
+    nexus_key = _api_key("nexus")
+    if not nexus_key:
+        return {"results": [], "total": 0, "error": "Nexus Mods API key not configured. Add it in Settings → Integrations."}
 
     headers = {
-        "apikey": NEXUS_API_KEY,
+        "apikey": nexus_key,
         "Accept": "application/json",
     }
 
@@ -1518,10 +1563,11 @@ async def search_nexus(domain: str, search: str = "", page: int = 1) -> Dict[str
 
 async def get_nexus_mod_details(domain: str, mod_id: int) -> Dict[str, Any]:
     """Get details for a specific Nexus mod"""
-    if not NEXUS_API_KEY:
+    nexus_key = _api_key("nexus")
+    if not nexus_key:
         raise HTTPException(400, "Nexus Mods API key not configured")
 
-    headers = {"apikey": NEXUS_API_KEY, "Accept": "application/json"}
+    headers = {"apikey": nexus_key, "Accept": "application/json"}
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(f"{NEXUS_API_BASE}/games/{domain}/mods/{mod_id}.json", headers=headers)
@@ -1546,10 +1592,11 @@ async def get_nexus_mod_details(domain: str, mod_id: int) -> Dict[str, Any]:
 
 async def get_nexus_mod_files(domain: str, mod_id: int) -> List[Dict[str, Any]]:
     """Get files for a Nexus mod"""
-    if not NEXUS_API_KEY:
+    nexus_key = _api_key("nexus")
+    if not nexus_key:
         raise HTTPException(400, "Nexus Mods API key not configured")
 
-    headers = {"apikey": NEXUS_API_KEY, "Accept": "application/json"}
+    headers = {"apikey": nexus_key, "Accept": "application/json"}
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(f"{NEXUS_API_BASE}/games/{domain}/mods/{mod_id}/files.json", headers=headers)
@@ -1574,10 +1621,11 @@ async def get_nexus_mod_files(domain: str, mod_id: int) -> List[Dict[str, Any]]:
 
 async def get_nexus_download_link(domain: str, mod_id: int, file_id: int) -> str:
     """Get a download link for a Nexus mod file (requires Premium or manual download)"""
-    if not NEXUS_API_KEY:
+    nexus_key = _api_key("nexus")
+    if not nexus_key:
         raise HTTPException(400, "Nexus Mods API key not configured")
 
-    headers = {"apikey": NEXUS_API_KEY, "Accept": "application/json"}
+    headers = {"apikey": nexus_key, "Accept": "application/json"}
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
@@ -1614,7 +1662,9 @@ async def download_nexus_mod(download_url: str, install_path: Path, filename: st
                 extract_dir = install_path / filename.rsplit(".", 1)[0]
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 with zipfile.ZipFile(file_path, "r") as zf:
-                    zf.extractall(extract_dir)
+                    _safe_extractall(zf, extract_dir)
+            except ValueError as e:
+                import logging; logging.getLogger(__name__).warning(str(e))
             except Exception:
                 pass
 
@@ -1629,11 +1679,12 @@ MODIO_API_BASE = "https://api.mod.io/v1"
 
 async def search_modio(game_id: int, search: str = "", page: int = 1) -> Dict[str, Any]:
     """Search mod.io for mods"""
-    if not MODIO_API_KEY:
-        return {"results": [], "total": 0, "error": "mod.io API key not configured. Set MODIO_API_KEY environment variable."}
+    modio_key = _api_key("modio")
+    if not modio_key:
+        return {"results": [], "total": 0, "error": "mod.io API key not configured. Add it in Settings → Integrations."}
 
     params = {
-        "api_key": MODIO_API_KEY,
+        "api_key": modio_key,
         "_limit": 20,
         "_offset": (page - 1) * 20,
         "_sort": "-popular",
@@ -1680,10 +1731,11 @@ async def search_modio(game_id: int, search: str = "", page: int = 1) -> Dict[st
 
 async def get_modio_mod_details(game_id: int, mod_id: int) -> Dict[str, Any]:
     """Get details for a specific mod.io mod"""
-    if not MODIO_API_KEY:
+    modio_key = _api_key("modio")
+    if not modio_key:
         raise HTTPException(400, "mod.io API key not configured")
 
-    params = {"api_key": MODIO_API_KEY}
+    params = {"api_key": modio_key}
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(f"{MODIO_API_BASE}/games/{game_id}/mods/{mod_id}", params=params)
@@ -1727,7 +1779,9 @@ async def download_modio_mod(download_url: str, install_path: Path, filename: st
                 extract_dir = install_path / filename.rsplit(".", 1)[0]
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 with zipfile.ZipFile(file_path, "r") as zf:
-                    zf.extractall(extract_dir)
+                    _safe_extractall(zf, extract_dir)
+            except ValueError as e:
+                import logging; logging.getLogger(__name__).warning(str(e))
             except Exception:
                 pass
 
@@ -1995,7 +2049,7 @@ async def install_bepinex(
         
         try:
             with zipfile.ZipFile(temp_zip, "r") as zf:
-                zf.extractall(server_path)
+                _safe_extractall(zf, server_path)
         finally:
             temp_zip.unlink()
     
@@ -2107,7 +2161,7 @@ async def curseforge_install_mod(
     # First, get the file info to get download URL
     url = f"{CURSEFORGE_API}/mods/{request.mod_id}/files/{request.file_id}"
     headers = {
-        "x-api-key": CURSEFORGE_API_KEY,
+        "x-api-key": _api_key("curseforge"),
         "Accept": "application/json"
     }
     
@@ -2152,9 +2206,9 @@ async def curseforge_get_categories(
     
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(
-            f"{CURSEFORGE_API_BASE}/categories",
+            f"{CURSEFORGE_API}/categories",
             params={"gameId": game_id},
-            headers={"x-api-key": CURSEFORGE_API_KEY}
+            headers={"x-api-key": _api_key("curseforge")}
         )
         
         if response.status_code != 200:

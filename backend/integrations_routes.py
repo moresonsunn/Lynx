@@ -14,17 +14,47 @@ async def integrations_status():
     return {
         "curseforge": {
             "configured": bool(get_integration_key("curseforge"))
-        }
+        },
+        "nexus": {
+            "configured": bool(get_integration_key("nexus"))
+        },
+        "modio": {
+            "configured": bool(get_integration_key("modio"))
+        },
+        "steam": {
+            "configured": bool(get_integration_key("steam"))
+        },
     }
 
-class CurseForgeKey(BaseModel):
+class ApiKeyPayload(BaseModel):
     api_key: str
 
 @router.post("/curseforge-key")
-async def set_curseforge_key(payload: CurseForgeKey, current_user: User = Depends(require_admin)):
+async def set_curseforge_key(payload: ApiKeyPayload, current_user: User = Depends(require_admin)):
     if not payload.api_key or len(payload.api_key.strip()) < 10:
         raise HTTPException(status_code=400, detail="Invalid API key")
     set_integration_key("curseforge", payload.api_key.strip())
+    return {"ok": True}
+
+@router.post("/nexus-key")
+async def set_nexus_key(payload: ApiKeyPayload, current_user: User = Depends(require_admin)):
+    if not payload.api_key or len(payload.api_key.strip()) < 10:
+        raise HTTPException(status_code=400, detail="Invalid API key")
+    set_integration_key("nexus", payload.api_key.strip())
+    return {"ok": True}
+
+@router.post("/modio-key")
+async def set_modio_key(payload: ApiKeyPayload, current_user: User = Depends(require_admin)):
+    if not payload.api_key or len(payload.api_key.strip()) < 10:
+        raise HTTPException(status_code=400, detail="Invalid API key")
+    set_integration_key("modio", payload.api_key.strip())
+    return {"ok": True}
+
+@router.post("/steam-key")
+async def set_steam_key(payload: ApiKeyPayload, current_user: User = Depends(require_admin)):
+    if not payload.api_key or len(payload.api_key.strip()) < 10:
+        raise HTTPException(status_code=400, detail="Invalid API key")
+    set_integration_key("steam", payload.api_key.strip())
     return {"ok": True}
 
 @router.get("/curseforge-test")

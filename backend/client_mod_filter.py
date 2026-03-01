@@ -152,6 +152,10 @@ KNOWN_CLIENT_ONLY_MOD_IDS: set[str] = {
     "soundphysics", "sound-physics-remastered", "sound_physics",
     "ambientsounds", "ambient-sounds", "dynamic-music", "dynamicmusic",
     "extrasounds", "extra-sounds", "dripsounds", "auditory",
+    "biomemusic", "biome-music",
+    "currentgamemusictrack", "current-game-music-track",
+    "ding", "ding-forge",
+    "sounds",  # IMB11's Sounds mod
 
     # ── Recording / Streaming ──
     "replaymod", "replay-mod", "replay_mod",
@@ -167,6 +171,7 @@ KNOWN_CLIENT_ONLY_MOD_IDS: set[str] = {
     "cosmetica", "capes", "minecraftcapes",
     "first-person-model", "firstpersonmod",
     "wavey-capes", "waveycapes",
+    "capejs", "cape-js",
 
     # ── Client Utilities / Tweaks ──
     "litematica", "minihud", "tweakeroo", "malilib", "itemscroller",
@@ -179,6 +184,72 @@ KNOWN_CLIENT_ONLY_MOD_IDS: set[str] = {
     "rekindled-world-menu", "authme", "auth-me",
     "custom-crosshair", "customcrosshair",
     "rrls", "remove-reloading-screen",
+    "controllable",  # Controller/gamepad support
+    "rawsvisualkeybinder", "raw-visual-keybinder",
+
+    # ── Performance Fixes (Client-Side) ──
+    "advancementplaques", "advancement-plaques",
+    "alltheleaks", "alltheleaks-fix",
+    "betterfpsrenderdist", "better-fps-render-distance",
+    "fastquit", "fastquit-forge",
+    "flickerfix", "flicker-fix",
+    "fixgpumemoryleak", "fix-gpu-memory-leak",
+    "notenoughcrashes", "not-enough-crashes",
+    "modernstartupqol", "modern-startup-qol",
+    "updatingworldicon", "updating-world-icon",
+
+    # ── HUD / Overlay / Indicators ──
+    "colorfulhearts", "colorful-hearts",
+    "overloadedarmor", "overloaded-armor-bar",
+    "enhancedbossbars", "enhanced-boss-bars",
+    "bettermanabar", "better-mana-bar",
+    "fittingxpmanabar", "fitting-xp-mana-bar",
+    "damage-indicators", "damageindicators", "jeremyseqs-damage-indicators",
+    "moreoverlays", "more-overlays-updated",
+    "pickupnotifier", "pick-up-notifier",
+    "toastcontrol", "toast-control",
+    "stylisheffects", "stylish-effects",
+    "travelerstitles", "travelers-titles",
+    "visualtravelerstitles", "visual-travelers-titles",
+    "alexstitles",  # Alex's Caves + Traveler's Titles compat
+    "titles",
+    "novillagerdeathmsgs", "no-villager-death-messages",
+    "raidcounter", "raid-counter",
+
+    # ── UI / Menu (Client) ──
+    "darkmodeeverywhere", "dark-mode-everywhere",
+    "immersiveui", "immersive-ui",
+    "minecraftcursor", "minecraft-cursor",
+    "yungsmenutweaks", "yungs-menu-tweaks",
+    "scholar",
+    "sdmuilib", "sdm-ui-lib",
+    "tips",
+    "perception",  # UI effects
+    "abetterguiaddon", "a-better-gui-addon",
+    "bisect", "bisecthosting", "bisecthosting-server-integration-menu",
+    "notenoughrecipebook", "nerb", "not-enough-recipe-book",
+
+    # ── Visual Effects (Client) ──
+    "particular", "particular-reforged",
+    "prettyrain", "pretty-rain",
+    "dynamictrim", "dynamic-trim",
+
+    # ── Discord Integration (Client) ──
+    "simplediscordrpc", "simple-discord-rich-presence",
+
+    # ── Connected Textures (Client) ──
+    "fusion", "fusion-connected-textures",
+
+    # ── Embeddium / Sodium Addons (Client) ──
+    "sodiumdynamiclights", "embeddium-dynamiclights", "sodium-dynamic-lights",
+    "sodiumextras", "embeddiumextras", "sodium-extras", "embeddium-extras",
+    "sodiumoptionsapi", "embeddiumoptionsapi", "embeddium-options-api",
+
+    # ── Zoom Addons ──
+    "xaerozoomout", "xaero-zoomout",
+
+    # ── Font / Rendering Tweaks ──
+    "runelic",  # Font rendering
 
     # ── Shader / Resource Pack Support ──
     "iris-shaders", "complementary-shaders",
@@ -323,6 +394,85 @@ KNOWN_SERVER_REQUIRED_MOD_IDS: set[str] = {
     "curseofcurses",
     "chiselsandbits", "chisels-and-bits",
     "storage-drawers", "storagedrawers",
+
+    # ── Magic & Spell Mods (NEVER FILTER — heavy server logic) ──
+    "ars_nouveau", "arsnouveau", "ars-nouveau",
+    "ars_elemental", "arselemental",
+    "ars_creo", "arscreo",
+    "irons_spellbooks", "ironsSpellbooks", "irons-spells-n-spellbooks",
+    "hexcasting", "hex-casting", "hexerei",
+    "goety", "goety-2", "goety-cataclysm",
+    "occultism", "occultism-forge",
+    "vampirism", "vampirism-forge",
+    "biomancy", "biomancy-forge",
+
+    # ── Boss / Dungeon / Structure Mods ──
+    "cataclysm", "l_ender_cataclysm",
+    "bosses_of_mass_destruction", "bosses-of-mass-destruction",
+    "dungeon_crawl", "dungeoncrawl",
+    "repurposed_structures", "repurposed-structures",
+    "integrated_dungeons", "integrated-dungeons-and-structures",
+    "alexscaves", "alexs-caves", "alexs_caves",
+    "aquamirae",
+
+    # ── Tech Mods ──
+    "pneumaticcraft", "pneumaticcraft-repressurized",
+    "enderio", "ender-io",
+    "flux_networks", "fluxnetworks",
+    "integrateddynamics", "integrated-dynamics",
+    "integratedterminals", "integrated-terminals",
+    "integratedtunnels", "integrated-tunnels",
+    "integratedcrafting", "integrated-crafting",
+    "compact_machines", "compactmachines",
+    "buildinggadgets", "building-gadgets",
+    "mininggadgets", "mining-gadgets",
+
+    # ── Exploration & Dimension Mods ──
+    "bumblezone", "the-bumblezone",
+    "sky_villages", "sky-villages",
+    "amplified_nether", "amplified-nether",
+    "river_redux", "river-redux",
+
+    # ── Creature / Mob Mods ──
+    "mowzies_mobs", "mowziesmobs",
+    "mutantmonsters", "mutant-monsters",
+    "rats",
+    "domesticationinnovation",
+    "alshanexfamiliars", "alshanexs-familiars",
+
+    # ── Gameplay / Economy / Quests ──
+    "gamestages", "game-stages",
+    "gateways_to_eternity", "gateways-to-eternity",
+    "bountiful",
+    "relics",
+    "corail_tombstone", "tombstone",
+    "artifacts",
+    "simplyswords", "simply-swords",
+    "betterarcheology", "better-archeology",
+    "aquaculture", "aquaculture2",
+    "little_logistics", "littlelogistics",
+    "dank_storage", "dankstorage",
+    "veinmining", "vein-mining",
+
+    # ── Utility / World Management ──
+    "chunky", "chunky-pregenerator",
+    "servercore",
+    "incontrol", "in-control",
+    "kubejs", "rhino",
+    "lootintegrations", "loot-integrations",
+    "defaultoptions", "default-options",
+    "serverconfigupdater",
+    "simplebackups", "simple-backups",
+    "crashutilities", "crash-utilities",
+    "deuf",  # Duplicate Entity UUID Fix
+
+    # ── Macaw's Building Mods ──
+    "mcw-bridges", "mcw-doors", "mcw-fences", "mcw-furniture",
+    "mcw-lights", "mcw-paintings", "mcw-paths", "mcw-roofs",
+    "mcw-trapdoors", "mcw-windows",
+    "macawsbridges", "macawsdoors", "macawsfences", "macawsfurniture",
+    "macawslights", "macawspaintings", "macawspaths", "macawsroofs",
+    "macawstrapdoors", "macawswindows",
 }
 
 # Filename patterns for mods that are almost certainly client-only.
@@ -368,6 +518,35 @@ CLIENT_ONLY_FILENAME_PATTERNS: list[str] = [
     "reeses_sodium_options", "reeses-sodium-options",
     "rrls", "fancymenu", "konkrete",
     "sodium-extra", "sodiumextra",
+    # MCE2 client mods
+    "advancementplaques", "advancement-plaques",
+    "alltheleaks", "better-fps-render",
+    "toast-control", "toastcontrol",
+    "controllable", "damage-indicators",
+    "more-overlays", "moreoverlays",
+    "pick-up-notifier", "pickupnotifier",
+    "travelers-titles", "travelerstitles",
+    "stylish-effects", "stylisheffects",
+    "tips-", "discord-rich-presence", "simplediscordrpc",
+    "fastquit", "flickerfix", "fix-gpu-memory",
+    "not-enough-crashes", "notenoughcrashes",
+    "colorful-hearts", "colorfulhearts",
+    "overloaded-armor", "enhanced-boss-bars",
+    "dark-mode-everywhere", "immersive-ui",
+    "minecraft-cursor", "yungs-menu-tweaks",
+    "modern-startup", "modernstartup",
+    "bisecthosting", "particular-",
+    "pretty-rain", "prettyrain",
+    "embeddium-dynamic", "sodium-dynamic-lights",
+    "embeddium-extras", "embeddiumextras",
+    "embeddium-options", "embeddiumoptions",
+    "xaero-zoomout", "xaerozoomout",
+    "biome-music", "biomemusic",
+    "current-game-music", "scholar-",
+    "runelic", "capejs",
+    "a-better-gui", "nerb-",
+    "no-villager-death",
+    "updating-world-icon",
 ]
 
 
@@ -711,11 +890,32 @@ _SERVER_REQUIRED_ADDON_PREFIXES: set[str] = {
     "create", "mekanism", "thermal", "botania", "immersiveengineering",
     "ae2", "appliedenergistics2", "applied-energistics",
     "farmersdelight", "farmers_delight", "farmers-delight",
-    "tinkersconstruct", "tconstruct",
+    "tinkersconstruct", "tconstruct", "tinkers",
     "ftb", "mna", "quark", "supplementaries",
     "sophisticatedbackpacks", "sophisticatedstorage", "sophisticatedcore",
     "twilightforest", "iceandfire",
-    "alexsmobs", "alexs-mobs",
+    "alexsmobs", "alexs-mobs", "alexscaves", "alexs-caves",
+    # MC Eternal 2 mod families
+    "ars",  # Ars Nouveau, Ars Elemental, Ars Creo, Ars Ocultas, etc.
+    "irons",  # Iron's Spells 'n Spellbooks + addons
+    "cataclysm",  # L_Ender's Cataclysm + addons
+    "goety",  # Goety & Spillage, Goety Cataclysm
+    "hexcasting", "hex",  # Hex Casting + Hex-Ars
+    "vampirism",  # Vampirism + addons
+    "occultism",  # Occultism + addons
+    "pneumaticcraft",  # PneumaticCraft + addons
+    "integrated",  # Integrated Dynamics/Tunnels/Terminals/Crafting/etc.
+    "repurposed",  # Repurposed Structures + compat datapacks
+    "macaw", "mcw",  # Macaw's Bridges/Doors/Roofs/etc.
+    "relics",  # Relics + Alex's Caves/Mobs compat
+    "pufferfish",  # Pufferfish's Attributes/Skills
+    "loot_integrations", "lootintegrations",
+    "ad_astra", "adastra",  # Ad Astra + addons
+    "enderio",  # Ender IO + modules
+    "majrusz",  # Majrusz's Progressive Difficulty / Accessories
+    "corail",  # Corail Tombstone + addons
+    "aquamirae",  # Aquamirae + combat compat
+    "biomancy",  # Biomancy + Create Bio-Factory
 }
 
 
