@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FaLayerGroup, FaPlusCircle, FaDice, FaSearch, FaFileArchive, FaCube, FaCloudUploadAlt, FaChevronLeft, FaChevronRight, FaDownload } from 'react-icons/fa';
+import { FaLayerGroup, FaPlusCircle, FaDice, FaSearch, FaFileArchive, FaCube, FaCloudUploadAlt, FaChevronLeft, FaChevronRight, FaDownload, FaLink } from 'react-icons/fa';
 import { normalizeRamInput } from '../utils/ram';
 import { useTranslation } from '../i18n/I18nContext';
+import ModpackImporter from '../components/ModpackImporter';
 
 const SERVER_TYPES_WITH_LOADER = ['fabric', 'forge', 'neoforge'];
 const SERVER_TYPES = ['paper', 'purpur', 'vanilla', 'snapshot', 'fabric', 'forge', 'neoforge', 'mohist', 'magma', 'banner', 'catserver', 'spongeforge', 'bungeecord', 'velocity'];
@@ -467,6 +468,15 @@ export default function TemplatesPage({
           </button>
           {msg && <div className="mt-2 text-xs text-white/60">{msg}</div>}
         </div>
+      </div>
+
+      {/* 2.5 One-Click Modpack Import */}
+      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <FaLink className="text-purple-400" /> One-Click Modpack Import
+        </h3>
+        <p className="text-sm text-white/50 mb-4">Paste a CurseForge or Modrinth modpack URL to auto-detect and install it.</p>
+        <ModpackImporter onInstallStarted={() => setMsg('Modpack installed! Check Servers tab.')} />
       </div>
 
       {/* 3. Catalog Section */}

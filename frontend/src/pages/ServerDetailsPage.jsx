@@ -30,6 +30,8 @@ import {
   FaInfoCircle,
   FaMicrochip,
   FaSlidersH,
+  FaChartArea,
+  FaUserShield,
 } from 'react-icons/fa';
 
 
@@ -47,6 +49,8 @@ import SteamModsPanel from '../components/server-details/SteamModsPanel';
 import SteamSettingsPanel from '../components/server-details/SteamSettingsPanel';
 import ModManagerPanel from '../components/server-details/ModManagerPanel';
 import ClientModFilterPanel from '../components/server-details/ClientModFilterPanel';
+import ResourceGraphs from '../components/ResourceGraphs';
+import ServerPermissionsPanel from '../components/server-details/ServerPermissionsPanel';
 import ConfirmModal from '../components/ConfirmModal';
 
 
@@ -183,6 +187,8 @@ export default function ServerDetailsPage() {
       { id: 'worlds', label: t('tabs.worlds'), icon: FaFolder },
       { id: 'backup', label: t('tabs.backup'), icon: FaDownload },
       { id: 'schedule', label: t('tabs.schedule'), icon: FaClock },
+      { id: 'graphs', label: 'Graphs', icon: FaChartArea },
+      { id: 'permissions', label: 'Permissions', icon: FaUserShield },
     ];
 
     // Add Mods tab for Fabric/Forge/NeoForge
@@ -198,7 +204,7 @@ export default function ServerDetailsPage() {
     }
 
     if (isSteam) {
-      const allowed = new Set(['overview', 'console', 'files', 'mods', 'backup', 'schedule']);
+      const allowed = new Set(['overview', 'console', 'files', 'mods', 'backup', 'schedule', 'graphs', 'permissions']);
       // Add mods tab for Steam games
       const steamBase = base.filter(tab => allowed.has(tab.id));
       // Insert settings tab after files
@@ -963,6 +969,14 @@ export default function ServerDetailsPage() {
           <ClientModFilterPanel
             serverName={server.name}
           />
+        )}
+
+        {activeTab === 'graphs' && (
+          <ResourceGraphs serverId={server.id} />
+        )}
+
+        {activeTab === 'permissions' && (
+          <ServerPermissionsPanel serverName={server.name} />
         )}
       </div>
 

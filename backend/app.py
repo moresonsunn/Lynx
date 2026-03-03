@@ -30,7 +30,8 @@ import threading
 import logging
 
 # New imports for enhanced features
-from database import init_db, SessionLocal
+from database import init_db, SessionLocal, get_db
+from sqlalchemy.orm import Session
 from routers import (
     auth_router,
     scheduler_router,
@@ -70,8 +71,15 @@ from plugins_routes import router as plugins_router
 from realtime_routes import router as realtime_router
 from advanced_api_routes import router as advanced_api_router
 from client_mod_routes import router as client_mod_router
+from server_permissions import router as permissions_router
 from auth import require_auth, get_current_user, require_admin, require_moderator, get_password_hash, verify_token, get_user_by_username
 from scheduler import get_scheduler
+from stats_history import start_collector as start_stats_collector, stop_collector as stop_stats_collector, get_stats_history
+from backup_scheduler import (
+    get_all_schedules, get_schedule, set_schedule, delete_schedule,
+    get_remote_config, set_remote_config, test_remote_connection,
+    start_backup_scheduler, stop_backup_scheduler,
+)
 from models import User
 from config import SERVERS_ROOT, APP_NAME, APP_VERSION
 import json
@@ -210,6 +218,7 @@ app.include_router(security_enhanced_router)
 # Platform Features
 app.include_router(organizations_router)
 app.include_router(api_management_router)
+app.include_router(permissions_router)
 app.include_router(plugins_router)
 app.include_router(realtime_router)
 app.include_router(advanced_api_router)
@@ -305,6 +314,14 @@ async def startup_event():
         scheduler = get_scheduler()
         scheduler.start()
         logging.info("Task scheduler started")
+
+        # Start stats history collector
+        start_stats_collector()
+        logging.info("Stats history collector started")
+
+        # Start backup scheduler
+        start_backup_scheduler()
+        logging.info("Backup scheduler started")
         
     except Exception as e:
         logging.error(f"Error during startup: {e}")
@@ -317,6 +334,12 @@ async def shutdown_event():
         scheduler = get_scheduler()
         scheduler.stop()
         logging.info("Task scheduler stopped")
+        # Stop stats collector
+        stop_stats_collector()
+        logging.info("Stats collector stopped")
+        # Stop backup scheduler
+        stop_backup_scheduler()
+        logging.info("Backup scheduler stopped")
         
     except Exception as e:
         logging.error(f"Error during shutdown: {e}")
@@ -399,9 +422,14 @@ def get_docker_manager() -> Any:
 
 @app.get("/servers")
 @app.get("/api/servers")
-def list_servers(current_user: User = Depends(require_auth)):
+def list_servers(current_user: User = Depends(require_auth), db: Session = Depends(get_db)):
     try:
         servers = get_docker_manager().list_servers()
+        # Filter by per-server permissions for non-admin users
+        from server_permissions import get_user_server_names
+        allowed = get_user_server_names(current_user, db)
+        if allowed is not None:
+            servers = [s for s in servers if isinstance(s, dict) and s.get("name") in allowed]
         # Enrich each with host_port convenience (primary Minecraft port 25565/tcp)
         from docker_manager import MINECRAFT_PORT  # local import to avoid circular at module import time
         for s in servers:
@@ -671,7 +699,7 @@ def create_server(req: ServerCreateRequest, current_user: User = Depends(require
 
 @app.post("/servers/{container_id}/start")
 @app.post("/api/servers/{container_id}/start")
-def start_server(container_id: str):
+def start_server(container_id: str, current_user: User = Depends(require_moderator)):
     try:
         return get_docker_manager().start_server(container_id)
     except Exception as e:
@@ -679,7 +707,7 @@ def start_server(container_id: str):
 
 @app.post("/servers/{container_id}/stop")
 @app.post("/api/servers/{container_id}/stop")
-def stop_server(container_id: str):
+def stop_server(container_id: str, current_user: User = Depends(require_moderator)):
     try:
         return get_docker_manager().stop_server(container_id)
     except Exception as e:
@@ -687,7 +715,7 @@ def stop_server(container_id: str):
 
 @app.post("/servers/{container_id}/restart")
 @app.post("/api/servers/{container_id}/restart")
-def restart_server(container_id: str):
+def restart_server(container_id: str, current_user: User = Depends(require_moderator)):
     try:
         return get_docker_manager().restart_server(container_id)
     except Exception as e:
@@ -876,11 +904,26 @@ def send_command(container_id: str, command: str = Body(..., embed=True)):
 
 @app.get("/servers/{container_id}/stats")
 @app.get("/api/servers/{container_id}/stats")
-def get_server_stats(container_id: str):
+def get_server_stats(container_id: str, current_user: User = Depends(require_auth)):
     try:
         return get_docker_manager().get_server_stats(container_id)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Stats unavailable: {e}")
+
+@app.get("/servers/{container_id}/stats/history")
+@app.get("/api/servers/{container_id}/stats/history")
+def get_server_stats_history(
+    container_id: str,
+    hours: int = Query(1, ge=1, le=168),
+    resolution: int = Query(0, ge=0, le=60),
+    current_user: User = Depends(require_auth),
+):
+    """Return time-series stats for a server. resolution=0 for raw, else N-minute buckets."""
+    try:
+        data = get_stats_history(container_id, hours=hours, resolution=resolution)
+        return {"server_id": container_id, "hours": hours, "resolution": resolution, "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stats history unavailable: {e}")
 
 @app.get("/servers/stats")
 @app.get("/api/servers/stats")
@@ -995,7 +1038,7 @@ async def stream_servers(request: Request, token: str | None = Query(None)):
 
 @app.get("/servers/{container_id}/console")
 @app.get("/api/servers/{container_id}/console")
-def get_server_console(container_id: str, tail: int = 100):
+def get_server_console(container_id: str, tail: int = 100, current_user: User = Depends(require_auth)):
     try:
         return get_docker_manager().get_server_terminal(container_id, tail=tail)
     except Exception as e:
@@ -1005,7 +1048,7 @@ def get_server_console(container_id: str, tail: int = 100):
 
 @app.get("/servers/{name}/files")
 @app.get("/api/servers/{name}/files")
-def files_list(name: str, request: Request, path: str = "."):
+def files_list(name: str, request: Request, path: str = ".", current_user: User = Depends(require_auth)):
     # Compute a simple ETag based on directory mtime to enable client caching
     try:
         from pathlib import Path
@@ -1042,7 +1085,7 @@ def files_list(name: str, request: Request, path: str = "."):
 
 @app.get("/servers/{name}/file")
 @app.get("/api/servers/{name}/file")
-def file_read(name: str, request: Request, path: str):
+def file_read(name: str, request: Request, path: str, current_user: User = Depends(require_auth)):
     # ETag based on file size and mtime
     try:
         from pathlib import Path
@@ -1069,19 +1112,19 @@ def file_read(name: str, request: Request, path: str):
 
 @app.post("/servers/{name}/file")
 @app.post("/api/servers/{name}/file")
-def file_write(name: str, path: str, content: str = Form("")):
+def file_write(name: str, path: str, content: str = Form(""), current_user: User = Depends(require_moderator)):
     fm_write_file(name, path, content)
     return {"ok": True}
 
 @app.delete("/servers/{name}/file")
 @app.delete("/api/servers/{name}/file")
-def file_delete(name: str, path: str):
+def file_delete(name: str, path: str, current_user: User = Depends(require_moderator)):
     fm_delete_path(name, path)
     return {"ok": True}
 
 @app.get("/servers/{name}/download")
 @app.get("/api/servers/{name}/download")
-def file_or_folder_download(name: str, path: str = Query(".")):
+def file_or_folder_download(name: str, path: str = Query("."), current_user: User = Depends(require_auth)):
     """
     Download a single file directly, or if a directory is requested, return a zipped archive on the fly.
     """
@@ -1203,29 +1246,130 @@ def do_unzip(name: str, req: UnzipRequest, current_user: User = Depends(require_
 
 @app.get("/servers/{name}/backups")
 @app.get("/api/servers/{name}/backups")
-def backups_list(name: str):
+def backups_list(name: str, current_user: User = Depends(require_auth)):
     return {"items": bk_list(name)}
 
 @app.post("/servers/{name}/backups")
 @app.post("/api/servers/{name}/backups")
-def backups_create(name: str):
+def backups_create(name: str, current_user: User = Depends(require_moderator)):
     return bk_create(name)
 
 @app.post("/servers/{name}/restore")
 @app.post("/api/servers/{name}/restore")
-def backups_restore(name: str, file: str):
+def backups_restore(name: str, file: str, current_user: User = Depends(require_moderator)):
     bk_restore(name, file)
     return {"ok": True}
 
+# ── Backup Scheduler Endpoints ─────────────────────────────────────────────
+
+@app.get("/api/backup-schedules")
+def api_get_all_backup_schedules(current_user: User = Depends(require_auth)):
+    return {"schedules": get_all_schedules()}
+
+@app.get("/api/backup-schedules/{server_name}")
+def api_get_backup_schedule(server_name: str, current_user: User = Depends(require_auth)):
+    return {"schedule": get_schedule(server_name)}
+
+@app.put("/api/backup-schedules/{server_name}")
+def api_set_backup_schedule(server_name: str, request: Request, current_user: User = Depends(require_admin)):
+    import asyncio
+    body = asyncio.get_event_loop().run_until_complete(request.json())
+    set_schedule(server_name, body)
+    return {"ok": True}
+
+@app.delete("/api/backup-schedules/{server_name}")
+def api_delete_backup_schedule(server_name: str, current_user: User = Depends(require_admin)):
+    delete_schedule(server_name)
+    return {"ok": True}
+
+@app.get("/api/backup-remote-config")
+def api_get_remote_config(current_user: User = Depends(require_admin)):
+    return {"remote": get_remote_config()}
+
+@app.put("/api/backup-remote-config")
+def api_set_remote_config(request: Request, current_user: User = Depends(require_admin)):
+    import asyncio
+    body = asyncio.get_event_loop().run_until_complete(request.json())
+    set_remote_config(body)
+    return {"ok": True}
+
+@app.post("/api/backup-remote-config/test")
+def api_test_remote_config(current_user: User = Depends(require_admin)):
+    return test_remote_connection()
+
 @app.get("/servers/{name}/players")
 @app.get("/api/servers/{name}/players")
-def players_list(name: str):
-    return {"players": []}
+def players_list(name: str, container_id: str | None = Query(None), current_user: User = Depends(require_auth)):
+    """Return online players by querying the server via RCON 'list' command."""
+    players = []
+    online = 0
+    max_players = 0
+    if container_id:
+        try:
+            dm = get_docker_manager()
+            result = dm.send_command(container_id, "list")
+            output = result.get("output", "")
+            if output and result.get("exit_code") == 0:
+                # Minecraft format: "There are X of a max of Y players online: player1, player2"
+                import re
+                m = re.search(r"(\d+)\s+of\s+a\s+max\s+of\s+(\d+)\s+players?\s+online", output)
+                if m:
+                    online = int(m.group(1))
+                    max_players = int(m.group(2))
+                # Player names after the colon
+                if ":" in output:
+                    names_part = output.split(":", 1)[1].strip()
+                    if names_part:
+                        players = [p.strip() for p in names_part.split(",") if p.strip()]
+                elif online == 0 and not players:
+                    # Some formats just say "0 players online" with no colon
+                    pass
+        except Exception:
+            pass
+    return {"players": players, "online": online, "max": max_players}
+
+# Well-known config file patterns for different server types
+_CONFIG_PATTERNS = [
+    "server.properties", "bukkit.yml", "spigot.yml", "paper.yml", "paper-global.yml",
+    "purpur.yml", "pufferfish.yml", "tuinity.yml", "config/paper-global.yml",
+    "config/paper-world-defaults.yml", "velocity.toml", "BungeeCord/config.yml",
+    "waterfall.yml", "ops.json", "whitelist.json", "banned-players.json",
+    "banned-ips.json", "permissions.yml", "eula.txt",
+    # Forge / Fabric
+    "config/forge-server.toml", "fabric-server-launcher.properties",
+    # Bedrock
+    "server.properties", "permissions.json", "allowlist.json",
+    # Generic game servers
+    "server.cfg", "server_config.json", "settings.json", "GameUserSettings.ini",
+    "Game.ini", "Engine.ini", "config.cfg", "autoexec.cfg",
+    "serverconfig.xml", "lgsm.cfg",
+]
 
 @app.get("/servers/{name}/configs")
 @app.get("/api/servers/{name}/configs")
-def configs_list(name: str):
-    return {"configs": ["server.properties", "bukkit.yml", "spigot.yml"]}
+def configs_list(name: str, current_user: User = Depends(require_auth)):
+    """Dynamically discover config files that actually exist in the server directory."""
+    found = []
+    try:
+        server_dir = SERVERS_ROOT.resolve() / name
+        if server_dir.is_dir():
+            for pattern in _CONFIG_PATTERNS:
+                candidate = server_dir / pattern
+                if candidate.is_file():
+                    found.append(pattern)
+            # Also scan for common config extensions in root
+            import glob
+            for ext in ("*.yml", "*.yaml", "*.toml", "*.cfg", "*.ini", "*.json", "*.properties"):
+                for p in server_dir.glob(ext):
+                    rel = p.relative_to(server_dir).as_posix()
+                    if rel not in found and p.stat().st_size < 2_000_000:  # skip huge files
+                        found.append(rel)
+    except Exception:
+        pass
+    if not found:
+        # Fallback to the basic Minecraft set
+        found = ["server.properties", "bukkit.yml", "spigot.yml"]
+    return {"configs": sorted(set(found))}
 @app.get("/servers/{name}/config-bundle")
 @app.get("/api/servers/{name}/config-bundle")
 def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
@@ -1421,9 +1565,45 @@ def get_server_logs_endpoint(container_id: str, tail: int = Query(200, ge=1, le=
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get server logs: {e}")
 
+# ── Public Status Page (no auth required) ──────────────────────────────────
+@app.get("/api/public/status")
+@app.get("/public/status")
+def public_status():
+    """Public-facing server status — no authentication required.
+    Returns server names, status, player counts, uptime, and game type.
+    Sensitive fields (IPs, container IDs, env vars) are stripped."""
+    try:
+        dm = get_docker_manager()
+        servers = dm.get_all_servers()
+    except Exception:
+        servers = []
+    result = []
+    for srv in servers:
+        status = srv.get("status", "unknown")
+        name = srv.get("name") or srv.get("server_name") or "Unknown"
+        game = srv.get("game_type") or srv.get("server_type") or "Minecraft"
+        uptime = 0
+        if status == "running":
+            try:
+                cid = srv.get("id") or srv.get("container_id")
+                if cid:
+                    s = dm.get_server_stats(cid)
+                    uptime = s.get("uptime_seconds", 0)
+            except Exception:
+                pass
+        result.append({
+            "name": name,
+            "status": status,
+            "game": game,
+            "uptime_seconds": uptime,
+            "version": srv.get("version") or srv.get("minecraft_version") or "",
+        })
+    return {"servers": result, "panel": APP_NAME, "panel_version": APP_VERSION}
+
 # SPA fallback route - must be added BEFORE static files mount
 # This catches all client-side routes and serves index.html
-SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/change-password"]
+SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/change-password",
+              "/steam", "/hytale", "/monitoring", "/security", "/multi-server", "/status"]
 
 @app.get("/login")
 @app.get("/servers")
@@ -1435,6 +1615,12 @@ SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/chang
 @app.get("/users")
 @app.get("/users/{path:path}")
 @app.get("/change-password")
+@app.get("/steam")
+@app.get("/hytale")
+@app.get("/monitoring")
+@app.get("/security")
+@app.get("/multi-server")
+@app.get("/status")
 async def spa_fallback():
     """Serve React SPA for client-side routing."""
     index_path = os.path.join("static", "index.html")

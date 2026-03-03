@@ -40,6 +40,7 @@ import NotificationCenter from './components/NotificationCenter';
 import MonitoringPage from './components/MonitoringPage';
 import SecurityPage from './pages/SecurityPage';
 import MultiServerPage from './pages/MultiServerPage';
+import PublicStatusPage from './pages/PublicStatusPage';
 
 
 const TemplatesPageLazy = React.lazy(() => import('./pages/TemplatesPage'));
@@ -234,7 +235,7 @@ function AppLayout({ children }) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="border-b border-white/10 bg-topbar backdrop-blur supports-[backdrop-filter]:bg-topbar">
+        <header className="relative z-40 border-b border-white/10 bg-topbar backdrop-blur supports-[backdrop-filter]:bg-topbar">
           <div className="px-4 md:px-6 flex items-center justify-between h-14 gap-3">
             <div className="flex items-center gap-3">
               <button
@@ -560,6 +561,7 @@ function AppRoutes() {
       {/* Public routes */}
       <Route path="/login" element={<LoginPageWrapper />} />
       <Route path="/change-password" element={<MustChangePasswordWrapper />} />
+      <Route path="/status" element={<PublicStatusPage />} />
 
       {/* Protected routes */}
       <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />

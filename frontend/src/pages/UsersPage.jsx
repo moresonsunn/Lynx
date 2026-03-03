@@ -14,7 +14,10 @@ import {
   FaEye,
   FaTrash,
   FaUserCheck,
-  FaUserSlash
+  FaUserSlash,
+  FaKey,
+  FaEnvelope,
+  FaUser,
 } from 'react-icons/fa';
 
 export default function UsersPage() {
@@ -31,6 +34,14 @@ export default function UsersPage() {
   const [activeTab, setActiveTab] = useState('users');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Create User modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newUser, setNewUser] = useState({
+    username: '', email: '', password: '', confirmPassword: '',
+    role: 'user', mustChangePassword: true,
+  });
+  const [creating, setCreating] = useState(false);
 
 
   const loadUsers = async () => {
@@ -83,6 +94,46 @@ export default function UsersPage() {
     }
   }
 
+  async function handleCreateUser(e) {
+    e.preventDefault();
+    setCreating(true);
+    setError('');
+    try {
+      if (!newUser.username.trim() || !newUser.email.trim()) {
+        throw new Error('Username and email are required');
+      }
+      if (!newUser.password) {
+        throw new Error('Password is required');
+      }
+      if (newUser.password !== newUser.confirmPassword) {
+        throw new Error('Passwords do not match');
+      }
+      const resp = await fetch(`${API}/auth/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          username: newUser.username,
+          email: newUser.email,
+          password: newUser.password,
+          role: newUser.role,
+          must_change_password: newUser.mustChangePassword,
+        }),
+      });
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => ({}));
+        throw new Error(payload?.detail || `HTTP ${resp.status}`);
+      }
+      setShowCreateModal(false);
+      setNewUser({ username: '', email: '', password: '', confirmPassword: '', role: 'user', mustChangePassword: true });
+      setSuccess('User created successfully');
+      loadUsers();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <div className="p-4 sm:p-6 space-y-6 animate-fade-in">
       {/* Header */}
@@ -95,7 +146,10 @@ export default function UsersPage() {
           <p className="text-white/70 mt-2">Comprehensive user, role, and permission management system</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="bg-brand-500 hover:bg-brand-600 px-4 py-2 rounded-lg flex items-center gap-2">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="bg-brand-500 hover:bg-brand-600 px-4 py-2 rounded-lg flex items-center gap-2"
+          >
             <FaPlus /> {t('usersPage.createUser')}
           </button>
         </div>
@@ -356,6 +410,125 @@ export default function UsersPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+      
+      {/* Create User Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowCreateModal(false)} />
+          <form onSubmit={handleCreateUser} className="relative bg-card border border-white/10 rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <FaPlus className="text-brand-400" /> Create New User
+              </h2>
+              <button type="button" onClick={() => setShowCreateModal(false)} className="text-white/60 hover:text-white">
+                <FaTimes />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-sm text-white/70 mb-1">Username</label>
+              <div className="relative">
+                <FaUser className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                <input
+                  type="text" required autoFocus
+                  className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40"
+                  placeholder="johndoe"
+                  value={newUser.username}
+                  onChange={e => setNewUser(p => ({ ...p, username: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-white/70 mb-1">Email</label>
+              <div className="relative">
+                <FaEnvelope className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                <input
+                  type="email" required
+                  className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40"
+                  placeholder="john@example.com"
+                  value={newUser.email}
+                  onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-white/70 mb-1">Password</label>
+              <div className="relative">
+                <FaKey className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                <input
+                  type="password" required minLength={6}
+                  className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40"
+                  placeholder="Min. 6 characters"
+                  value={newUser.password}
+                  onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-white/70 mb-1">Confirm Password</label>
+              <div className="relative">
+                <FaKey className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                <input
+                  type="password" required minLength={6}
+                  className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40"
+                  placeholder="Repeat password"
+                  value={newUser.confirmPassword}
+                  onChange={e => setNewUser(p => ({ ...p, confirmPassword: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-white/70 mb-1">Role</label>
+              <select
+                className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+                value={newUser.role}
+                onChange={e => setNewUser(p => ({ ...p, role: e.target.value }))}
+              >
+                {safeRoles.length > 0 ? safeRoles.map(r => (
+                  <option key={r.name} value={r.name}>{r.name}</option>
+                )) : (
+                  <>
+                    <option value="user">user</option>
+                    <option value="moderator">moderator</option>
+                    <option value="admin">admin</option>
+                  </>
+                )}
+              </select>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newUser.mustChangePassword}
+                onChange={e => setNewUser(p => ({ ...p, mustChangePassword: e.target.checked }))}
+                className="accent-brand-500"
+              />
+              <span className="text-sm text-white/70">Must change password on first login</span>
+            </label>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creating}
+                className="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg text-white flex items-center gap-2"
+              >
+                {creating ? 'Creating...' : <><FaPlus /> Create User</>}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

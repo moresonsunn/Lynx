@@ -128,7 +128,7 @@ export function AuthProvider({ children }) {
     if (!isAuthenticated || typeof window === 'undefined') return undefined;
     
     let timeoutId = null;
-    const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+    const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 60 minutes
     
     const resetTimer = () => {
       if (timeoutId) clearTimeout(timeoutId);

@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 def _load_idle_timeout() -> int:
     try:
-        val = int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "5"))
+        val = int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "1440"))
         return max(val, 1)
     except Exception:
-        return 5
+        return 1440
 
 SESSION_IDLE_TIMEOUT_MINUTES = _load_idle_timeout()
 

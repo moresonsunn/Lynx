@@ -665,6 +665,138 @@ class InstallRequest(BaseModel):
     min_ram: Optional[str] = None
     max_ram: Optional[str] = None
 
+
+class ResolveUrlRequest(BaseModel):
+    url: str
+
+
+@router.post("/resolve-url")
+async def resolve_modpack_url(
+    payload: ResolveUrlRequest,
+    current_user: User = Depends(require_moderator),
+):
+    """
+    Take a CurseForge or Modrinth modpack URL, auto-detect the platform,
+    and return pack metadata (name, icon, versions, provider, pack_id).
+    """
+    raw_url = payload.url.strip()
+    parsed = urlparse(raw_url)
+    host = (parsed.netloc or "").lower()
+    path_parts = [p for p in parsed.path.strip("/").split("/") if p]
+
+    # ── Modrinth ───────────────────────────────────────────────────
+    if "modrinth.com" in host:
+        # URL format: https://modrinth.com/modpack/<slug>
+        slug = None
+        for i, part in enumerate(path_parts):
+            if part in ("modpack", "mod", "datapack", "shader", "resourcepack"):
+                if i + 1 < len(path_parts):
+                    slug = path_parts[i + 1]
+                    break
+        if not slug:
+            raise HTTPException(400, "Could not extract Modrinth project slug from URL")
+        try:
+            r = requests.get(f"https://api.modrinth.com/v2/project/{slug}", timeout=15)
+            r.raise_for_status()
+            project = r.json()
+            # Get versions
+            vr = requests.get(f"https://api.modrinth.com/v2/project/{slug}/version?limit=20", timeout=15)
+            versions = vr.json() if vr.ok else []
+            return {
+                "provider": "modrinth",
+                "pack_id": project.get("id") or slug,
+                "name": project.get("title") or project.get("name") or slug,
+                "description": project.get("description") or "",
+                "icon_url": project.get("icon_url") or "",
+                "game_versions": project.get("game_versions") or [],
+                "loaders": project.get("loaders") or [],
+                "downloads": project.get("downloads") or 0,
+                "versions": [
+                    {
+                        "id": v.get("id"),
+                        "name": v.get("name") or v.get("version_number"),
+                        "version_number": v.get("version_number"),
+                        "game_versions": v.get("game_versions") or [],
+                        "loaders": v.get("loaders") or [],
+                        "date_published": v.get("date_published"),
+                    }
+                    for v in versions[:20]
+                ],
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(400, f"Failed to resolve Modrinth modpack: {e}")
+
+    # ── CurseForge ─────────────────────────────────────────────────
+    if "curseforge.com" in host:
+        # URL format: https://www.curseforge.com/minecraft/modpacks/<slug>
+        slug = None
+        for i, part in enumerate(path_parts):
+            if part in ("modpacks", "mc-mods", "texture-packs"):
+                if i + 1 < len(path_parts):
+                    slug = path_parts[i + 1]
+                    break
+        if not slug:
+            raise HTTPException(400, "Could not extract CurseForge project slug from URL")
+        try:
+            from integrations_store import get_integration_key
+            api_key = get_integration_key("curseforge")
+            if not api_key:
+                raise HTTPException(400, "CurseForge API key not configured — set it in Settings > Integrations")
+            cf_headers = {
+                "x-api-key": api_key,
+                "Accept": "application/json",
+                "User-Agent": "minecraft-controller/1.0",
+            }
+            # Search for the project by slug
+            search = requests.get(
+                "https://api.curseforge.com/v1/mods/search",
+                params={"gameId": 432, "slug": slug, "pageSize": 1},
+                headers=cf_headers, timeout=15,
+            )
+            search.raise_for_status()
+            results = search.json().get("data") or []
+            if not results:
+                raise HTTPException(404, f"CurseForge modpack '{slug}' not found")
+            project = results[0]
+            mod_id = project.get("id")
+            # Get versions
+            files_r = requests.get(
+                f"https://api.curseforge.com/v1/mods/{mod_id}/files",
+                params={"pageSize": 20},
+                headers=cf_headers, timeout=15,
+            )
+            files_data = files_r.json().get("data") or [] if files_r.ok else []
+            logo = project.get("logo") or {}
+            return {
+                "provider": "curseforge",
+                "pack_id": str(mod_id),
+                "name": project.get("name") or slug,
+                "description": project.get("summary") or "",
+                "icon_url": logo.get("thumbnailUrl") or logo.get("url") or "",
+                "game_versions": list({gv for f in files_data for gv in (f.get("gameVersions") or [])}),
+                "loaders": [],
+                "downloads": project.get("downloadCount") or 0,
+                "versions": [
+                    {
+                        "id": str(f.get("id")),
+                        "name": f.get("displayName") or f.get("fileName"),
+                        "version_number": f.get("displayName"),
+                        "game_versions": f.get("gameVersions") or [],
+                        "loaders": [],
+                        "date_published": f.get("fileDate"),
+                    }
+                    for f in files_data[:20]
+                ],
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(400, f"Failed to resolve CurseForge modpack: {e}")
+
+    raise HTTPException(400, "URL not recognized. Paste a CurseForge or Modrinth modpack URL.")
+
 @router.post("/install")
 async def install_modpack(req: InstallRequest, current_user: User = Depends(require_moderator)):
     task_id = str(uuid.uuid4())

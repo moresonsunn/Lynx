@@ -51,6 +51,23 @@ class User(Base):
     scheduled_tasks = relationship("ScheduledTask", back_populates="created_by_user")
     audit_logs = relationship("AuditLog", back_populates="user")
     user_sessions = relationship("UserSession", back_populates="user")
+    server_permissions = relationship("ServerPermission", back_populates="user", cascade="all, delete-orphan", foreign_keys="[ServerPermission.user_id]")
+
+
+class ServerPermission(Base):
+    """Per-server access control: which users can access which servers."""
+    __tablename__ = "server_permissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    server_name = Column(String, nullable=False, index=True)
+    permission = Column(String, nullable=False, default="manage")
+    # permission values: "view" (read-only), "operate" (start/stop/console), "manage" (full)
+    granted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[user_id], back_populates="server_permissions")
+
 
 class UserSession(Base):
     __tablename__ = "user_sessions"

@@ -7,7 +7,7 @@ import {
   FaCheck, FaTimes, FaExclamationTriangle, FaJava, FaHdd,
   FaDiscord, FaSlack, FaEnvelope, FaUndo, FaDownload, FaUpload,
   FaKey, FaClock, FaMemory, FaMicrochip, FaGlobe, FaBroom,
-  FaSteam
+  FaSteam, FaCloud
 } from 'react-icons/fa';
 import { useToast } from '../context/ToastContext';
 
@@ -143,6 +143,9 @@ export default function SettingsPage() {
   const [nexusKey, setNexusKey] = useState('');
   const [modioKey, setModioKey] = useState('');
   const [steamKey, setSteamKey] = useState('');
+  const [remoteConfig, setRemoteConfig] = useState({});
+  const [remoteTestResult, setRemoteTestResult] = useState(null);
+  const [testingRemote, setTestingRemote] = useState(false);
   const [providersStatus, setProvidersStatus] = useState({
     curseforge: { configured: false },
     nexus: { configured: false },
@@ -157,6 +160,7 @@ export default function SettingsPage() {
     loadJavaVersions();
     loadSessions();
     loadIntegrations();
+    loadRemoteConfig();
   }, []);
 
   async function loadSettings() {
@@ -211,6 +215,62 @@ export default function SettingsPage() {
       const r = await fetch(`${API}/integrations/status`);
       if (r.ok) setProvidersStatus(await r.json());
     } catch {}
+  }
+
+  async function loadRemoteConfig() {
+    try {
+      const r = await fetch(`${API}/api/backup-remote-config`, { headers: authHeaders() });
+      if (r.ok) {
+        const data = await r.json();
+        setRemoteConfig(data.remote || {});
+      }
+    } catch {}
+  }
+
+  async function saveRemoteConfig() {
+    try {
+      const r = await fetch(`${API}/api/backup-remote-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(remoteConfig),
+      });
+      if (r.ok) {
+        showToast('success', 'Remote storage config saved');
+        loadRemoteConfig();
+      } else {
+        showToast('error', 'Failed to save remote config');
+      }
+    } catch {
+      showToast('error', 'Failed to save remote config');
+    }
+  }
+
+  async function testRemoteConnection() {
+    setTestingRemote(true);
+    setRemoteTestResult(null);
+    try {
+      // Save first, then test
+      await fetch(`${API}/api/backup-remote-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(remoteConfig),
+      });
+      const r = await fetch(`${API}/api/backup-remote-config/test`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      const data = await r.json();
+      setRemoteTestResult(data);
+      if (data.ok) {
+        showToast('success', data.message || 'Connection successful');
+      } else {
+        showToast('error', data.error || 'Connection failed');
+      }
+    } catch {
+      showToast('error', 'Connection test failed');
+    } finally {
+      setTestingRemote(false);
+    }
   }
 
   async function saveSettings() {
@@ -652,6 +712,7 @@ export default function SettingsPage() {
 
         {/* Backup Tab */}
         {activeTab === 'backup' && (
+          <>
           <Section title="Backup Configuration" description="Automatic backup settings" icon={FaDatabase}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input
@@ -718,6 +779,133 @@ export default function SettingsPage() {
               </div>
             </div>
           </Section>
+
+          {/* Remote Storage (S3/B2/SFTP) */}
+          <Section title="Remote Storage" description="Upload backups to S3, Backblaze B2, or SFTP" icon={FaCloud}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Select
+                label="Storage Provider"
+                value={remoteConfig.provider || ''}
+                onChange={(v) => setRemoteConfig(prev => ({ ...prev, provider: v }))}
+                options={[
+                  { value: '', label: 'None (local only)' },
+                  { value: 's3', label: 'Amazon S3 / S3-Compatible' },
+                  { value: 'b2', label: 'Backblaze B2' },
+                  { value: 'sftp', label: 'SFTP Server' },
+                ]}
+              />
+
+              {(remoteConfig.provider === 's3' || remoteConfig.provider === 'b2') && (
+                <>
+                  <Input
+                    label="Bucket Name"
+                    value={remoteConfig.bucket || ''}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, bucket: v }))}
+                    placeholder="lynx-backups"
+                  />
+                  <Input
+                    label="Access Key"
+                    value={remoteConfig.access_key || ''}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, access_key: v }))}
+                    placeholder="AKIA..."
+                  />
+                  <Input
+                    label="Secret Key"
+                    value={remoteConfig.secret_key || ''}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, secret_key: v }))}
+                    placeholder="••••••••"
+                    type="password"
+                  />
+                  <Input
+                    label="Region"
+                    value={remoteConfig.region || ''}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, region: v }))}
+                    placeholder={remoteConfig.provider === 'b2' ? 'us-west-004' : 'us-east-1'}
+                  />
+                  {remoteConfig.provider === 's3' && (
+                    <Input
+                      label="Endpoint URL (optional)"
+                      description="For MinIO, Wasabi, or other S3-compatible services"
+                      value={remoteConfig.endpoint_url || ''}
+                      onChange={(v) => setRemoteConfig(prev => ({ ...prev, endpoint_url: v }))}
+                      placeholder="https://s3.example.com"
+                    />
+                  )}
+                  <Input
+                    label="Path Prefix"
+                    value={remoteConfig.prefix || 'backups'}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, prefix: v }))}
+                    placeholder="backups"
+                  />
+                </>
+              )}
+
+              {remoteConfig.provider === 'sftp' && (
+                <>
+                  <Input
+                    label="Host"
+                    value={remoteConfig.host || ''}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, host: v }))}
+                    placeholder="backup-server.example.com"
+                  />
+                  <Input
+                    label="Port"
+                    type="number"
+                    value={remoteConfig.port || 22}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, port: parseInt(v) || 22 }))}
+                  />
+                  <Input
+                    label="Username"
+                    value={remoteConfig.username || ''}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, username: v }))}
+                    placeholder="backup"
+                  />
+                  <Input
+                    label="Password"
+                    value={remoteConfig.password || ''}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, password: v }))}
+                    type="password"
+                    placeholder="••••••••"
+                  />
+                  <Input
+                    label="Remote Path"
+                    value={remoteConfig.remote_path || '/backups'}
+                    onChange={(v) => setRemoteConfig(prev => ({ ...prev, remote_path: v }))}
+                    placeholder="/backups"
+                  />
+                </>
+              )}
+
+              {remoteConfig.provider && (
+                <div className="md:col-span-2 flex gap-3">
+                  <button
+                    onClick={saveRemoteConfig}
+                    className="px-4 py-2 bg-brand-500 hover:bg-brand-600 rounded-lg flex items-center gap-2 text-white"
+                  >
+                    <FaSave className="w-4 h-4" />
+                    Save Remote Config
+                  </button>
+                  <button
+                    onClick={testRemoteConnection}
+                    disabled={testingRemote}
+                    className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg flex items-center gap-2 text-white disabled:opacity-50"
+                  >
+                    <FaSync className={`w-4 h-4 ${testingRemote ? 'animate-spin' : ''}`} />
+                    {testingRemote ? 'Testing...' : 'Test Connection'}
+                  </button>
+                  {remoteTestResult && (
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+                      remoteTestResult.ok ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                    }`}>
+                      {remoteTestResult.ok ? <FaCheck /> : <FaTimes />}
+                      {remoteTestResult.ok ? remoteTestResult.message : remoteTestResult.error}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </Section>
+          </>
         )}
 
         {/* Notifications Tab */}

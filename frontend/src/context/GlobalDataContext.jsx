@@ -36,6 +36,7 @@ export function GlobalDataProvider({ children }) {
   const refreshDataInBackground = useCallback(async (dataKey, url, processor = null) => {
     try {
       if (typeof window !== 'undefined' && window.HEAVY_PANEL_ACTIVE) return;
+      if (!getStoredToken()) return; // Skip polling when not authenticated
       const response = await fetch(url, { headers: authHeaders() });
       if (response.ok) {
         const data = await response.json();
@@ -173,6 +174,7 @@ export function GlobalDataProvider({ children }) {
     refreshIntervals.current.serverStats = setInterval(async () => {
       try {
         if (typeof window !== 'undefined' && window.HEAVY_PANEL_ACTIVE) return;
+        if (!getStoredToken()) return; // Skip when not authenticated
         const r = await fetch(`${API}/servers/stats?ttl=0`, { headers: authHeaders() });
         if (!r.ok) return;
         const data = await r.json();

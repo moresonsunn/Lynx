@@ -3334,7 +3334,8 @@ class DockerManager:
                 online_cpus = len(per_cpu) or 1
             cpu_percent = 0.0
             if system_delta > 0 and cpu_delta > 0:
-                cpu_percent = (cpu_delta / system_delta) * online_cpus * 100.0
+                # Normalize to 0-100% regardless of core count
+                cpu_percent = (cpu_delta / system_delta) * 100.0
 
             
             mem_usage = stats_now["memory_stats"].get("usage", 0)
