@@ -940,7 +940,7 @@ export default function ServerDetailsPage() {
             <SteamModsPanel
               serverId={server.id}
               serverName={server.name}
-              gameSlug={typeVersionData?.server_type || server?.type || ''}
+              gameSlug={typeVersionData?.steam_game || server?.steam_game || server?.type || ''}
             />
           ) : (
             <ModsPanel

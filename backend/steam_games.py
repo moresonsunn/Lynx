@@ -762,9 +762,9 @@ BASE_STEAM_GAMES = {
         "steam_appid": 4000,
         "category": "Sandbox",
         "summary": "Sandbox Source server via SteamCMD.",
-        "notes": "Add a GSLT (Game Server Login Token) for public server listing. Downloads ~5 GB.",
+        "notes": "Add a GSLT (Game Server Login Token) for public server listing. Workshop addons auto-download when a Steam Web API key is set in Settings → Integrations. Downloads ~5 GB.",
         "default_name": "gmod",
-        "image": "ghcr.io/ich777/steamcmd:gmod",
+        "image": "ghcr.io/ich777/steamcmd:garrysmod",
         "game_port": {"port": 27015, "protocol": "udp"},
         "ports": [
             {"container": 27015, "protocol": "udp"},
@@ -813,7 +813,7 @@ BASE_STEAM_GAMES = {
         "summary": "Co-op horde shooter with webadmin via SteamCMD.",
         "notes": "Downloads ~10 GB on first start. Webadmin available on port 8080 after manual config.",
         "default_name": "kf2",
-        "image": "ghcr.io/ich777/steamcmd:kf2",
+        "image": "ghcr.io/ich777/steamcmd:killingfloor2",
         "game_port": {"port": 7777, "protocol": "udp"},
         "ports": [
             {"container": 7777, "protocol": "udp"},

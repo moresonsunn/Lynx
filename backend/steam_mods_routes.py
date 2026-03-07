@@ -12,6 +12,7 @@ import zipfile
 import shutil
 import asyncio
 import re
+import logging
 from pathlib import Path
 
 from auth import get_current_user, require_moderator
@@ -19,6 +20,7 @@ from database import get_db
 from integrations_store import get_integration_key as _store_key
 
 router = APIRouter(prefix="/steam-mods", tags=["Steam Mods"])
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # SAFE ZIP EXTRACTION (Zip Slip protection)
@@ -461,6 +463,62 @@ NEXUS_GAMES = {
         "mod_path": "/garrysmod/addons",
         "name": "Garry's Mod"
     },
+    # Additional Nexus games
+    "empyrion": {
+        "domain": "empyriongalacticsurvival",
+        "mod_path": "/Content/Scenarios",
+        "name": "Empyrion: Galactic Survival"
+    },
+    "deep_rock_galactic": {
+        "domain": "deeprockgalactic",
+        "mod_path": "/Mods",
+        "name": "Deep Rock Galactic"
+    },
+    "ready_or_not": {
+        "domain": "readyornot",
+        "mod_path": "/ReadyOrNot/Content/Paks/~mods",
+        "name": "Ready or Not"
+    },
+    "euro_truck_simulator_2": {
+        "domain": "eurotrucksimulator2",
+        "mod_path": "/mod",
+        "name": "Euro Truck Simulator 2"
+    },
+    "ets2": {
+        "domain": "eurotrucksimulator2",
+        "mod_path": "/mod",
+        "name": "Euro Truck Simulator 2"
+    },
+    "starbound": {
+        "domain": "starbound",
+        "mod_path": "/mods",
+        "name": "Starbound"
+    },
+    "icarus": {
+        "domain": "icarus",
+        "mod_path": "/Icarus/Content/Paks/~mods",
+        "name": "Icarus"
+    },
+    "farming_simulator_22": {
+        "domain": "farmingsimulator22",
+        "mod_path": "/mods",
+        "name": "Farming Simulator 22"
+    },
+    "phasmophobia": {
+        "domain": "phasmophobia",
+        "mod_path": "/Mods",
+        "name": "Phasmophobia"
+    },
+    "beamng_drive": {
+        "domain": "beamngdrive",
+        "mod_path": "/mods",
+        "name": "BeamNG.drive"
+    },
+    "cities_skylines_2": {
+        "domain": "citiesskylines2",
+        "mod_path": "/BepInEx/plugins",
+        "name": "Cities: Skylines II"
+    },
 }
 
 # =============================================================================
@@ -504,12 +562,41 @@ MODIO_GAMES = {
         "mod_path": "/Modules",
         "name": "Unturned"
     },
+    # Additional mod.io games
+    "deep_rock_galactic": {
+        "game_id": 2475,
+        "mod_path": "/Mods",
+        "name": "Deep Rock Galactic"
+    },
+    "snowrunner": {
+        "game_id": 306,
+        "mod_path": "/mods",
+        "name": "SnowRunner"
+    },
+    "pavlov_vr": {
+        "game_id": 3959,
+        "mod_path": "/Pavlov/Content/Mods",
+        "name": "Pavlov VR"
+    },
+    "ready_or_not": {
+        "game_id": 5765,
+        "mod_path": "/ReadyOrNot/Content/Paks/~mods",
+        "name": "Ready or Not"
+    },
 }
 
 # Games that support Steam Workshop (expanded)
+# GMod addons path: ich777/steamcmd mounts /serverdata; server files are in /serverdata/serverfiles/
+_GMOD_WORKSHOP = {"appid": 4000, "workshop_appid": 4000, "mod_path": "/serverfiles/garrysmod/addons"}
 WORKSHOP_GAMES = {
-    "gmod": {"appid": 4000, "workshop_appid": 4000, "mod_path": "/garrysmod/addons"},
-    "garrys_mod": {"appid": 4000, "workshop_appid": 4000, "mod_path": "/garrysmod/addons"},
+    "gmod": _GMOD_WORKSHOP,
+    "garrys_mod": _GMOD_WORKSHOP,
+    "ttt": _GMOD_WORKSHOP,
+    "ttt2": _GMOD_WORKSHOP,
+    "darkrp": _GMOD_WORKSHOP,
+    "prop_hunt": _GMOD_WORKSHOP,
+    "murder": _GMOD_WORKSHOP,
+    "sandbox_gmod": _GMOD_WORKSHOP,
     "arma3": {"appid": 107410, "workshop_appid": 107410, "mod_path": "/@mods"},
     "dont_starve_together": {"appid": 322330, "workshop_appid": 322330, "mod_path": "/mods"},
     "project_zomboid": {"appid": 108600, "workshop_appid": 108600, "mod_path": "/Zomboid/mods"},
@@ -544,6 +631,18 @@ WORKSHOP_GAMES = {
     "eco": {"appid": 382310, "workshop_appid": 382310, "mod_path": "/Mods"},
     "avorion": {"appid": 445220, "workshop_appid": 445220, "mod_path": "/mods"},
     "core_keeper": {"appid": 1621690, "workshop_appid": 1621690, "mod_path": "/BepInEx/plugins"},
+    # Additional Workshop games
+    "empyrion": {"appid": 383120, "workshop_appid": 383120, "mod_path": "/Content/Scenarios"},
+    "euro_truck_simulator_2": {"appid": 227300, "workshop_appid": 227300, "mod_path": "/mod"},
+    "ets2": {"appid": 227300, "workshop_appid": 227300, "mod_path": "/mod"},
+    "american_truck_simulator": {"appid": 270880, "workshop_appid": 270880, "mod_path": "/mod"},
+    "ats": {"appid": 270880, "workshop_appid": 270880, "mod_path": "/mod"},
+    "wreckfest": {"appid": 228380, "workshop_appid": 228380, "mod_path": "/mods"},
+    "necesse": {"appid": 1169040, "workshop_appid": 1169040, "mod_path": "/mods"},
+    "atlas": {"appid": 834910, "workshop_appid": 834910, "mod_path": "/ShooterGame/Content/Mods"},
+    "colony_survival": {"appid": 366090, "workshop_appid": 366090, "mod_path": "/gamedata/mods"},
+    "scum": {"appid": 513710, "workshop_appid": 513710, "mod_path": "/SCUM/Content/Mods"},
+    "hurtworld": {"appid": 393420, "workshop_appid": 393420, "mod_path": "/Oxide/plugins"},
 }
 
 # Games that use Thunderstore
@@ -629,6 +728,11 @@ THUNDERSTORE_GAMES = {
         "community": "stardew-valley",
         "mod_path": "/Mods",
         "bepinex_required": False
+    },
+    "cities_skylines_2": {
+        "community": "cities-skylines-ii",
+        "mod_path": "/BepInEx/plugins",
+        "bepinex_required": True
     },
 }
 
@@ -723,9 +827,49 @@ class ModioInstallRequest(BaseModel):
 # =============================================================================
 
 def get_server_path(server_id: str) -> Path:
-    """Get the data path for a server"""
-    base_path = os.environ.get("DATA_DIR", "/data")
-    return Path(base_path) / "servers" / server_id
+    """Get the data path for a server by its container ID or name.
+
+    Lookup order:
+    1. Direct match under SERVERS_ROOT (when server_id happens to be the name)
+    2. Scan server_meta.json files for matching ``id`` that starts with server_id
+    3. Ask Docker for the container name, then try SERVERS_ROOT / name
+    4. Fallback: SERVERS_ROOT / server_id
+    """
+    from config import SERVERS_ROOT
+
+    # 1. Direct match
+    direct = SERVERS_ROOT / server_id
+    if direct.exists():
+        return direct
+
+    # 2. Scan server_meta.json for matching id
+    if SERVERS_ROOT.exists():
+        for child in SERVERS_ROOT.iterdir():
+            if not child.is_dir():
+                continue
+            meta_path = child / "server_meta.json"
+            if meta_path.exists():
+                try:
+                    import json as _json
+                    meta = _json.loads(meta_path.read_text(encoding="utf-8") or "{}")
+                    if meta.get("id", "").startswith(server_id) or meta.get("name") == server_id:
+                        return child
+                except Exception:
+                    pass
+
+    # 3. Resolve via Docker container name
+    try:
+        from docker_manager import DockerManager
+        dm = DockerManager()
+        container = dm._get_container_any(server_id)
+        if container and container.name:
+            name_dir = SERVERS_ROOT / container.name
+            if name_dir.exists():
+                return name_dir
+    except Exception:
+        pass
+
+    return direct
 
 def get_mod_source_for_game(game_slug: str) -> Dict[str, Any]:
     """Determine which mod source(s) a game supports"""
@@ -742,6 +886,223 @@ def get_mod_source_for_game(game_slug: str) -> Dict[str, Any]:
         "modio_config": MODIO_GAMES.get(game_slug),
     }
     return sources
+
+
+async def _steamcmd_workshop_download(
+    server_id: str,
+    appid: int,
+    workshop_id: str,
+    config: dict,
+    server_path: Path,
+) -> dict:
+    """Download a Workshop item by running SteamCMD inside the game container.
+
+    Returns {"ok": True/False, "detail": "..."} with diagnostics.
+    """
+    return await asyncio.to_thread(
+        _steamcmd_workshop_download_sync,
+        server_id, appid, workshop_id, config, server_path,
+    )
+
+
+def _steamcmd_workshop_download_sync(
+    server_id: str,
+    appid: int,
+    workshop_id: str,
+    config: dict,
+    server_path: Path,
+) -> dict:
+    """Synchronous implementation – runs in a thread via asyncio.to_thread."""
+    import json as _json
+    from docker_manager import DockerManager
+
+    # ── 1. Resolve container ID from server_meta.json ───────────────────
+    container_id = server_id
+    meta_path = server_path / "server_meta.json"
+    if meta_path.exists():
+        try:
+            meta = _json.loads(meta_path.read_text(encoding="utf-8") or "{}")
+            if meta.get("id"):^
+                container_id = meta["id"]
+                logger.info(f"Resolved server_id → container {container_id[:12]} via server_meta.json")
+        except Exception as e:
+            logger.warning(f"Could not read server_meta.json: {e}")
+
+    # ── 2. Get the running container ────────────────────────────────────
+    try:
+        dm = DockerManager()
+        container = dm._get_container_any(container_id)
+    except Exception as e:
+        return {"ok": False, "detail": f"Container not found: {e}"}
+
+    try:
+        container.reload()
+    except Exception:
+        pass
+    if container.status != "running":
+        return {"ok": False, "detail": f"Container is {container.status}, not running"}
+
+    # ── 3. Discover steamcmd and env vars inside the container ──────────
+    env_code, env_out = container.exec_run(
+        ["sh", "-c",
+         "echo STEAMCMD_DIR=$STEAMCMD_DIR; "
+         "echo SERVER_DIR=$SERVER_DIR; "
+         "echo GAME_ID=$GAME_ID; "
+         "for p in /serverdata/steamcmd/steamcmd.sh /home/steam/steamcmd/steamcmd.sh "
+         "/opt/steamcmd/steamcmd.sh; do [ -f \"$p\" ] && echo FOUND=$p && break; done"],
+        stdout=True, stderr=True,
+    )
+    env_text = (env_out or b"").decode(errors="ignore")
+    env_lines = dict(
+        line.split("=", 1)
+        for line in env_text.strip().splitlines()
+        if "=" in line
+    )
+
+    steamcmd_path = env_lines.get("FOUND", "").strip()
+    if not steamcmd_path:
+        return {"ok": False, "detail": f"steamcmd.sh not found inside container. Env: {env_text[:200]}"}
+
+    server_dir = env_lines.get("SERVER_DIR", "").strip() or "/serverdata/serverfiles"
+    game_id = env_lines.get("GAME_ID", "").strip()
+
+    logger.info(f"Container env: steamcmd={steamcmd_path}, server_dir={server_dir}, game_id={game_id}")
+
+    # ── 4. Run SteamCMD with +app_update first to register the app ──────
+    # The key fix: SteamCMD needs the app in its internal database before
+    # workshop_download_item works.  We run +app_update <GAME_ID> (fast,
+    # no-op if already up-to-date) so the app manifest is present, then
+    # download the workshop item.
+    # We try the workshop appid first (e.g. 4000 for GMod), and if that
+    # fails, retry with the server's GAME_ID (e.g. 4020).
+    attempts = []
+    ws_appids_to_try = [str(appid)]
+    if game_id and game_id != str(appid):
+        ws_appids_to_try.append(game_id)
+
+    output_text = ""
+    exit_code = 1
+    download_ok = False
+
+    for ws_appid in ws_appids_to_try:
+        # Build command: update app (no-op), then workshop download
+        app_update_part = f"+app_update {game_id}" if game_id else ""
+        cmd_str = (
+            f"bash {steamcmd_path}"
+            f" +force_install_dir {server_dir}"
+            f" +login anonymous"
+            f" {app_update_part}"
+            f" +workshop_download_item {ws_appid} {workshop_id}"
+            f" +quit"
+        )
+        logger.info(f"SteamCMD attempt (ws_appid={ws_appid}): {cmd_str}")
+
+        exit_code, output_bytes = container.exec_run(
+            ["bash", "-c", cmd_str],
+            stdout=True,
+            stderr=True,
+        )
+        output_text = (output_bytes or b"").decode(errors="ignore")
+        tail = output_text[-800:] if len(output_text) > 800 else output_text
+        logger.info(f"SteamCMD exit={exit_code}, tail:\n{tail}")
+
+        attempts.append(f"ws_appid={ws_appid} exit={exit_code}")
+
+        # Check for success markers
+        success_marker = f"Downloaded item {workshop_id}"
+        if (success_marker.lower() in output_text.lower() or
+            (f"Success. Downloaded item {workshop_id}".lower() in output_text.lower())):
+            download_ok = True
+            break
+
+        # Check for explicit error
+        if "ERROR" in output_text and "I/O Operation Failed" in output_text:
+            logger.info(f"I/O Operation Failed with ws_appid={ws_appid}, will try next")
+            continue
+
+        # If exit code is 0 and no explicit error, might be OK
+        if exit_code == 0 and "ERROR" not in output_text.upper():
+            download_ok = True
+            break
+
+    if not download_ok:
+        tail = output_text[-400:] if len(output_text) > 400 else output_text
+        return {
+            "ok": False,
+            "detail": f"SteamCMD download failed. Attempts: {attempts}. Output: {tail}",
+        }
+
+    # ── 5. Find downloaded files ────────────────────────────────────────
+    steamcmd_dir = str(Path(steamcmd_path).parent)
+    # Workshop content can end up in various places depending on config
+    search_appids = set(ws_appids_to_try)
+    search_appids.add(str(appid))
+    if game_id:
+        search_appids.add(game_id)
+
+    possible_roots = []
+    for aid in search_appids:
+        possible_roots.extend([
+            f"{steamcmd_dir}/Steam/steamapps/workshop/content/{aid}/{workshop_id}",
+            f"{steamcmd_dir}/steam/steamapps/workshop/content/{aid}/{workshop_id}",
+            f"{server_dir}/steamapps/workshop/content/{aid}/{workshop_id}",
+            f"/serverdata/Steam/steamapps/workshop/content/{aid}/{workshop_id}",
+            f"/serverdata/steam/steamapps/workshop/content/{aid}/{workshop_id}",
+        ])
+
+    # Also try to extract the actual download path from SteamCMD output
+    import re as _re
+    path_match = _re.search(r"downloading\s+to\s+['\"]?([^'\"]+workshop/content/\d+/\d+)", output_text, _re.I)
+    if path_match:
+        possible_roots.insert(0, path_match.group(1))
+
+    ws_content_path = None
+    for candidate in possible_roots:
+        ck_code, ck_out = container.exec_run(
+            ["sh", "-c", f"[ -d '{candidate}' ] && ls -A '{candidate}' 2>/dev/null | head -3"],
+            stdout=True, stderr=True,
+        )
+        ck_text = (ck_out or b"").decode(errors="ignore").strip()
+        if ck_code == 0 and ck_text:
+            ws_content_path = candidate
+            logger.info(f"Workshop content found at: {candidate}")
+            break
+
+    if not ws_content_path:
+        # Do a broad find as last resort
+        find_code2, find_out2 = container.exec_run(
+            ["sh", "-c", f"find /serverdata -type d -name '{workshop_id}' 2>/dev/null | head -3"],
+            stdout=True, stderr=True,
+        )
+        find_text = (find_out2 or b"").decode(errors="ignore").strip()
+        if find_text:
+            ws_content_path = find_text.split("\n")[0].strip()
+            logger.info(f"Workshop content found via find: {ws_content_path}")
+
+    if not ws_content_path:
+        tail = output_text[-300:] if len(output_text) > 300 else output_text
+        return {
+            "ok": False,
+            "detail": f"SteamCMD ran (exit={exit_code}) but workshop files not found. Output: {tail}",
+        }
+
+    # ── 6. Copy/link into addon directory ───────────────────────────────
+    mod_path = config.get("mod_path", "/serverfiles/garrysmod/addons")
+    dest_dir = f"/serverdata{mod_path}/workshop-{workshop_id}"
+
+    copy_cmd = (
+        f"mkdir -p '{dest_dir}' && "
+        f"cp -r '{ws_content_path}/'* '{dest_dir}/' 2>&1 && echo __OK__"
+    )
+    cp_code, cp_out = container.exec_run(["sh", "-c", copy_cmd], stdout=True, stderr=True)
+    cp_text = (cp_out or b"").decode(errors="ignore").strip()
+
+    if "__OK__" in cp_text:
+        logger.info(f"Workshop item {workshop_id} installed → {dest_dir}")
+        return {"ok": True, "detail": f"Copied to {dest_dir}"}
+
+    return {"ok": False, "detail": f"Copy failed: {cp_text}"}
+
 
 # =============================================================================
 # CURSEFORGE API
@@ -1004,10 +1365,19 @@ async def scrape_workshop(appid: int, search_text: str, page: int = 1) -> Dict[s
             return {"results": [], "total": 0, "error": str(e)}
 
 async def get_workshop_item_details(workshop_id: str) -> Dict[str, Any]:
-    """Get details for a specific workshop item"""
+    """Get details for a specific workshop item.
+
+    Tries the newer IPublishedFileService/GetDetails first, then falls back
+    to the older ISteamRemoteStorage/GetPublishedFileDetails which sometimes
+    provides a file_url when the newer one doesn't.
+    """
+    steam_key = _api_key("steam")
+    if not steam_key:
+        return {"id": workshop_id, "title": f"Workshop Item {workshop_id}"}
+
+    # ── Try newer API first ─────────────────────────────────────────────
     url = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/"
     
-    steam_key = _api_key("steam")
     params = {
         "key": steam_key,
         "publishedfileids[0]": workshop_id,
@@ -1021,24 +1391,48 @@ async def get_workshop_item_details(workshop_id: str) -> Dict[str, Any]:
         "includemetadata": True,
     }
     
+    file_url = ""
     async with httpx.AsyncClient(timeout=30) as client:
-        if not steam_key:
-            # Fallback to scraping details page
-            return {"id": workshop_id, "title": f"Workshop Item {workshop_id}"}
-        
         response = await client.get(url, params=params)
         if response.status_code != 200:
             raise HTTPException(500, "Failed to fetch workshop item details")
         
         data = response.json()
         details = data.get("response", {}).get("publishedfiledetails", [{}])[0]
-        
+        file_url = details.get("file_url", "")
+
+        # ── If file_url is empty, try the legacy ISteamRemoteStorage API ──
+        if not file_url:
+            try:
+                legacy_url = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
+                legacy_resp = await client.post(
+                    legacy_url,
+                    data={
+                        "itemcount": 1,
+                        "publishedfileids[0]": workshop_id,
+                    },
+                    timeout=15,
+                )
+                if legacy_resp.status_code == 200:
+                    legacy_data = legacy_resp.json()
+                    legacy_details = (
+                        legacy_data.get("response", {})
+                        .get("publishedfiledetails", [{}])[0]
+                    )
+                    file_url = legacy_details.get("file_url", "")
+                    if file_url:
+                        logger.info(f"Got file_url from legacy API for {workshop_id}")
+            except Exception as legacy_err:
+                logger.debug(f"Legacy API failed for {workshop_id}: {legacy_err}")
+
         return {
             "id": details.get("publishedfileid"),
             "title": details.get("title", "Unknown"),
             "description": details.get("description", ""),
+            "short_description": details.get("short_description", ""),
             "preview_url": details.get("preview_url", ""),
-            "file_url": details.get("file_url", ""),
+            "file_url": file_url,
+            "hcontent_file": details.get("hcontent_file", ""),
             "file_size": details.get("file_size", 0),
             "subscriptions": details.get("subscriptions", 0),
             "favorited": details.get("favorited", 0),
@@ -1290,6 +1684,118 @@ async def get_thunderstore_mod(
     """Get details for a Thunderstore package"""
     # Determine community from request context or default
     return await get_thunderstore_package("valheim", namespace, name)
+
+@router.post("/workshop/install")
+async def install_workshop_mod(
+    request: WorkshopInstallRequest,
+    current_user=Depends(require_moderator)
+):
+    """Install a Workshop mod for a Steam server.
+
+    For Source-engine games (GMod, etc.) this tries multiple approaches:
+    1. Direct download via Steam file_url (works for some addons)
+    2. SteamCMD inside the running container (works for most addons)
+    3. Fallback: instruct user to add collection ID to GAME_PARAMS
+    """
+    config = WORKSHOP_GAMES.get(request.game_slug)
+    if not config:
+        raise HTTPException(400, f"Game {request.game_slug} does not support Workshop")
+
+    server_path = get_server_path(request.server_id)
+    mod_dir = server_path / config["mod_path"].lstrip("/")
+    mod_dir.mkdir(parents=True, exist_ok=True)
+
+    workshop_id = request.workshop_id.strip()
+    appid = config.get("workshop_appid") or config.get("appid", 4000)
+
+    # 1. Get item details from the Steam API
+    details = await get_workshop_item_details(workshop_id)
+    if not details or details.get("error"):
+        raise HTTPException(404, f"Workshop item {workshop_id} not found")
+
+    title = details.get("title", workshop_id)
+    file_url = details.get("file_url", "")
+
+    # 2. Try direct download via file_url (works for some addons)
+    downloaded = False
+    addon_dest = mod_dir / f"workshop-{workshop_id}"
+    addon_dest.mkdir(parents=True, exist_ok=True)
+
+    if file_url:
+        try:
+            async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+                resp = await client.get(file_url)
+                if resp.status_code == 200:
+                    content = resp.content
+                    # Determine if it's a zip/gma
+                    if file_url.endswith(".zip") or content[:2] == b'PK':
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+                            tmp.write(content)
+                            tmp_path = tmp.name
+                        try:
+                            with zipfile.ZipFile(tmp_path) as zf:
+                                _safe_extractall(zf, addon_dest)
+                            downloaded = True
+                        finally:
+                            os.unlink(tmp_path)
+                    else:
+                        # Write raw file (GMA or other)
+                        ext = ".gma" if content[:4] == b'GMAD' else ".bin"
+                        (addon_dest / f"{workshop_id}{ext}").write_bytes(content)
+                        downloaded = True
+        except Exception as dl_err:
+            logger.warning(f"Direct Workshop download failed for {workshop_id}: {dl_err}")
+
+    # 3. If direct download failed, try SteamCMD inside the running container
+    steamcmd_detail = ""
+    if not downloaded:
+        try:
+            result = await _steamcmd_workshop_download(
+                request.server_id, appid, workshop_id, config, server_path
+            )
+            downloaded = result.get("ok", False)
+            steamcmd_detail = result.get("detail", "")
+            if not downloaded:
+                logger.warning(f"SteamCMD fallback failed for {workshop_id}: {steamcmd_detail}")
+        except Exception as cmd_err:
+            steamcmd_detail = str(cmd_err)
+            logger.warning(f"SteamCMD Workshop download exception for {workshop_id}: {cmd_err}")
+
+    # 4. Write a small manifest so the installed-mods list can show it
+    import json as _json
+    manifest = {
+        "name": title,
+        "workshop_id": workshop_id,
+        "source": "workshop",
+        "version_number": "workshop",
+        "description": details.get("short_description", details.get("description", "")),
+    }
+    try:
+        (addon_dest / "manifest.json").write_text(_json.dumps(manifest), encoding="utf-8")
+    except Exception:
+        pass
+
+    if not downloaded:
+        # Return the actual diagnostic so the user (and us) can see what went wrong
+        msg = f"Could not auto-download '{title}'."
+        if steamcmd_detail:
+            msg += f" SteamCMD: {steamcmd_detail}"
+        return {
+            "success": False,
+            "message": msg,
+            "workshop_id": workshop_id,
+            "title": title,
+        }
+
+    return {
+        "success": True,
+        "message": f"Installed '{title}' (Workshop ID {workshop_id})",
+        "workshop_id": workshop_id,
+        "title": title,
+        "path": str(addon_dest),
+    }
+
 
 @router.post("/thunderstore/install")
 async def install_thunderstore_mod(

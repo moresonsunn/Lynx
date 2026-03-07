@@ -17,6 +17,7 @@ import io
 import time
 
 from steam_games import STEAM_GAMES
+from integrations_store import get_integration_key as _get_integration_key
 
 router = APIRouter(prefix="/steam", tags=["steam"])
 
@@ -256,7 +257,11 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
         except Exception:
             env[key] = value
     # Fill passwords if present and still set to placeholders
+    # Skip keys that are meant to stay empty (API keys, tokens, usernames)
+    _NO_AUTOFILL = {"USERNAME", "PASSWRD", "STEAM_API_KEY", "SRCDS_TOKEN"}
     for key in list(env.keys()):
+        if key in _NO_AUTOFILL:
+            continue
         if isinstance(env[key], str) and env[key].lower() in {"change-me", "admin", ""}:
             env[key] = _random_password()
     if payload.env:
@@ -264,6 +269,15 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
             if v is None:
                 continue
             env[k] = str(v)
+
+    # For Source-engine games (GMod etc.): auto-inject -authkey using the
+    # global Steam Web API key from Settings → Integrations so Workshop
+    # collections download automatically on server start.
+    game_params = env.get("GAME_PARAMS", "")
+    if "-authkey" not in game_params:
+        global_steam_key = (_get_integration_key("steam") or "").strip()
+        if global_steam_key:
+            env["GAME_PARAMS"] = f"{game_params} -authkey {global_steam_key}"
 
     # Use host_port for the first port only; others auto-assign
     if payload.host_port is not None and ports:
@@ -283,6 +297,15 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
         pass
     _make_dir_writable(server_root, uid=dir_uid, gid=dir_gid)
     host_dir = server_root
+
+    # Many ich777/steamcmd images expect subdirectories (steamcmd, serverfiles)
+    # inside /serverdata.  These are baked into the image but hidden when we
+    # bind-mount an empty host directory.  Pre-create them so the container's
+    # first-run download script can write into them.
+    container_dir = (meta.get("volume") or {}).get("container") or ""
+    if container_dir == "/serverdata":
+        for _sub in ("steamcmd", "serverfiles"):
+            _make_dir_writable(server_root / _sub, uid=dir_uid, gid=dir_gid)
 
     # For remote Docker hosts (STEAM_DOCKER_HOST), use STEAM_SERVERS_HOST_ROOT
     # to specify the correct path on the remote machine where servers are stored.

@@ -170,6 +170,30 @@ const SUPPORTED_GAMES = {
         { type: 'workshop', appid: 4000 },
         { type: 'nexus', domain: 'garysmod' },
     ]},
+    ttt:                { name: "TTT (GMod)", sources: [
+        { type: 'workshop', appid: 4000 },
+        { type: 'nexus', domain: 'garysmod' },
+    ]},
+    ttt2:               { name: "TTT2 (GMod)", sources: [
+        { type: 'workshop', appid: 4000 },
+        { type: 'nexus', domain: 'garysmod' },
+    ]},
+    darkrp:             { name: "DarkRP (GMod)", sources: [
+        { type: 'workshop', appid: 4000 },
+        { type: 'nexus', domain: 'garysmod' },
+    ]},
+    prop_hunt:          { name: "Prop Hunt (GMod)", sources: [
+        { type: 'workshop', appid: 4000 },
+        { type: 'nexus', domain: 'garysmod' },
+    ]},
+    murder:             { name: "Murder (GMod)", sources: [
+        { type: 'workshop', appid: 4000 },
+        { type: 'nexus', domain: 'garysmod' },
+    ]},
+    sandbox_gmod:       { name: "Sandbox (GMod)", sources: [
+        { type: 'workshop', appid: 4000 },
+        { type: 'nexus', domain: 'garysmod' },
+    ]},
     arma3:              { name: 'Arma 3', sources: [{ type: 'workshop', appid: 107410 }] },
     space_engineers:    { name: 'Space Engineers', sources: [{ type: 'workshop', appid: 244850 }] },
     cs2:                { name: 'Counter-Strike 2', sources: [{ type: 'workshop', appid: 730 }] },
@@ -240,6 +264,80 @@ const SUPPORTED_GAMES = {
         { type: 'workshop', appid: 232090 },
         { type: 'modio', game_id: 50 },
     ]},
+
+    // ---- Additional games with active mod communities ----
+    deep_rock_galactic: { name: 'Deep Rock Galactic', sources: [
+        { type: 'modio', game_id: 2475 },
+        { type: 'nexus', domain: 'deeprockgalactic' },
+    ]},
+    snowrunner:         { name: 'SnowRunner', sources: [
+        { type: 'modio', game_id: 306 },
+    ]},
+    pavlov_vr:          { name: 'Pavlov VR', sources: [
+        { type: 'modio', game_id: 3959 },
+    ]},
+    ready_or_not:       { name: 'Ready or Not', sources: [
+        { type: 'nexus', domain: 'readyornot' },
+        { type: 'modio', game_id: 5765 },
+    ]},
+    empyrion:           { name: 'Empyrion: Galactic Survival', sources: [
+        { type: 'workshop', appid: 383120 },
+        { type: 'nexus', domain: 'empyriongalacticsurvival' },
+    ]},
+    euro_truck_simulator_2: { name: 'Euro Truck Simulator 2', sources: [
+        { type: 'workshop', appid: 227300 },
+        { type: 'nexus', domain: 'eurotrucksimulator2' },
+    ]},
+    ets2:               { name: 'Euro Truck Simulator 2', sources: [
+        { type: 'workshop', appid: 227300 },
+        { type: 'nexus', domain: 'eurotrucksimulator2' },
+    ]},
+    american_truck_simulator: { name: 'American Truck Simulator', sources: [
+        { type: 'workshop', appid: 270880 },
+        { type: 'curseforge', slug: 'american_truck_simulator', game_id: 64367 },
+    ]},
+    ats:                { name: 'American Truck Simulator', sources: [
+        { type: 'workshop', appid: 270880 },
+        { type: 'curseforge', slug: 'ats', game_id: 64367 },
+    ]},
+    wreckfest:          { name: 'Wreckfest', sources: [
+        { type: 'workshop', appid: 228380 },
+    ]},
+    cities_skylines_2:  { name: 'Cities: Skylines II', sources: [
+        { type: 'thunderstore', community: 'cities-skylines-ii' },
+        { type: 'nexus', domain: 'citiesskylines2' },
+    ]},
+    starbound:          { name: 'Starbound', sources: [
+        { type: 'workshop', appid: 211820 },
+        { type: 'nexus', domain: 'starbound' },
+    ]},
+    necesse:            { name: 'Necesse', sources: [
+        { type: 'workshop', appid: 1169040 },
+    ]},
+    atlas:              { name: 'ATLAS', sources: [
+        { type: 'workshop', appid: 834910 },
+    ]},
+    colony_survival:    { name: 'Colony Survival', sources: [
+        { type: 'workshop', appid: 366090 },
+    ]},
+    icarus:             { name: 'Icarus', sources: [
+        { type: 'nexus', domain: 'icarus' },
+    ]},
+    farming_simulator_22: { name: 'Farming Simulator 22', sources: [
+        { type: 'nexus', domain: 'farmingsimulator22' },
+    ]},
+    phasmophobia:       { name: 'Phasmophobia', sources: [
+        { type: 'nexus', domain: 'phasmophobia' },
+    ]},
+    beamng_drive:       { name: 'BeamNG.drive', sources: [
+        { type: 'nexus', domain: 'beamngdrive' },
+    ]},
+    scum:               { name: 'SCUM', sources: [
+        { type: 'workshop', appid: 513710 },
+    ]},
+    hurtworld:          { name: 'Hurtworld', sources: [
+        { type: 'workshop', appid: 393420 },
+    ]},
 };
 
 export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
@@ -260,7 +358,10 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
     // Multi-source: selected source index
     const [activeSourceIdx, setActiveSourceIdx] = useState(0);
 
-    const gameConfig = SUPPORTED_GAMES[gameSlug] || null;
+    // Normalise slug: strip "steam:" prefix, lowercase, trim
+    const normalizedSlug = (gameSlug || '').replace(/^steam:/i, '').toLowerCase().trim();
+
+    const gameConfig = SUPPORTED_GAMES[normalizedSlug] || null;
     const isSupported = gameConfig !== null;
     const availableSources = gameConfig?.sources || [];
     const activeSource = availableSources[activeSourceIdx] || availableSources[0];
@@ -274,12 +375,12 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
 
     // Fetch installed mods
     async function fetchInstalledMods() {
-        if (!serverId || !gameSlug) return;
+        if (!serverId || !normalizedSlug) return;
         setLoading(true);
         setError('');
         try {
             const res = await fetch(
-                `${API}/steam-mods/installed/${encodeURIComponent(serverId)}?game_slug=${encodeURIComponent(gameSlug)}`,
+                `${API}/steam-mods/installed/${encodeURIComponent(serverId)}?game_slug=${encodeURIComponent(normalizedSlug)}`,
                 { headers: authHeaders() }
             );
             if (!res.ok) {
@@ -307,11 +408,11 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
             if (sourceType === 'thunderstore') {
                 url = `${API}/steam-mods/thunderstore/search?community=${encodeURIComponent(activeSource.community)}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
             } else if (sourceType === 'curseforge') {
-                url = `${API}/steam-mods/curseforge/search?game_slug=${encodeURIComponent(activeSource.slug || gameSlug)}&query=${encodeURIComponent(searchQuery)}&page=${newPage}&page_size=20`;
+                url = `${API}/steam-mods/curseforge/search?game_slug=${encodeURIComponent(activeSource.slug || normalizedSlug)}&query=${encodeURIComponent(searchQuery)}&page=${newPage}&page_size=20`;
             } else if (sourceType === 'nexus') {
-                url = `${API}/steam-mods/nexus/search?game_slug=${encodeURIComponent(gameSlug)}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
+                url = `${API}/steam-mods/nexus/search?game_slug=${encodeURIComponent(normalizedSlug)}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
             } else if (sourceType === 'modio') {
-                url = `${API}/steam-mods/modio/search?game_slug=${encodeURIComponent(gameSlug)}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
+                url = `${API}/steam-mods/modio/search?game_slug=${encodeURIComponent(normalizedSlug)}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
             } else {
                 url = `${API}/steam-mods/workshop/search?appid=${activeSource.appid}&q=${encodeURIComponent(searchQuery)}&page=${newPage}`;
             }
@@ -398,7 +499,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                     namespace: mod.namespace,
                     name: mod.name,
                     version: mod.version,
-                    game_slug: gameSlug,
+                    game_slug: normalizedSlug,
                     install_dependencies: true
                 })
             });
@@ -448,7 +549,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                 headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify({
                     server_id: serverId,
-                    game_slug: activeSource.slug || gameSlug,
+                    game_slug: activeSource.slug || normalizedSlug,
                     mod_id: mod.mod_id,
                     file_id: fileId
                 })
@@ -475,7 +576,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
         try {
             // First get files list
             const filesRes = await fetch(
-                `${API}/steam-mods/nexus/mod/${encodeURIComponent(gameSlug)}/${mod.mod_id}/files`,
+                `${API}/steam-mods/nexus/mod/${encodeURIComponent(normalizedSlug)}/${mod.mod_id}/files`,
                 { headers: authHeaders() }
             );
             if (!filesRes.ok) throw new Error('Failed to get mod files');
@@ -496,7 +597,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
             }
 
             const res = await fetch(
-                `${API}/steam-mods/nexus/install?server_id=${encodeURIComponent(serverId)}&game_slug=${encodeURIComponent(gameSlug)}&mod_id=${mod.mod_id}&file_id=${primaryFile.id}`,
+                `${API}/steam-mods/nexus/install?server_id=${encodeURIComponent(serverId)}&game_slug=${encodeURIComponent(normalizedSlug)}&mod_id=${mod.mod_id}&file_id=${primaryFile.id}`,
                 { method: 'POST', headers: authHeaders() }
             );
             
@@ -524,7 +625,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
         setInstalling(mod.id);
         try {
             const res = await fetch(
-                `${API}/steam-mods/modio/install?server_id=${encodeURIComponent(serverId)}&game_slug=${encodeURIComponent(gameSlug)}&mod_id=${mod.mod_id}`,
+                `${API}/steam-mods/modio/install?server_id=${encodeURIComponent(serverId)}&game_slug=${encodeURIComponent(normalizedSlug)}&mod_id=${mod.mod_id}`,
                 { method: 'POST', headers: authHeaders() }
             );
             
@@ -534,6 +635,39 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
             }
             
             alert(`✅ Installed ${mod.name} successfully!`);
+            await fetchInstalledMods();
+        } catch (e) {
+            alert(`❌ Failed to install: ${e.message}`);
+        } finally {
+            setInstalling(null);
+        }
+    }
+
+    // Install mod from Steam Workshop
+    async function installWorkshopMod(mod) {
+        setInstalling(mod.id);
+        try {
+            const res = await fetch(`${API}/steam-mods/workshop/install`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                body: JSON.stringify({
+                    server_id: serverId,
+                    workshop_id: String(mod.id),
+                    game_slug: normalizedSlug,
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+
+            const data = await res.json();
+            if (data.success) {
+                alert(`✅ Installed '${data.title || mod.title}' successfully!`);
+            } else {
+                alert(`⚠️ ${data.message || 'Could not auto-download. Add the Workshop collection to GAME_PARAMS and restart.'}`);
+            }
             await fetchInstalledMods();
         } catch (e) {
             alert(`❌ Failed to install: ${e.message}`);
@@ -552,7 +686,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                 body: JSON.stringify({
                     server_id: serverId,
                     mod_name: modName,
-                    game_slug: gameSlug
+                    game_slug: normalizedSlug
                 })
             });
             
@@ -571,7 +705,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
         if (isSupported) {
             fetchInstalledMods();
         }
-    }, [serverId, gameSlug]);
+    }, [serverId, normalizedSlug]);
 
     // Reset search when switching source
     useEffect(() => {
@@ -590,7 +724,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                     <FaCube className="text-4xl text-yellow-400 mx-auto mb-4" />
                     <h3 className="text-xl font-bold text-white mb-2">Mod Support Not Available</h3>
                     <p className="text-white/60">
-                        This game ({gameSlug}) doesn't have integrated mod support yet.
+                        This game ({normalizedSlug || gameSlug}) doesn't have integrated mod support yet.
                     </p>
                     <p className="text-white/40 text-sm mt-2">
                         You can still manually add mods via the Files tab.
@@ -711,7 +845,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                                                 } else if (sourceType === 'modio') {
                                                     installModioMod(mod);
                                                 } else {
-                                                    alert('Workshop mod installation coming soon');
+                                                    installWorkshopMod(mod);
                                                 }
                                             }}
                                             source={sourceType}
