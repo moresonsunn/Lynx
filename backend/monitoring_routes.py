@@ -11,6 +11,7 @@ from runtime_adapter import get_runtime_manager_or_docker
 from fastapi.responses import StreamingResponse
 import asyncio
 import json
+import os
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
@@ -31,6 +32,8 @@ class SystemHealth(BaseModel):
     total_memory_gb: float
     used_memory_gb: float
     cpu_usage_percent: float
+    cpu_cores: Optional[int] = None
+    cpu_threads: Optional[int] = None
     disk_usage_percent: Optional[float]
     uptime_hours: Optional[float]
 
@@ -154,6 +157,27 @@ async def get_system_health(
         
         avg_cpu_usage = cpu_usage_total / server_count_with_stats if server_count_with_stats > 0 else 0.0
         
+        # Detect host CPU topology (physical cores vs logical threads)
+        cpu_cores = None
+        cpu_threads = None
+        try:
+            cpu_threads = os.cpu_count()  # logical CPUs (threads)
+            try:
+                import psutil
+                cpu_cores = psutil.cpu_count(logical=False)  # physical cores
+            except ImportError:
+                # fallback: try to read from /proc/cpuinfo on Linux
+                try:
+                    with open("/proc/cpuinfo") as f:
+                        core_ids = set()
+                        for line in f:
+                            if line.strip().startswith("core id"):
+                                core_ids.add(line.strip())
+                        cpu_cores = len(core_ids) if core_ids else cpu_threads
+                except Exception:
+                    cpu_cores = cpu_threads
+        except Exception:
+            pass
         
         import shutil
         try:
@@ -169,6 +193,8 @@ async def get_system_health(
             total_memory_gb=round(total_memory_gb, 2),
             used_memory_gb=round(used_memory_gb, 2),
             cpu_usage_percent=round(avg_cpu_usage, 2),
+            cpu_cores=cpu_cores,
+            cpu_threads=cpu_threads,
             disk_usage_percent=round(disk_usage_percent, 2) if disk_usage_percent else None,
             uptime_hours=None  
         )

@@ -102,15 +102,14 @@ def _collect_container_stats(container_name: str) -> Dict[str, Any]:
         container = client.containers.get(container_name)
         stats = container.stats(stream=False)
         
-        # CPU usage
+        # CPU usage — normalized to 0-100% regardless of core count
         cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - \
                    stats['precpu_stats']['cpu_usage']['total_usage']
         system_delta = stats['cpu_stats']['system_cpu_usage'] - \
                       stats['precpu_stats']['system_cpu_usage']
-        cpu_count = stats['cpu_stats'].get('online_cpus', 1)
         cpu_percent = 0.0
-        if system_delta > 0:
-            cpu_percent = (cpu_delta / system_delta) * cpu_count * 100.0
+        if system_delta > 0 and cpu_delta > 0:
+            cpu_percent = (cpu_delta / system_delta) * 100.0
         
         # Memory usage
         mem_usage = stats['memory_stats'].get('usage', 0)
@@ -207,38 +206,50 @@ async def collect_metrics(
 def _check_alert_thresholds(db: Session, server_name: str, metrics: ServerMetrics):
     """Check if metrics exceed thresholds and create alerts"""
     
+    # Read user-configured thresholds from settings
+    try:
+        from settings_routes import load_settings
+        notif_settings = load_settings().get("notifications", {})
+        cpu_threshold = float(notif_settings.get("cpu_threshold", 90))
+        memory_threshold = float(notif_settings.get("memory_threshold", 90))
+        disk_threshold = float(notif_settings.get("disk_threshold", 90))
+    except Exception:
+        cpu_threshold = 90.0
+        memory_threshold = 90.0
+        disk_threshold = 90.0
+    
     alerts_to_create = []
     
     # CPU alert
-    if metrics.cpu_percent and metrics.cpu_percent > 80:
+    if metrics.cpu_percent and metrics.cpu_percent > cpu_threshold:
         severity = "critical" if metrics.cpu_percent > 95 else "warning"
         alerts_to_create.append({
             'alert_type': 'cpu',
             'severity': severity,
             'message': f'High CPU usage: {metrics.cpu_percent:.1f}%',
-            'threshold_value': 80.0,
+            'threshold_value': cpu_threshold,
             'current_value': metrics.cpu_percent,
         })
     
     # Memory alert
-    if metrics.memory_percent and metrics.memory_percent > 85:
+    if metrics.memory_percent and metrics.memory_percent > memory_threshold:
         severity = "critical" if metrics.memory_percent > 95 else "warning"
         alerts_to_create.append({
             'alert_type': 'memory',
             'severity': severity,
             'message': f'High memory usage: {metrics.memory_percent:.1f}%',
-            'threshold_value': 85.0,
+            'threshold_value': memory_threshold,
             'current_value': metrics.memory_percent,
         })
     
     # Disk alert
-    if metrics.disk_percent and metrics.disk_percent > 90:
+    if metrics.disk_percent and metrics.disk_percent > disk_threshold:
         severity = "critical" if metrics.disk_percent > 95 else "warning"
         alerts_to_create.append({
             'alert_type': 'disk',
             'severity': severity,
             'message': f'High disk usage: {metrics.disk_percent:.1f}%',
-            'threshold_value': 90.0,
+            'threshold_value': disk_threshold,
             'current_value': metrics.disk_percent,
         })
     

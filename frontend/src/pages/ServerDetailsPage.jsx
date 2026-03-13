@@ -388,7 +388,7 @@ export default function ServerDetailsPage() {
               {stats.uptime_seconds > 0 && (
                 <span>Uptime: {formatUptime(stats.uptime_seconds)}</span>
               )}
-              <span>CPU: {stats.cpu_percent}%</span>
+              <span>CPU: {Math.min(Math.round(stats.cpu_percent), 100)}%</span>
               <span>RAM: {Math.round(stats.memory_usage_mb)}/{Math.round(stats.memory_limit_mb)} MB</span>
             </div>
           )}
@@ -541,7 +541,7 @@ export default function ServerDetailsPage() {
                         <span className={`font-medium ${
                           stats.cpu_percent > 80 ? 'text-red-400' : stats.cpu_percent > 50 ? 'text-yellow-400' : 'text-green-400'
                         }`}>
-                          {stats.cpu_percent}%
+                          {Math.min(Math.round(stats.cpu_percent), 100)}%
                         </span>
                       </div>
                       <div className="w-full bg-white/10 rounded-full h-2">

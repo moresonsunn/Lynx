@@ -516,8 +516,8 @@ class ServerCreateRequest(BaseModel):
     host_port: int | None = None  # if omitted/None we will auto-pick an available port
     loader_version: str | None = None  # specific loader build (fabric/forge/etc.)
     installer_version: str | None = None  # for installers that have separate versioning
-    min_ram: int | str = 1024  # MB or string like "512M"
-    max_ram: int | str = 2048  # MB or string like "2G"
+    min_ram: int | str | None = None  # MB or string like "512M"; None = use Settings > Server Defaults
+    max_ram: int | str | None = None  # MB or string like "2G";  None = use Settings > Server Defaults
 
 class ServerImportRequest(BaseModel):
     name: str  # Must match existing directory under SERVERS_CONTAINER_ROOT
@@ -663,6 +663,13 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
 @app.post("/api/servers")
 def create_server(req: ServerCreateRequest, current_user: User = Depends(require_auth)):
     try:
+        # Apply server defaults from Settings when not explicitly provided
+        from settings_routes import get_server_defaults
+        defaults = get_server_defaults()
+
+        effective_min_ram = req.min_ram if req.min_ram is not None else defaults.get("memory_min_mb", 1024)
+        effective_max_ram = req.max_ram if req.max_ram is not None else defaults.get("memory_max_mb", 4096)
+
         # Convert RAM values to proper format
         def format_ram(ram_value):
             if isinstance(ram_value, int):
@@ -675,8 +682,8 @@ def create_server(req: ServerCreateRequest, current_user: User = Depends(require
                 # Already a string, return as is
                 return str(ram_value)
         
-        min_ram = format_ram(req.min_ram)
-        max_ram = format_ram(req.max_ram)
+        min_ram = format_ram(effective_min_ram)
+        max_ram = format_ram(effective_max_ram)
         
         # Pass loader_version if present, otherwise None
         result = get_docker_manager().create_server(

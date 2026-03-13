@@ -101,7 +101,7 @@ const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
                     <FaClock className="inline mr-1 text-[9px]" />{formatUptime(stats.uptime_seconds)}
                   </span>
                 )}
-                <span className="rounded-full bg-white/10 px-2 py-0.5 shadow-inner">CPU {stats.cpu_percent}%</span>
+                <span className="rounded-full bg-white/10 px-2 py-0.5 shadow-inner">CPU {Math.min(Math.round(stats.cpu_percent), 100)}%</span>
                 <span className="rounded-full bg-white/10 px-2 py-0.5 shadow-inner">RAM {Math.round(stats.memory_usage_mb)}/{Math.round(stats.memory_limit_mb)} MB</span>
               </div>
             )}

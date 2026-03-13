@@ -195,7 +195,7 @@ export default function DashboardPage() {
   }
 
 
-  const { totalServers, runningServers, totalMemoryMB, avgCpuPercent, criticalAlerts, warningAlerts } = useMemo(() => {
+  const { totalServers, runningServers, totalMemoryMB, avgCpuPercent, cpuCores, cpuThreads, criticalAlerts, warningAlerts } = useMemo(() => {
     const total = servers?.length || 0;
     const runningList = Array.isArray(servers) ? servers.filter(s => s?.status === 'running') : [];
     const running = runningList.length || 0;
@@ -206,12 +206,20 @@ export default function DashboardPage() {
 
     let cpuPercent = 0;
     let memoryMB = 0;
+    let cores = null;
+    let threads = null;
 
     if (health && typeof health.cpu_usage_percent === 'number') {
       cpuPercent = health.cpu_usage_percent;
     }
     if (health && typeof health.used_memory_gb === 'number') {
       memoryMB = health.used_memory_gb * 1024;
+    }
+    if (health && typeof health.cpu_cores === 'number') {
+      cores = health.cpu_cores;
+    }
+    if (health && typeof health.cpu_threads === 'number') {
+      threads = health.cpu_threads;
     }
 
     if ((!cpuPercent || !memoryMB) && serverStats && typeof serverStats === 'object') {
@@ -238,7 +246,9 @@ export default function DashboardPage() {
       }
     }
 
+    // Clamp to 0-100%
     if (!Number.isFinite(cpuPercent)) cpuPercent = 0;
+    cpuPercent = Math.min(cpuPercent, 100);
     if (!Number.isFinite(memoryMB)) memoryMB = 0;
     const critical = alerts?.filter(a => a.type === 'critical' && !a.acknowledged).length || 0;
     const warning = alerts?.filter(a => a.type === 'warning' && !a.acknowledged).length || 0;
@@ -248,6 +258,8 @@ export default function DashboardPage() {
       runningServers: running,
       totalMemoryMB: memoryMB,
       avgCpuPercent: cpuPercent,
+      cpuCores: cores,
+      cpuThreads: threads,
       criticalAlerts: critical,
       warningAlerts: warning
     };
@@ -303,6 +315,11 @@ export default function DashboardPage() {
             <div className="text-xl sm:text-2xl font-medium text-white">
               {`${avgCpuPercent.toFixed(0)}%`}
             </div>
+            {cpuThreads && (
+              <div className="text-xs text-white/40 mt-1">
+                {cpuCores ? `${cpuCores}C / ${cpuThreads}T` : `${cpuThreads} threads`}
+              </div>
+            )}
           </div>
 
           <div className="glassmorphism rounded-xl p-4 sm:p-5">
