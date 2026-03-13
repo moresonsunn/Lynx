@@ -922,7 +922,7 @@ def _steamcmd_workshop_download_sync(
     if meta_path.exists():
         try:
             meta = _json.loads(meta_path.read_text(encoding="utf-8") or "{}")
-            if meta.get("id"):^
+            if meta.get("id"):
                 container_id = meta["id"]
                 logger.info(f"Resolved server_id → container {container_id[:12]} via server_meta.json")
         except Exception as e:
