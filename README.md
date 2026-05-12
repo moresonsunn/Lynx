@@ -1,51 +1,42 @@
-# Lynx
+<p align="center">
+  <h1 align="center">Lynx</h1>
+  <p align="center">Self-hosted game server management panel built on Docker</p>
+</p>
 
-A web-based game server management platform for Minecraft and Steam dedicated servers.
+<p align="center">
+  <a href="https://github.com/moresonsunn/Lynx/actions/workflows/ci.yml"><img src="https://github.com/moresonsunn/Lynx/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://hub.docker.com/r/moresonsun/lynx"><img src="https://img.shields.io/docker/pulls/moresonsun/lynx" alt="Docker Pulls"></a>
+  <img src="https://img.shields.io/badge/arch-amd64%20%7C%20arm64-blue" alt="Architecture">
+  <img src="https://img.shields.io/badge/license-proprietary-lightgrey" alt="License">
+</p>
 
-![GitLab CI](https://gitlab.com/kyzen4/lynx/badges/main/pipeline.svg)
-![GitHub CI](https://github.com/moresonsunn/Lynx/actions/workflows/ci.yml/badge.svg)
-![Docker Pulls](https://img.shields.io/docker/pulls/moresonsun/lynx)
-![Architecture](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-blue)
+---
 
-## Overview
+Lynx gives you a web UI to deploy, configure, and manage Minecraft and Steam dedicated servers — all running as Docker containers on your own hardware. Create a server, tweak its settings, watch the console live, manage files, schedule backups, and handle players, all from one place.
 
-Lynx provides a unified interface to deploy, configure, and monitor game servers running in Docker containers. The platform supports Minecraft servers with automatic Java version selection and over 70 Steam game servers.
+<!-- Add a screenshot here: ![Dashboard](docs/assets/screenshot.png) -->
 
 ## Features
 
-### Core Features
-- Server lifecycle management (create, start, stop, restart, delete)
-- Real-time console output with ANSI color support
-- File manager with upload, download, and archive operations
-- Automated backup and restore
-- User authentication with role-based access control
-- REST API for automation and integration
-- Multi-architecture support (amd64, arm64)
+**Server Management** — Create, start, stop, restart, and delete game servers through the web UI or REST API. Real-time console with ANSI color support and command history.
 
-### High-Impact Features ✨
-- **Performance Monitoring:** Real-time metrics, crash detection, performance alerts
-- **Multi-Server Management:** Bulk operations, server groups, cloning
-- **Enhanced Modpacks:** Automatic mod scanning, update checking, conflict detection
-- **Advanced Backups:** Incremental backups, cloud storage (S3/GCS/Azure), encryption
-- **Player Experience:** Advanced analytics, bulk whitelist, temporary bans
+**File Manager** — Browse, edit, upload, download, and archive server files directly from the browser. Drag-and-drop uploads supported.
 
-See [HIGH_IMPACT_FEATURES.md](HIGH_IMPACT_FEATURES.md) for detailed documentation.
+**Backups** — Automated and manual backups with scheduling. Incremental backup support and optional cloud storage (S3, GCS, Azure) with encryption.
 
-### Quality of Life Improvements 🎨
-- **UI/UX Enhancements:** Advanced search, drag-drop uploads, command history, dashboard widgets
-- **Configuration Management:** Visual server.properties editor, templates, validation, diff comparison
-- **Enhanced Security:** 2FA/TOTP, IP whitelisting, audit logging, per-server permissions
+**Minecraft** — Vanilla, Paper, Purpur, Fabric, Forge, and NeoForge. Automatic Java version selection (8, 11, 17, 21). Modpack installation from CurseForge and Modrinth with dependency resolution and conflict detection.
 
-See [QUALITY_OF_LIFE_FEATURES.md](QUALITY_OF_LIFE_FEATURES.md) for detailed documentation.
+**Steam Games** — 70+ dedicated server configs out of the box: Valheim, Rust, ARK, CS2, Palworld, Terraria, Project Zomboid, Satisfactory, and many more. Workshop mod management included.
 
-### Platform Features 🚀
-- **Multi-Tenancy:** Organizations, resource quotas, billing tracking, role-based access
-- **API Management:** Rate limiting, API keys, webhooks, usage analytics
-- **Plugin System:** Marketplace, custom server types, versioning, reviews
-- **Real-Time:** WebSocket support, console streaming, live notifications
-- **Advanced API:** Batch operations, task management, API versioning
+**Monitoring** — Real-time CPU, memory, and network metrics per server. Crash detection and performance alerts.
 
-See [PLATFORM_FEATURES.md](PLATFORM_FEATURES.md) for detailed documentation.
+**Multi-Server Operations** — Bulk start/stop, server groups, cloning, and templates for quick deployment.
+
+**Auth & Security** — User authentication with role-based access, per-server permissions, 2FA/TOTP, IP whitelisting, and audit logging.
+
+**API** — Full REST API for automation. API key management, rate limiting, webhooks, and batch operations.
+
+See [docs/FEATURES.md](docs/FEATURES.md) for the complete feature reference.
 
 ## Supported Games
 
@@ -55,142 +46,79 @@ See [PLATFORM_FEATURES.md](PLATFORM_FEATURES.md) for detailed documentation.
 |------|-------------|
 | Vanilla | Official Mojang server |
 | Paper | High-performance Spigot fork |
-| Purpur | Paper fork with additional features |
+| Purpur | Paper fork with extra gameplay options |
 | Fabric | Lightweight modding platform |
 | Forge | Classic modding platform |
 | NeoForge | Modern Forge continuation |
 
-Minecraft servers include automatic Java version selection (8, 11, 17, 21) and modpack installation from CurseForge and Modrinth.
+Automatic Java version detection and modpack support from CurseForge and Modrinth.
 
-### Steam Games
+### Steam
 
-Over 70 dedicated server configurations including:
+70+ dedicated servers with pre-configured defaults. Some highlights:
 
-| Category | Games |
-|----------|-------|
-| Survival | Valheim, Rust, ARK, The Forest, Palworld, V Rising, 7 Days to Die, Enshrouded |
-| Shooters | Counter-Strike 2, Hell Let Loose, Insurgency: Sandstorm, Squad, Arma 3 |
-| Cooperative | Terraria, Don't Starve Together, Project Zomboid, Satisfactory, Core Keeper |
+| Category | Examples |
+|----------|---------|
+| Survival | Valheim, Rust, ARK, Palworld, V Rising, 7 Days to Die, Enshrouded |
+| Shooters | Counter-Strike 2, Hell Let Loose, Insurgency: Sandstorm, Squad |
+| Co-op | Terraria, Don't Starve Together, Project Zomboid, Satisfactory, Core Keeper |
 
-Full catalog available at [backend/data/steam_games/extended_catalog.json](backend/data/steam_games/extended_catalog.json)
+Full catalog: [backend/data/steam_games/extended_catalog.json](backend/data/steam_games/extended_catalog.json)
 
-## Installation
+## Quick Start
 
-### Quick Start
+**Requirements:** Docker Engine 20.10+ (or Docker Desktop) and 4GB RAM.
 
-**Linux / macOS:**
+### One-line install
+
 ```bash
+# Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.sh | bash
-```
 
-**Windows (PowerShell):**
-```powershell
+# Windows (PowerShell as Admin)
 irm https://raw.githubusercontent.com/moresonsunn/Lynx/main/install.ps1 | iex
 ```
 
-### Requirements
-
-- Docker Engine 20.10+ or Docker Desktop
-- 4GB RAM minimum
-- Supported platforms: Linux (amd64/arm64), macOS, Windows
-
-### Manual Installation
+### Manual install
 
 ```bash
 mkdir lynx && cd lynx
 curl -fsSL https://raw.githubusercontent.com/moresonsunn/Lynx/main/docker-compose.yml -o docker-compose.yml
-docker compose pull
 docker compose up -d
 ```
 
-### Platform Notes
+Open **http://localhost:8000** and log in with `admin` / `admin123`. Change the password immediately.
 
-**macOS:**
-- Install Docker Desktop for Mac
-- Apple Silicon and Intel architectures supported
-- Data stored in Docker volumes
+For detailed installation options, platform notes, and environment variables, see [docs/INSTALL.md](docs/INSTALL.md).
 
-**Windows:**
-- Install Docker Desktop with WSL2 backend
-- Run PowerShell as Administrator if permission errors occur
-- WSL2 recommended for performance
+## Architecture
 
-**Linux:**
-```bash
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
+```
+┌──────────────────────────────────────────────┐
+│                   Nginx                       │
+│              (reverse proxy)                  │
+├──────────────┬───────────────────────────────┤
+│   React UI   │      FastAPI Backend          │
+│  (Tailwind)  │  (SQLAlchemy + Docker SDK)    │
+├──────────────┴───────────────────────────────┤
+│           PostgreSQL / SQLite                 │
+├──────────────────────────────────────────────┤
+│         Docker Engine (game servers)          │
+│   ┌────────┐ ┌────────┐ ┌────────┐          │
+│   │ MC #1  │ │ MC #2  │ │ Valheim│  ...     │
+│   └────────┘ └────────┘ └────────┘          │
+└──────────────────────────────────────────────┘
 ```
 
-### Post-Installation
-
-1. Access the web interface at http://localhost:8000
-2. Login with default credentials: admin / admin123
-3. Change the default password immediately
-
-### Management Commands
-
-```bash
-# View logs
-docker compose logs -f
-
-# Stop
-docker compose down
-
-# Update
-docker compose pull
-docker compose up -d
-
-# Remove all data
-docker compose down -v
-```
-
-## Docker Images
-
-Published to Docker Hub under `moresonsun/lynx`:
-
-| Tag | Description |
-|-----|-------------|
-| `latest` | Current stable release |
-| `vX.Y.Z` | Specific version |
-| `edge` | Development builds |
-
-```bash
-docker pull moresonsun/lynx:latest
-```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| ADMIN_PASSWORD | Initial admin password (min 8 characters) | admin123 |
-| APP_NAME | Application branding name | Lynx |
-| APP_VERSION | Version string for branding endpoint | 0.1.0 |
-| SECRET_KEY | JWT signing key (change in production) | - |
-| SERVERS_CONTAINER_ROOT | Container path for server data | /data/servers |
-| SERVERS_HOST_ROOT | Host path for bind mounts | (inferred) |
-| SERVERS_VOLUME_NAME | Docker volume name | minecraft-server_mc_servers_data |
-| ALLOWED_ORIGIN_REGEX | CORS origin pattern | - |
-
-### CasaOS Integration
-
-Steam servers can be installed as CasaOS v2 compose applications. Required variables:
-
-| Variable | Description |
-|----------|-------------|
-| CASAOS_API_TOKEN | Authentication token from CasaOS browser session |
-| CASAOS_API_BASE | CasaOS API URL (e.g., `http://<ip>/v2/app_management`) |
-
-To obtain the token:
-1. Open CasaOS in browser and sign in
-2. Open browser developer tools (F12) and go to Network tab
-3. Refresh the page and inspect any request headers
-4. Copy the `authorization` header value
+| Layer | Tech |
+|-------|------|
+| Frontend | React 18, Tailwind CSS |
+| Backend | Python 3.11, FastAPI, SQLAlchemy |
+| Database | PostgreSQL (SQLite fallback) |
+| Runtime | Docker with multi-architecture support (amd64/arm64) |
+| Real-time | WebSockets for console streaming and notifications |
 
 ## Development
-
-### Local Setup
 
 ```bash
 # Backend
@@ -204,70 +132,23 @@ npm install
 npm start
 ```
 
-### Building Images
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building Docker images, project structure, and the release process.
 
-```bash
-# Build locally
-docker build -t lynx:dev -f docker/controller-unified.Dockerfile .
+## Documentation
 
-# Multi-architecture build
-docker buildx create --name builder --use
-docker buildx build -f docker/controller-unified.Dockerfile \
-  -t moresonsun/lynx:latest \
-  --platform linux/amd64,linux/arm64 \
-  --push .
-```
-
-### Project Structure
-
-```
-Lynx/
-  backend/     # FastAPI application
-  frontend/    # React application
-  docker/      # Dockerfiles
-  docker-compose.yml
-```
-
-## Releasing
-
-Create an annotated tag to trigger versioned image builds:
-
-```bash
-git tag -a v0.1.0 -m "v0.1.0"
-git push --tags
-```
-
-## CasaOS Deployment
-
-Add the custom store URL from `casaos-appstore/index.json` to CasaOS, then install "Lynx (Unified)" from the app store.
-
-### Importing Existing Servers
-
-1. Stop the existing Minecraft container
-2. Copy server files to `/data/servers/<name>`
-3. Call `POST /api/servers/import` with `{ "name": "<name>" }`
-4. Start the server from the web interface
-
-### Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| 401 errors | Verify authentication token is valid |
-| CORS errors | Set `ALLOWED_ORIGIN_REGEX=.*` temporarily |
-| Port conflicts | Use `GET /api/ports/suggest` before creating servers |
-| Container not starting | Check Docker socket mount at `/var/run/docker.sock` |
-
-## Technical Details
-
-- Backend: Python 3.11, FastAPI, SQLAlchemy, Docker SDK
-- Frontend: React 18, Tailwind CSS
-- Database: PostgreSQL (SQLite fallback)
-- Container Runtime: Docker with multi-Java support (8, 11, 17, 21)
+| Document | Description |
+|----------|-------------|
+| [Installation Guide](docs/INSTALL.md) | Full setup, configuration, and troubleshooting |
+| [Features](docs/FEATURES.md) | Complete feature reference |
+| [API Reference](docs/API.md) | REST API overview and examples |
+| [Development](docs/DEVELOPMENT.md) | Local dev setup, building, and releasing |
+| [Contributing](CONTRIBUTING.md) | How to contribute |
+| [Security](SECURITY.md) | Security policy and reporting |
 
 ## Contributing
 
-Pull requests and issues welcome. Include reproduction steps for bug reports.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-All rights reserved. See LICENSE file for details.
+All rights reserved. See [LICENSE](LICENSE) for details.

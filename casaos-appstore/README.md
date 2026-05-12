@@ -1,46 +1,49 @@
-# Lynx CasaOS App Store
+# Lynx — CasaOS App Store
 
-This directory provides a self-contained 3rd party CasaOS App Store implementation for Lynx.
+Third-party CasaOS app store for installing Lynx on CasaOS.
 
-Add the raw URL of `index.json` below to CasaOS Custom Sources to install:
+## Installation
+
+Add one of these URLs as a Custom Source in CasaOS:
+
+**From GitHub (raw):**
 
 ```
 https://raw.githubusercontent.com/moresonsunn/Lynx/main/casaos-appstore/index.json
 ```
 
-Alternatively (recommended), attach `lynx.zip` to a GitHub release and use:
+**From GitHub Releases (recommended):**
 
 ```
 https://github.com/moresonsunn/Lynx/releases/latest/download/lynx.zip
 ```
 
+Then install "Lynx (Unified)" from the app store.
+
 ## Structure
+
 ```
 casaos-appstore/
-  index.json            # App catalog index consumed by CasaOS
+  index.json                # App catalog consumed by CasaOS
   Apps/
     lynx/
-      docker-compose.yml # CasaOS manifest (compose + x-casaos metadata)
-      icon.png (optional, remote icon used instead)
+      docker-compose.yml    # CasaOS manifest (compose + x-casaos metadata)
 ```
 
-## Update Flow
-1. Bump manifest metadata (version, images, etc.).
-2. Rebuild the zip package:
-  ```
-  python scripts/package_casaos_store.py
-  ```
-  3. Commit the manifest and refreshed `lynx.zip`.
-4. Tag a release (e.g., `latest`) and push.
-5. Refresh the custom source in the CasaOS UI.
+## Updating
 
-## GitHub Release Publishing
-1. Push the commit with updated manifests and regenerated archive.
-2. Create (or update) a GitHub release tagged `latest`.
-3. Ensure the `lynx.zip` asset is attached automatically via the release (GitHub auto-hosts it at `https://github.com/<org>/<repo>/releases/latest/download/lynx.zip`).
-4. Use that URL as the CasaOS custom source.
+1. Bump the version and image tags in the manifest
+2. Rebuild the zip:
+   ```bash
+   python scripts/package_casaos_store.py
+   ```
+3. Commit the updated manifest and archive
+4. Tag a release and push
+5. Refresh the custom source in CasaOS
 
-## TODO (future automation)
-- CI job to auto-bump version in this index on tag
-- SBOM & signature references
-- Alternate mirror (GitLab raw)
+## Publishing via GitHub Releases
+
+1. Push the commit with updated manifests
+2. Create or update a GitHub release tagged `latest`
+3. The `lynx.zip` asset is served at `https://github.com/<org>/<repo>/releases/latest/download/lynx.zip`
+4. Use that URL as the CasaOS custom source
