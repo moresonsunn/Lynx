@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from '../i18n';
-import { useGlobalData } from '../context/GlobalDataContext';
+import { useGlobalData, useGlobalActions } from '../context/GlobalDataContext';
 import { API, authHeaders } from '../context/AppContext';
 import {
   FaShieldAlt,
@@ -56,6 +56,20 @@ export default function UsersPage() {
       console.error('Failed to refresh users data:', error);
     }
   };
+
+  // Users/roles/audit-logs are fetched here (gated to this page) instead of
+  // being polled globally for every authenticated user.
+  const { __refreshBG } = useGlobalActions();
+  useEffect(() => {
+    const load = () => {
+      __refreshBG('users', `${API}/users`, (d) => d.users || []);
+      __refreshBG('roles', `${API}/users/roles`, (d) => d.roles || []);
+      __refreshBG('auditLogs', `${API}/users/audit-logs?page=1&page_size=50`, (d) => d.logs || []);
+    };
+    load();
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
+  }, [__refreshBG]);
 
 
   const filteredUsers = safeUsers.filter(user => {

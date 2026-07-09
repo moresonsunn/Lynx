@@ -1,6 +1,9 @@
 from pathlib import Path
+import os
 import shutil
+import tarfile
 import time
+import zipfile
 from typing import List
 from fastapi import HTTPException
 from config import SERVERS_ROOT
@@ -8,6 +11,44 @@ from config import SERVERS_ROOT
 
 DEFAULT_BACKUPS_ROOT = SERVERS_ROOT.parent / "backups"
 DEFAULT_BACKUPS_ROOT.mkdir(parents=True, exist_ok=True)
+
+# Volatile directories excluded from backups to prevent archive bloat over time
+# (rotated logs, crash dumps, loader caches). Extend via BACKUP_EXCLUDE_DIRS.
+_DEFAULT_BACKUP_EXCLUDES = {"logs", "crash-reports", "cache", ".cache", "tmp"}
+
+
+def _backup_excludes() -> set:
+    ex = set(_DEFAULT_BACKUP_EXCLUDES)
+    for tok in os.getenv("BACKUP_EXCLUDE_DIRS", "").split(","):
+        tok = tok.strip()
+        if tok:
+            ex.add(tok)
+    return ex
+
+
+def _is_excluded(rel: Path, excludes: set) -> bool:
+    return bool(rel.parts) and rel.parts[0] in excludes
+
+
+def _archive_zip(root: Path, archive_path: Path, excludes: set) -> None:
+    with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root)
+            if _is_excluded(rel, excludes):
+                continue
+            zf.write(path, rel.as_posix())
+
+
+def _archive_tar(root: Path, archive_path: Path, excludes: set, mode: str) -> None:
+    def _filter(tarinfo):
+        parts = [p for p in Path(tarinfo.name).parts if p not in (".", "")]
+        if parts and parts[0] in excludes:
+            return None
+        return tarinfo
+    with tarfile.open(archive_path, mode) as tf:
+        tf.add(str(root), arcname=".", filter=_filter)
 
 
 def _get_backups_root() -> Path:
@@ -51,24 +92,31 @@ def list_backups(name: str) -> List[dict]:
 
 
 def create_backup(name: str, compression: str = 'zip') -> dict:
-    """Create a backup of the server."""
+    """Create a backup of the server, excluding volatile dirs (logs, crash-reports,
+    caches) so archives don't balloon over time with rotated logs/crash dumps."""
     from settings_routes import get_backup_settings
-    
+
     server_dir = _server_path(name)
     backup_settings = get_backup_settings()
-    
+
     ts = time.strftime("%Y%m%d-%H%M%S")
     dest_dir = _get_backups_root() / name
     dest_dir.mkdir(parents=True, exist_ok=True)
-    archive_base = dest_dir / f"{name}-{ts}"
-    
-    
+
     compress = backup_settings.get("compress", True)
     fmt = compression if compression in {"zip", "gztar", "bztar", "tar"} else ('zip' if compress else 'tar')
-    
-    archive_file = shutil.make_archive(str(archive_base), fmt, root_dir=str(server_dir))
-    p = Path(archive_file)
-    return {"file": p.name, "size": p.stat().st_size}
+    excludes = _backup_excludes()
+
+    if fmt == 'zip':
+        archive_path = dest_dir / f"{name}-{ts}.zip"
+        _archive_zip(server_dir, archive_path, excludes)
+    else:
+        ext = {'gztar': '.tar.gz', 'bztar': '.tar.bz2', 'tar': '.tar'}[fmt]
+        mode = {'gztar': 'w:gz', 'bztar': 'w:bz2', 'tar': 'w'}[fmt]
+        archive_path = dest_dir / f"{name}-{ts}{ext}"
+        _archive_tar(server_dir, archive_path, excludes, mode)
+
+    return {"file": archive_path.name, "size": archive_path.stat().st_size}
 
 
 def restore_backup(name: str, backup_file: str) -> None:

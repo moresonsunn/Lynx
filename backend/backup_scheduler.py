@@ -302,6 +302,16 @@ def _apply_retention(server_name: str, schedule: dict):
         logger.error(f"Retention error for {server_name}: {e}")
 
 
+def apply_retention_now(server_name: str):
+    """Apply the configured (or default) retention policy to a server's backups.
+
+    Reuses the per-server schedule's retention settings when present, otherwise
+    falls back to the defaults (keep 10 backups / 30 days). Safe to call from any
+    backup path (scheduler tasks, bulk backups) that previously lacked retention.
+    """
+    _apply_retention(server_name, get_schedule(server_name))
+
+
 # ── Scheduler Loop ─────────────────────────────────────────────────────────
 
 def _scheduler_loop():

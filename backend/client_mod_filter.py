@@ -1589,3 +1589,37 @@ def remove_from_whitelist(server_dir: Path, pattern: str) -> bool:
         return True
     except Exception:
         return False
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Compatibility Engine Bridge (new multi-stage analyzer)
+# ═══════════════════════════════════════════════════════════════
+
+def graded_compat_report(
+    server_dir: Path,
+    loader: str | None = None,
+    mc_version: str | None = None,
+    use_api: bool = True,
+    cf_api_key: str | None = None,
+) -> dict:
+    """Run the new evidence-based compatibility engine on a server's mods.
+
+    Returns a graded, explainable :class:`compat.models.PackReport` as a dict.
+    Falls back to a structured error payload if the engine is unavailable so the
+    caller (route) never 500s on an optional feature.
+    """
+    try:
+        import compat
+    except Exception as e:  # pragma: no cover - engine ships with the app
+        logger.warning("Compat engine unavailable: %s", e)
+        return {"error": f"Compatibility engine unavailable: {e}", "verdicts": []}
+
+    report = compat.analyze_pack(
+        server_dir,
+        loader=loader,
+        mc_version=mc_version,
+        use_api=use_api,
+        cf_api_key=cf_api_key,
+    )
+    return report.to_dict()
+

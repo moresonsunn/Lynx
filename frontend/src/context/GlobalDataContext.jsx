@@ -1,312 +1,336 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { getStoredToken, authHeaders, API } from './AppContext';
 
-// Global Data Store Context for instant access to all data
-const GlobalDataContext = createContext();
+/**
+ * Global data store.
+ *
+ * Previously this file exposed a single React context whose value was rebuilt on
+ * every poll (as fast as every 2s), which forced *every* consumer to re-render
+ * several times per second. This rewrite uses an external store with
+ * `useSyncExternalStore` selectors so each component re-renders **only** when the
+ * exact slice it reads changes.
+ *
+ * It also stops the previous polling firehose:
+ *   - servers are driven by the SSE stream, with a slow poll only as a fallback
+ *     when SSE is stale;
+ *   - server stats poll at 5s (was 2s);
+ *   - users/roles/audit-logs and dashboard/system-health/alerts are no longer
+ *     polled globally — they are fetched on demand by the pages that use them
+ *     (UsersPage, DashboardPage).
+ */
 
-// Global data store that preloads everything
+const initialState = {
+  servers: [],
+  serverStats: {},
+  serverInfoById: {},
+  dashboardData: null,
+  systemHealth: null,
+  alerts: [],
+  users: [],
+  roles: [],
+  auditLogs: [],
+  settings: {},
+  serverTypes: [],
+  serverVersions: {},
+  featuredModpacks: [],
+  isInitialized: false,
+};
+
+// ─────────────────────────────────────────────────────── external store
+function createStore(initial) {
+  let state = initial;
+  const listeners = new Set();
+  return {
+    getState: () => state,
+    setState(patch) {
+      const next = typeof patch === 'function' ? patch(state) : patch;
+      if (!next || next === state) return;
+      state = { ...state, ...next };
+      listeners.forEach((l) => {
+        try { l(); } catch { /* listener errors must not break the store */ }
+      });
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+function shallowEqual(a, b) {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    if (!Object.is(a[k], b[k])) return false;
+  }
+  return true;
+}
+
+const StoreContext = createContext(null);
+const ActionsContext = createContext(null);
+
+// ─────────────────────────────────────────────────────── provider
 export function GlobalDataProvider({ children }) {
-  // All application data - preloaded and always available
-  const [globalData, setGlobalData] = useState({
-    servers: [],
-    serverStats: {},
-    serverInfoById: {},
-    dashboardData: null,
-    systemHealth: null,
-    alerts: [],
-    users: [],
-    roles: [],
-    auditLogs: [],
-    settings: {},
-    serverTypes: [],
-    serverVersions: {},
-    featuredModpacks: [], // Preloaded featured modpacks for Dashboard
-    isInitialized: false
-  });
+  const storeRef = useRef(null);
+  if (storeRef.current === null) {
+    storeRef.current = createStore(initialState);
+  }
+  const store = storeRef.current;
 
-  // Keep latest servers in a ref for interval callbacks
-  const serversRef = useRef(globalData.servers);
-  useEffect(() => { serversRef.current = globalData.servers; }, [globalData.servers]);
+  // SSE freshness tracking for the servers fallback poll.
+  const lastServersPushRef = useRef(0);
 
-  // Background timers/handles
-  const refreshIntervals = useRef({});
-  const abortControllers = useRef({});
-
-  // Background refresh function - updates data silently
+  // Background refresh helper — writes a single slice into the store.
   const refreshDataInBackground = useCallback(async (dataKey, url, processor = null) => {
     try {
       if (typeof window !== 'undefined' && window.HEAVY_PANEL_ACTIVE) return;
-      if (!getStoredToken()) return; // Skip polling when not authenticated
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (!getStoredToken()) return;
       const response = await fetch(url, { headers: authHeaders() });
-      if (response.ok) {
-        const data = await response.json();
-        setGlobalData(current => ({
-          ...current,
-          [dataKey]: processor ? processor(data) : data
-        }));
-      }
-    } catch (error) {
-      // Silent fail for background updates
+      if (!response.ok) return;
+      const data = await response.json();
+      store.setState((cur) => ({ ...cur, [dataKey]: processor ? processor(data) : data }));
+    } catch {
+      // silent — background updates must never surface errors
     }
-  }, []);
+  }, [store]);
 
-  // Aggressive preloading function - loads EVERYTHING immediately (run once on mount)
-  const preloadAllData = useCallback(async () => {
-    const isAuth = !!getStoredToken();
-    
-    // Load ALL critical data immediately in parallel - no delays
-    const endpoints = [
-      { key: 'serverTypes', url: `${API}/server-types` },
-      ...(isAuth ? [
-        { key: 'servers', url: `${API}/servers` },
-        { key: 'dashboardData', url: `${API}/monitoring/dashboard-data` },
-        { key: 'systemHealth', url: `${API}/monitoring/system-health` },
-        { key: 'alerts', url: `${API}/monitoring/alerts`, processor: (d) => d.alerts || [] },
-        { key: 'users', url: `${API}/users`, processor: (d) => d.users || [] },
-        { key: 'roles', url: `${API}/users/roles`, processor: (d) => d.roles || [] },
-        { key: 'auditLogs', url: `${API}/users/audit-logs?page=1&page_size=50`, processor: (d) => d.logs || [] },
-        { key: 'featuredModpacks', url: `${API}/catalog/search?provider=all&page_size=6`, processor: (d) => Array.isArray(d?.results) ? d.results : [] },
-      ] : [])
-    ];
-
-    // Create abort controllers for all requests
-    const localControllers = Object.fromEntries(
-      endpoints.map(e => [e.key, new AbortController()])
-    );
-    abortControllers.current = localControllers;
-
-    // Execute all requests in parallel - instant loading
-    const results = await Promise.all(endpoints.map(async endpoint => {
-      try {
-        const response = await fetch(endpoint.url, {
-          signal: localControllers[endpoint.key]?.signal,
-          headers: authHeaders()
-        });
-        if (response.ok) {
-          const data = await response.json();
-          return { key: endpoint.key, data, processor: endpoint.processor };
-        }
-      } catch (error) {
-        if (error.name !== 'AbortError') {
-          console.warn(`Failed to preload ${endpoint.key}:`, error);
-        }
-      }
-      return { key: endpoint.key, data: null };
-    }));
-
-    // Build a single update object and commit once
-    const updates = {};
-    results.forEach(result => {
-      if (result.data) {
-        switch (result.key) {
-          case 'servers':
-            updates.servers = Array.isArray(result.data) ? result.data : [];
-            break;
-          case 'serverTypes':
-            updates.serverTypes = result.data.types || [];
-            break;
-          default:
-            // Apply processor if exists, otherwise use data directly
-            updates[result.key] = result.processor ? result.processor(result.data) : result.data;
-        }
-      }
-    });
-
-    setGlobalData(current => ({ ...current, ...updates, isInitialized: true }));
-    
-    // Also fetch server stats immediately if we have servers
-    if (updates.servers && updates.servers.length > 0) {
-      try {
-        const statsResponse = await fetch(`${API}/servers/stats?ttl=0`, { headers: authHeaders() });
-        if (statsResponse.ok) {
-          const statsData = await statsResponse.json();
-          setGlobalData(current => ({
-            ...current,
-            serverStats: { ...(current.serverStats || {}), ...(statsData || {}) }
-          }));
-        }
-      } catch {}
-    }
-  }, []);
-
-  // Helper: refresh servers list on demand
   const refreshServersNow = useCallback(async () => {
     try {
       const r = await fetch(`${API}/servers`, { headers: authHeaders() });
       if (!r.ok) return;
       const list = await r.json();
-      setGlobalData(cur => ({ ...cur, servers: Array.isArray(list) ? list : [] }));
-    } catch {}
-  }, []);
+      store.setState((cur) => ({ ...cur, servers: Array.isArray(list) ? list : [] }));
+    } catch { /* ignore */ }
+  }, [store]);
 
-  // Helper: optimistic update server status locally without reload
   const updateServerStatus = useCallback((id, status) => {
-    setGlobalData(cur => ({
+    store.setState((cur) => ({
       ...cur,
-      servers: (cur.servers || []).map(s => s.id === id ? { ...s, status } : s),
+      servers: (cur.servers || []).map((s) => (s.id === id ? { ...s, status } : s)),
     }));
-  }, []);
+  }, [store]);
 
-  // Start aggressive preloading on mount
+  const setGlobalData = useCallback((updater) => {
+    store.setState(updater);
+  }, [store]);
+
+  const refreshServerStats = useCallback(async () => {
+    try {
+      if (typeof window !== 'undefined' && window.HEAVY_PANEL_ACTIVE) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (!getStoredToken()) return;
+      const r = await fetch(`${API}/servers/stats?ttl=0`, { headers: authHeaders() });
+      if (!r.ok) return;
+      const data = await r.json();
+      store.setState((current) => {
+        const merged = { ...(current.serverStats || {}) };
+        if (data && typeof data === 'object') {
+          Object.entries(data).forEach(([id, s]) => {
+            merged[id] = { ...(merged[id] || {}), ...(s || {}), players: merged[id]?.players };
+          });
+        }
+        return { ...current, serverStats: merged };
+      });
+    } catch { /* ignore */ }
+  }, [store]);
+
+  // Initial, minimal preload: only globally-shared data (server types + servers).
+  const preloadAllData = useCallback(async () => {
+    const isAuth = !!getStoredToken();
+
+    // server-types is cheap and shared; fetch it always.
+    try {
+      const r = await fetch(`${API}/server-types`, { headers: authHeaders() });
+      if (r.ok) {
+        const data = await r.json();
+        store.setState((cur) => ({ ...cur, serverTypes: data.types || [] }));
+      }
+    } catch { /* ignore */ }
+
+    if (isAuth) {
+      await refreshServersNow();
+      await refreshServerStats();
+    }
+    store.setState((cur) => ({ ...cur, isInitialized: true }));
+  }, [store, refreshServersNow, refreshServerStats]);
+
+  const actions = useMemo(() => ({
+    __setGlobalData: setGlobalData,
+    __refreshServers: refreshServersNow,
+    __updateServerStatus: updateServerStatus,
+    __refreshBG: refreshDataInBackground,
+    __preloadAll: preloadAllData,
+  }), [setGlobalData, refreshServersNow, updateServerStatus, refreshDataInBackground, preloadAllData]);
+
+  // Startup + reduced polling.
   useEffect(() => {
     preloadAllData();
 
-    // Set up fast background refresh intervals for instant updates
-    refreshIntervals.current.servers = setInterval(() => {
-      refreshDataInBackground('servers', `${API}/servers`, (data) => Array.isArray(data) ? data : []);
-    }, 3000); // Refresh servers every 3s for instant updates
+    const intervals = [];
 
-    refreshIntervals.current.dashboardData = setInterval(() => {
-      refreshDataInBackground('dashboardData', `${API}/monitoring/dashboard-data`);
-    }, 5000); // Refresh dashboard data every 5s
+    // Server stats: not available via SSE, so poll — but at 5s and only when
+    // visible/authenticated (guards inside refreshServerStats).
+    intervals.push(setInterval(refreshServerStats, 5000));
 
-    // Refresh users/roles frequently for instant updates
-    refreshIntervals.current.users = setInterval(() => {
-      refreshDataInBackground('users', `${API}/users`, (d) => d.users || []);
-      refreshDataInBackground('roles', `${API}/users/roles`, (d) => d.roles || []);
-    }, 5000); // Refresh every 5s
-
-    refreshIntervals.current.alerts = setInterval(() => {
-      refreshDataInBackground('alerts', `${API}/monitoring/alerts`, (data) => data.alerts || []);
-    }, 10000); // Refresh alerts every 10s
-
-    // Server stats refresh using bulk endpoint for performance
-    refreshIntervals.current.serverStats = setInterval(async () => {
-      try {
-        if (typeof window !== 'undefined' && window.HEAVY_PANEL_ACTIVE) return;
-        if (!getStoredToken()) return; // Skip when not authenticated
-        const r = await fetch(`${API}/servers/stats?ttl=0`, { headers: authHeaders() });
-        if (!r.ok) return;
-        const data = await r.json();
-        setGlobalData(current => {
-          const merged = { ...(current.serverStats || {}) };
-          if (data && typeof data === 'object') {
-            Object.entries(data).forEach(([id, s]) => {
-              merged[id] = { ...(merged[id] || {}), ...(s || {}), players: merged[id]?.players };
-            });
-          }
-          return { ...current, serverStats: merged };
-        });
-      } catch {}
-    }, 2000); // Refresh stats every 2s for instant feel
+    // Servers fallback poll: only fires if the SSE stream has gone stale.
+    intervals.push(setInterval(() => {
+      if (!getStoredToken()) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (Date.now() - lastServersPushRef.current < 15000) return; // SSE is fresh
+      refreshServersNow();
+    }, 10000));
 
     const handleVisibility = () => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      // Refresh all critical data immediately when page becomes visible
-      refreshDataInBackground('servers', `${API}/servers`, (data) => Array.isArray(data) ? data : []);
-      refreshDataInBackground('users', `${API}/users`, (d) => d.users || []);
-      refreshDataInBackground('roles', `${API}/users/roles`, (d) => d.roles || []);
-      refreshDataInBackground('dashboardData', `${API}/monitoring/dashboard-data`);
+      refreshServersNow();
+      refreshServerStats();
     };
-    
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', handleVisibility);
     }
 
     return () => {
-      // Cleanup intervals and abort controllers
-      Object.values(refreshIntervals.current).forEach((h) => { try { clearInterval(h); } catch {} });
-      Object.values(abortControllers.current).forEach(controller => { try { controller.abort(); } catch {} });
+      intervals.forEach((h) => { try { clearInterval(h); } catch { /* ignore */ } });
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibility);
       }
     };
-  }, [preloadAllData, refreshDataInBackground]);
+  }, [preloadAllData, refreshServersNow, refreshServerStats]);
 
-  // Real-time server list updates via SSE (falls back to polling above)
+  // Real-time server list updates via SSE (primary source of truth).
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') return undefined;
     const token = getStoredToken();
-    if (!token) return;
+    if (!token) return undefined;
 
     const es = new EventSource(`${API}/servers/stream?token=${encodeURIComponent(token)}`);
-
     es.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
         if (payload?.type === 'servers' && Array.isArray(payload.servers)) {
-          setGlobalData(cur => ({ ...cur, servers: payload.servers }));
+          lastServersPushRef.current = Date.now();
+          store.setState((cur) => ({ ...cur, servers: payload.servers }));
         }
-      } catch {
-        // ignore malformed payloads
-      }
+      } catch { /* ignore malformed payloads */ }
     };
+    es.onerror = () => { try { es.close(); } catch { /* ignore */ } };
+    return () => { try { es.close(); } catch { /* ignore */ } };
+  }, [store]);
 
-    es.onerror = () => {
-      try { es.close(); } catch {}
-    };
-
-    return () => {
-      try { es.close(); } catch {}
-    };
-  }, []);
-
-  // Preload server info (type/version + dir snapshots) for all servers after initial load
+  // Lazily load per-server info only for servers we don't have info for yet,
+  // and only when the *set* of server ids changes (cheap signature compare).
   useEffect(() => {
-    const servers = serversRef.current || [];
-    if (!servers.length) return;
     let cancelled = false;
-    (async () => {
+    let lastIds = '';
+    const maybeLoad = async () => {
+      const st = store.getState();
+      const servers = st.servers || [];
+      const ids = servers.map((s) => s.id).sort().join(',');
+      if (ids === lastIds) return;
+      lastIds = ids;
+      const have = st.serverInfoById || {};
+      const missing = servers.filter((s) => !have[s.id]);
+      if (!missing.length) return;
       const entries = await Promise.allSettled(
-        servers.map(async (s) => {
-          try {
-            const r = await fetch(`${API}/servers/${s.id}/info`, { headers: authHeaders() });
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            const d = await r.json();
-            return [s.id, d];
-          } catch {
-            return [s.id, null];
-          }
+        missing.map(async (s) => {
+          const r = await fetch(`${API}/servers/${s.id}/info`, { headers: authHeaders() });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return [s.id, await r.json()];
         })
       );
       if (cancelled) return;
       const byId = {};
-      entries.forEach(res => { if (res.status === 'fulfilled') { const [id, info] = res.value; if (info) byId[id] = info; } });
+      entries.forEach((res) => {
+        if (res.status === 'fulfilled') { const [id, info] = res.value; if (info) byId[id] = info; }
+      });
       if (Object.keys(byId).length) {
-        setGlobalData(cur => ({ ...cur, serverInfoById: { ...(cur.serverInfoById || {}), ...byId } }));
+        store.setState((cur) => ({ ...cur, serverInfoById: { ...(cur.serverInfoById || {}), ...byId } }));
       }
-    })();
-    return () => { cancelled = true; };
-  }, [globalData.servers.length]);
-
-  // Initial bulk fetch of server stats once servers are available
-  useEffect(() => {
-    if (globalData.servers.length > 0 && globalData.isInitialized) {
-      (async () => {
-        try {
-          const r = await fetch(`${API}/servers/stats?ttl=0`, { headers: authHeaders() });
-          if (!r.ok) return;
-          const data = await r.json();
-          setGlobalData(current => ({
-            ...current,
-            serverStats: { ...(current.serverStats || {}), ...(data || {}) }
-          }));
-        } catch {}
-      })();
-    }
-  }, [globalData.servers, globalData.isInitialized]);
+    };
+    const unsub = store.subscribe(maybeLoad);
+    maybeLoad();
+    return () => { cancelled = true; unsub(); };
+  }, [store]);
 
   return (
-    <GlobalDataContext.Provider value={{
-      ...globalData,
-      __setGlobalData: setGlobalData,
-      __refreshServers: refreshServersNow,
-      __updateServerStatus: updateServerStatus,
-      __refreshBG: refreshDataInBackground,
-      __preloadAll: preloadAllData,
-    }}>
-      {children}
-    </GlobalDataContext.Provider>
+    <StoreContext.Provider value={store}>
+      <ActionsContext.Provider value={actions}>
+        {children}
+      </ActionsContext.Provider>
+    </StoreContext.Provider>
   );
 }
 
-// Hook to access global data instantly
+// ─────────────────────────────────────────────────────── selector hooks
+function useStoreSelector(selector, isEqual = Object.is) {
+  const store = useContext(StoreContext);
+  if (!store) {
+    throw new Error('useStoreSelector must be used within GlobalDataProvider');
+  }
+  const lastRef = useRef({ hasValue: false, value: undefined });
+  const getSnapshot = () => {
+    const next = selector(store.getState());
+    const prev = lastRef.current;
+    if (prev.hasValue && isEqual(prev.value, next)) {
+      return prev.value;
+    }
+    lastRef.current = { hasValue: true, value: next };
+    return next;
+  };
+  return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
+}
+
+export function useGlobalActions() {
+  const actions = useContext(ActionsContext);
+  if (!actions) {
+    throw new Error('useGlobalActions must be used within GlobalDataProvider');
+  }
+  return actions;
+}
+
+export function useServers() {
+  return useStoreSelector((s) => s.servers);
+}
+
+export function useServerById(id) {
+  return useStoreSelector((s) => s.servers.find((srv) => srv.id === id) || null, shallowEqual);
+}
+
+export function useServerStats(id) {
+  return useStoreSelector((s) => s.serverStats[id] || null, shallowEqual);
+}
+
+export function useServerInfo(id) {
+  return useStoreSelector((s) => s.serverInfoById[id] || null, shallowEqual);
+}
+
+export function useServerTypes() {
+  return useStoreSelector((s) => s.serverTypes);
+}
+
+export function useIsInitialized() {
+  return useStoreSelector((s) => s.isInitialized);
+}
+
+/**
+ * Backward-compatible hook returning the full state merged with actions.
+ *
+ * Components using this re-render on any state change (the old behaviour). Hot
+ * paths (server list cards, server details) should prefer the granular hooks
+ * above so they only re-render on the slice they actually read.
+ */
 export function useGlobalData() {
-  const data = useContext(GlobalDataContext);
-  if (!data) {
+  const store = useContext(StoreContext);
+  const actions = useContext(ActionsContext);
+  if (!store) {
     throw new Error('useGlobalData must be used within GlobalDataProvider');
   }
-  return data;
+  const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  return useMemo(() => ({ ...state, ...actions }), [state, actions]);
 }
 
 export default GlobalDataProvider;

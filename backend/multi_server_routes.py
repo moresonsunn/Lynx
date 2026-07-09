@@ -303,6 +303,11 @@ async def _execute_bulk_operation(
             elif operation_type == "backup":
                 from backup_manager import create_backup
                 backup = create_backup(server_name)
+                try:
+                    from backup_scheduler import apply_retention_now
+                    apply_retention_now(server_name)
+                except Exception:
+                    pass
                 results[server_name] = {"status": "success", "message": f"Backup created: {backup['file']}"}
                 success_count += 1
             

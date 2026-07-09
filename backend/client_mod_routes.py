@@ -93,6 +93,43 @@ async def analyze_server_mods(
     }
 
 
+@router.get("/report/{server_name}")
+async def compat_report(
+    server_name: str,
+    loader: Optional[str] = Query(None, description="Target mod loader (auto-detected if omitted)"),
+    mc_version: Optional[str] = Query(None, description="Target Minecraft version"),
+    use_api: bool = Query(True, description="Use Modrinth/CurseForge/GitHub APIs"),
+    current_user: User = Depends(require_auth),
+):
+    """Graded, explainable compatibility report from the multi-stage engine.
+
+    Unlike ``/analyze`` (binary client-only detection), this returns per-mod
+    verdicts (compatible / needs_review / incompatible ...), a 0-100 score,
+    confidence, the evidence trail, detected conflicts and missing dependencies.
+    Read-only.
+    """
+    from client_mod_filter import graded_compat_report
+
+    server_dir = SERVERS_ROOT / server_name
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    cf_api_key = None
+    try:
+        from integrations_store import get_integration_key
+        cf_api_key = get_integration_key("curseforge")
+    except Exception:
+        pass
+
+    return graded_compat_report(
+        server_dir,
+        loader=loader,
+        mc_version=mc_version,
+        use_api=use_api,
+        cf_api_key=cf_api_key,
+    )
+
+
 @router.post("/filter/{server_name}")
 async def filter_server_mods(
     server_name: str,

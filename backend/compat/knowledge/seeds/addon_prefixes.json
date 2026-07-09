@@ -1,0 +1,18 @@
+{
+  "_comment": "Prefixes of server-required mod families. A mod whose id starts with '<prefix>_' or '<prefix>-' (e.g. create_dd) is almost certainly a content addon with server-side logic and must never be filtered as client-only.",
+  "server_required_addon_prefixes": [
+    "create", "mekanism", "thermal", "botania", "immersiveengineering",
+    "ae2", "appliedenergistics2", "applied-energistics",
+    "farmersdelight", "farmers_delight", "farmers-delight",
+    "tinkersconstruct", "tconstruct", "tinkers",
+    "ftb", "mna", "quark", "supplementaries",
+    "sophisticatedbackpacks", "sophisticatedstorage", "sophisticatedcore",
+    "twilightforest", "iceandfire",
+    "alexsmobs", "alexs-mobs", "alexscaves", "alexs-caves",
+    "ars", "irons", "cataclysm", "goety", "hexcasting", "hex",
+    "vampirism", "occultism", "pneumaticcraft", "integrated",
+    "repurposed", "macaw", "mcw", "relics", "pufferfish",
+    "loot_integrations", "lootintegrations", "ad_astra", "adastra",
+    "enderio", "majrusz", "corail", "aquamirae", "biomancy"
+  ]
+}

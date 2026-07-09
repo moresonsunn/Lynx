@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from '../i18n';
-import { useGlobalData } from '../context/GlobalDataContext';
+import { useServerById, useServerStats, useServerInfo, useGlobalActions } from '../context/GlobalDataContext';
 import { API, authHeaders } from '../context/AppContext';
 import { useFetch } from '../lib/useFetch';
 import {
@@ -54,12 +54,6 @@ import ServerPermissionsPanel from '../components/server-details/ServerPermissio
 import ConfirmModal from '../components/ConfirmModal';
 
 
-function useServerStats(serverId) {
-  const globalData = useGlobalData();
-  return globalData.serverStats[serverId] || null;
-}
-
-
 function formatUptime(seconds) {
   if (!seconds || seconds < 0) return '0s';
   const days = Math.floor(seconds / 86400);
@@ -101,12 +95,9 @@ export default function ServerDetailsPage() {
   const { serverId, tab: urlTab = 'overview' } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const globalData = useGlobalData();
+  const actions = useGlobalActions();
 
-
-  const server = useMemo(() => {
-    return globalData.servers.find(s => s.id === serverId) || null;
-  }, [globalData.servers, serverId]);
+  const server = useServerById(serverId);
 
   const [activeTab, setActiveTab] = useState(urlTab);
   const [filesEditing, setFilesEditing] = useState(false);
@@ -143,7 +134,7 @@ export default function ServerDetailsPage() {
   }, []);
 
 
-  const preloadedInfo = globalData.serverInfoById?.[serverId] || null;
+  const preloadedInfo = useServerInfo(serverId);
   const { data: fetchedInfo } = useFetch(
     !preloadedInfo && serverId ? `${API}/servers/${serverId}/info` : null,
     [serverId]
@@ -236,14 +227,14 @@ export default function ServerDetailsPage() {
         throw new Error(d.detail || `Action failed: ${r.status}`);
       }
 
-      if (globalData.__refreshServers) {
-        globalData.__refreshServers();
+      if (actions.__refreshServers) {
+        actions.__refreshServers();
       }
 
-      if (globalData.__updateServerStatus) {
+      if (actions.__updateServerStatus) {
         const statusMap = { start: 'running', stop: 'stopped', restart: 'running' };
         if (statusMap[action]) {
-          globalData.__updateServerStatus(serverId, statusMap[action]);
+          actions.__updateServerStatus(serverId, statusMap[action]);
         }
       }
       setLogReset(x => x + 1);
@@ -252,7 +243,7 @@ export default function ServerDetailsPage() {
     } finally {
       setActionLoading(null);
     }
-  }, [serverId, actionLoading, globalData]);
+  }, [serverId, actionLoading, actions]);
 
   const handleDelete = useCallback(async () => {
     if (!serverId) return;
@@ -266,8 +257,8 @@ export default function ServerDetailsPage() {
         const d = await r.json().catch(() => ({}));
         throw new Error(d.detail || `Delete failed: ${r.status}`);
       }
-      if (globalData.__refreshServers) {
-        globalData.__refreshServers();
+      if (actions.__refreshServers) {
+        actions.__refreshServers();
       }
       navigate('/servers');
     } catch (err) {
@@ -276,7 +267,7 @@ export default function ServerDetailsPage() {
       setActionLoading(null);
       setShowDeleteModal(false);
     }
-  }, [serverId, globalData, navigate]);
+  }, [serverId, actions, navigate]);
 
   const handleEditStart = useCallback((filePath, content) => {
     setEditPath(filePath);

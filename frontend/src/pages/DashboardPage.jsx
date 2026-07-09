@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '../i18n';
-import { useGlobalData } from '../context/GlobalDataContext';
+import { useGlobalData, useGlobalActions } from '../context/GlobalDataContext';
 import { API, authHeaders } from '../context/AppContext';
 import { normalizeRamInput } from '../utils/ram';
 import {
@@ -32,6 +32,20 @@ export default function DashboardPage() {
     featuredModpacks,
     isInitialized
   } = globalData;
+
+  // Dashboard-only data is fetched here (gated to this page) instead of being
+  // polled globally for every authenticated user.
+  const { __refreshBG } = useGlobalActions();
+  useEffect(() => {
+    const load = () => {
+      __refreshBG('dashboardData', `${API}/monitoring/dashboard-data`);
+      __refreshBG('systemHealth', `${API}/monitoring/system-health`);
+      __refreshBG('alerts', `${API}/monitoring/alerts`, (d) => d.alerts || []);
+    };
+    load();
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
+  }, [__refreshBG]);
 
 
   const [localFeatured, setLocalFeatured] = useState([]);

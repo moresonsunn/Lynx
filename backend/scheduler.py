@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import logging
 import asyncio
+import os
+import time
 from typing import Dict, Any, Optional, cast, List
 
 from database import SessionLocal
@@ -32,6 +34,7 @@ class TaskScheduler:
             
             
             self.load_scheduled_tasks()
+            self._register_maintenance_jobs()
     
     def stop(self):
         """Stop the scheduler."""
@@ -58,7 +61,80 @@ class TaskScheduler:
                     logger.error(f"Failed to load task {self._task_label(task, task.id)}: {e}")
         finally:
             db.close()
-    
+
+    def _register_maintenance_jobs(self):
+        """Register the recurring housekeeping job (metrics + log/crash cleanup)."""
+        from apscheduler.triggers.interval import IntervalTrigger
+        try:
+            self.scheduler.add_job(
+                self.run_maintenance,
+                IntervalTrigger(hours=24),
+                id="lynx-maintenance",
+                replace_existing=True,
+                next_run_time=datetime.utcnow() + timedelta(minutes=2),
+            )
+            logger.info("Registered maintenance job (metrics + log/crash cleanup, 24h)")
+        except Exception as e:
+            logger.error(f"Failed to register maintenance job: {e}")
+
+    def run_maintenance(self):
+        """Periodic housekeeping: prune old metric rows and rotated server files."""
+        try:
+            self._cleanup_old_metrics()
+        except Exception as e:
+            logger.warning(f"Metrics cleanup failed: {e}")
+        try:
+            self._cleanup_server_files()
+        except Exception as e:
+            logger.warning(f"Server file cleanup failed: {e}")
+
+    def _cleanup_old_metrics(self):
+        days = int(os.getenv("METRICS_RETENTION_DAYS", "30"))
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        import models as _models
+        db = SessionLocal()
+        try:
+            total = 0
+            for model_name in ("ServerMetrics", "ServerPerformance"):
+                model = getattr(_models, model_name, None)
+                if model is None or not hasattr(model, "timestamp"):
+                    continue
+                try:
+                    total += db.query(model).filter(model.timestamp < cutoff).delete(synchronize_session=False)
+                except Exception as e:
+                    logger.debug(f"metrics cleanup {model_name}: {e}")
+            db.commit()
+            if total:
+                logger.info(f"Maintenance: deleted {total} metric rows older than {days}d")
+        finally:
+            db.close()
+
+    def _cleanup_server_files(self):
+        days = int(os.getenv("SERVER_LOG_RETENTION_DAYS", "14"))
+        cutoff = time.time() - days * 86400
+        removed = 0
+        if not SERVERS_ROOT.exists():
+            return
+        for server_dir in SERVERS_ROOT.iterdir():
+            if not server_dir.is_dir():
+                continue
+            targets = [
+                (server_dir / "logs", "*.log.gz"),
+                (server_dir / "crash-reports", "*.txt"),
+            ]
+            for d, pattern in targets:
+                if not d.is_dir():
+                    continue
+                for f in d.glob(pattern):
+                    try:
+                        if f.is_file() and f.stat().st_mtime < cutoff:
+                            f.unlink()
+                            removed += 1
+                    except Exception:
+                        pass
+        if removed:
+            logger.info(f"Maintenance: removed {removed} rotated log/crash files older than {days}d")
+
     def add_scheduled_task(self, task: ScheduledTask):
         """Add a scheduled task to the scheduler."""
         job_id = f"task_{task.id}"
@@ -195,6 +271,13 @@ class TaskScheduler:
                 db.add(backup_record)
                 
                 logger.info(f"Backup completed for {server_name}: {result['file']}")
+
+                # Enforce retention so scheduled backups don't accumulate forever
+                try:
+                    from backup_scheduler import apply_retention_now
+                    apply_retention_now(server_name)
+                except Exception as _ret_e:
+                    logger.warning(f"Backup retention failed for {server_name}: {_ret_e}")
                 
                 try:
                     from settings_routes import send_notification

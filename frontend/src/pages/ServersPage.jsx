@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '../i18n';
-import { useGlobalData } from '../context/GlobalDataContext';
+import { useServers, useServerStats, useServerInfo } from '../context/GlobalDataContext';
 import { API, authHeaders } from '../context/AppContext';
 import {
   FaServer,
@@ -26,11 +26,10 @@ function formatUptime(seconds) {
 
 
 const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
-  const globalData = useGlobalData();
-  const stats = globalData.serverStats[server.id] || null;
+  const stats = useServerStats(server.id);
   
   
-  const typeVersionData = globalData.serverInfoById?.[server.id] || null;
+  const typeVersionData = useServerInfo(server.id);
 
   const normalizeLabel = useCallback((value) => {
     if (!value) return '';
@@ -128,8 +127,7 @@ const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
 export default function ServersPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const globalData = useGlobalData();
-  const servers = globalData?.servers || [];
+  const servers = useServers();
   
   const normalizedServers = useMemo(
     () => (Array.isArray(servers) ? servers : []),

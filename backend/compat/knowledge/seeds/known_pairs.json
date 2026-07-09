@@ -1,0 +1,12 @@
+{
+  "_comment": "Known-incompatible mod pairs. 'trust' 0..1 reflects how certain the incompatibility is. Severity: info|warning|critical.",
+  "pairs": [
+    {"a": "optifine", "b": "sodium", "kind": "known_pair", "severity": "critical", "trust": 0.95, "note": "OptiFine and Sodium both replace the render pipeline and cannot coexist."},
+    {"a": "optifine", "b": "rubidium", "kind": "known_pair", "severity": "critical", "trust": 0.9, "note": "OptiFine conflicts with Rubidium (Sodium port)."},
+    {"a": "optifine", "b": "embeddium", "kind": "known_pair", "severity": "critical", "trust": 0.9, "note": "OptiFine conflicts with Embeddium (Sodium port)."},
+    {"a": "sodium", "b": "rubidium", "kind": "duplicate", "severity": "critical", "trust": 0.9, "note": "Rubidium is a Forge port of Sodium; do not install both."},
+    {"a": "rubidium", "b": "embeddium", "kind": "duplicate", "severity": "warning", "trust": 0.8, "note": "Embeddium is the maintained successor to Rubidium."},
+    {"a": "phosphor", "b": "starlight", "kind": "duplicate", "severity": "warning", "trust": 0.85, "note": "Both rewrite the lighting engine; Starlight supersedes Phosphor."},
+    {"a": "optifine", "b": "oculus", "kind": "known_pair", "severity": "critical", "trust": 0.85, "note": "Oculus is a shader mod for the Sodium/Rubidium stack; conflicts with OptiFine."}
+  ]
+}

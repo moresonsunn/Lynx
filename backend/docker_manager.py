@@ -15,6 +15,23 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+
+def _default_log_config():
+    """Return a json-file LogConfig that caps container log size.
+
+    Without this, Docker's default json-file driver stores unbounded console
+    output; a long-running Minecraft server writes continuously (GC, autosave,
+    keep-alive) even with no players, filling the disk over time. Size/count are
+    overridable via DOCKER_LOG_MAX_SIZE / DOCKER_LOG_MAX_FILE.
+    """
+    return docker.types.LogConfig(
+        type="json-file",
+        config={
+            "max-size": os.getenv("DOCKER_LOG_MAX_SIZE", "10m"),
+            "max-file": str(os.getenv("DOCKER_LOG_MAX_FILE", "3")),
+        },
+    )
+
 MINECRAFT_LABEL = "minecraft_server_manager"
 
 
@@ -1566,6 +1583,7 @@ class DockerManager:
                     stdin_open=True,
                     working_dir="/data",
                     mem_limit=memory_limit,
+                    log_config=_default_log_config(),
                     **run_kwargs,
                 )
                 logger.info(f"Container {container.id} created successfully for server {name}")
@@ -1890,6 +1908,7 @@ class DockerManager:
                 tty=True,
                 stdin_open=True,
                 working_dir="/data",
+                log_config=_default_log_config(),
                 **run_kwargs,
             )
             logger.info(f"Container {container.id} created from existing dir for server {name}")
@@ -2138,6 +2157,7 @@ class DockerManager:
             network_mode=network_mode if network_mode else None,
             command=command,
             labels=labels,
+            log_config=_default_log_config(),
             **run_kwargs,
         )
 
@@ -2461,6 +2481,12 @@ class DockerManager:
                 
                 vv = v.replace('"', '\\"')
                 yaml_lines.append(f"      {k}: \"{vv}\"")
+        # Cap container log size to prevent unbounded disk growth
+        yaml_lines.append("    logging:")
+        yaml_lines.append("      driver: json-file")
+        yaml_lines.append("      options:")
+        yaml_lines.append(f"        max-size: \"{os.getenv('DOCKER_LOG_MAX_SIZE', '10m')}\"")
+        yaml_lines.append(f"        max-file: \"{os.getenv('DOCKER_LOG_MAX_FILE', '3')}\"")
         if compose_volumes:
             yaml_lines.append("    volumes:")
             for v in compose_volumes:

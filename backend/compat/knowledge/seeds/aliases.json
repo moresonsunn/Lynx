@@ -1,0 +1,16 @@
+{
+  "_comment": "Canonical id aliases and project renames. Underscore/hyphen variants are handled by the normalizer and need NOT be listed here. Only real renames belong here.",
+  "aliases": {
+    "geckolib3": "geckolib",
+    "geckolib4": "geckolib",
+    "cloth-config2": "cloth-config",
+    "clothconfig": "cloth-config",
+    "fabric": "fabric-api",
+    "fabricapi": "fabric-api",
+    "forgeconfigapiport": "forge-config-api-port",
+    "supermartijn642corelib": "supermartijn642corelib",
+    "yungsapi": "yungsapi",
+    "kotlinforforge": "kotlin-for-forge",
+    "kffmod": "kotlin-for-forge"
+  }
+}

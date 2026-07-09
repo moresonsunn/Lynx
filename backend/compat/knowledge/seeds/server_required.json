@@ -1,0 +1,15 @@
+{
+  "_comment": "Curated seed of known server-required libraries/APIs. These must be kept on the server even though their Modrinth 'server_side' may say 'optional', because dependent mods crash without them. The full historical list is additionally merged from the legacy module at load time.",
+  "server_required": [
+    "geckolib", "architectury", "cloth-config", "forge-config-api-port",
+    "fabric-api", "fabric-language-kotlin", "kotlin-for-forge",
+    "curios", "trinkets", "citadel", "playeranimator", "bookshelf",
+    "supermartijn642corelib", "supermartijn642configlib", "yungsapi",
+    "puzzleslib", "resourcefullib", "balm", "collective", "moonlight",
+    "terrablender", "prism-lib", "cristellib", "framework", "kaupenjoe",
+    "creativecore", "mcjtylib", "patchouli", "guideme", "flywheel",
+    "registrate", "cofh_core", "cofhcore", "placebo", "attributefix",
+    "polymorph", "ferritecore", "modernfix", "spark", "clumps",
+    "connectivity", "memoryleakfix", "packetfixer"
+  ]
+}
