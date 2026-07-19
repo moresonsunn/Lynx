@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '../i18n';
-import { useServers, useServerStats, useServerInfo } from '../context/GlobalDataContext';
+import { useServers, useServerStats, useServerInfo, useIsInitialized } from '../context/GlobalDataContext';
 import { API, authHeaders } from '../context/AppContext';
 import {
   FaServer,
@@ -9,7 +9,109 @@ import {
   FaChevronRight,
   FaFilter,
   FaClock,
+  FaGripVertical,
+  FaStar,
+  FaRegStar,
 } from 'react-icons/fa';
+
+
+const SERVER_ORDER_KEY = 'lynx_server_order';
+
+function loadServerOrder() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SERVER_ORDER_KEY));
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveServerOrder(ids) {
+  try {
+    localStorage.setItem(SERVER_ORDER_KEY, JSON.stringify(ids));
+  } catch {
+    /* ignore storage quota / availability errors */
+  }
+}
+
+function sortByOrder(servers, order) {
+  if (!order || !order.length) return servers;
+  const rank = new Map(order.map((id, i) => [id, i]));
+  const BIG = Number.MAX_SAFE_INTEGER;
+  // Array.sort is stable, so servers not present in the saved order keep their
+  // natural relative position and fall to the end.
+  return [...servers].sort((a, b) => {
+    const ra = rank.has(a.id) ? rank.get(a.id) : BIG;
+    const rb = rank.has(b.id) ? rank.get(b.id) : BIG;
+    return ra - rb;
+  });
+}
+
+
+const SERVER_PINS_KEY = 'lynx_server_pins';
+
+function loadServerPins() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SERVER_PINS_KEY));
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveServerPins(ids) {
+  try {
+    localStorage.setItem(SERVER_PINS_KEY, JSON.stringify(ids));
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
+// Server-side preference sync (order + pins) so the layout follows the user
+// across devices/browsers. localStorage stays as an offline cache.
+const PREFS_ENDPOINT = `${API}/users/me/preferences`;
+
+async function fetchServerPrefs() {
+  try {
+    const res = await fetch(PREFS_ENDPOINT, { headers: authHeaders() });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function saveServerPrefs(patch) {
+  // Fire-and-forget; localStorage has already been updated as a fallback.
+  try {
+    fetch(PREFS_ENDPOINT, {
+      method: 'PUT',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }).catch(() => {});
+  } catch {
+    /* ignore */
+  }
+}
+
+function ServerCardSkeleton() {
+  return (
+    <div className="rounded-xl bg-white/5 border border-white/10 p-5 md:p-6 animate-pulse" style={{ minHeight: 100 }}>
+      <div className="flex items-center gap-4 md:gap-5">
+        <div className="w-12 h-12 rounded-lg bg-white/10 flex-shrink-0" />
+        <div className="flex-1 space-y-2">
+          <div className="h-4 w-40 bg-white/10 rounded" />
+          <div className="h-3 w-24 bg-white/10 rounded" />
+          <div className="flex gap-2 pt-1">
+            <div className="h-4 w-16 bg-white/10 rounded-full" />
+            <div className="h-4 w-24 bg-white/10 rounded-full" />
+          </div>
+        </div>
+        <div className="h-6 w-16 bg-white/10 rounded-full" />
+      </div>
+    </div>
+  );
+}
 
 
 function formatUptime(seconds) {
@@ -25,7 +127,7 @@ function formatUptime(seconds) {
 }
 
 
-const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
+const ServerListCard = React.memo(function ServerListCard({ server, onClick, onHandleDragStart, isPinned, onTogglePin }) {
   const stats = useServerStats(server.id);
   
   
@@ -73,6 +175,18 @@ const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
     >
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4 md:gap-5">
+          {onHandleDragStart && (
+            <button
+              type="button"
+              onPointerDown={onHandleDragStart}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center justify-center cursor-grab active:cursor-grabbing text-white/25 hover:text-white/60 transition-colors flex-shrink-0 -ml-1 py-2 px-1 touch-none select-none"
+              title="Drag to reorder"
+              aria-label="Drag to reorder"
+            >
+              <FaGripVertical />
+            </button>
+          )}
           <div className="w-12 h-12 rounded-lg bg-brand-500/90 ring-4 ring-brand-500/20 inline-flex items-center justify-center text-2xl text-white shadow-md flex-shrink-0">
             <FaServer />
           </div>
@@ -107,6 +221,18 @@ const ServerListCard = React.memo(function ServerListCard({ server, onClick }) {
           </div>
         </div>
         <div className="flex items-center gap-3 md:self-start">
+          {onTogglePin && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onTogglePin(server.id); }}
+              className={`p-1.5 rounded-lg transition-colors ${isPinned ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/25 hover:text-white/60'}`}
+              title={isPinned ? 'Unpin server' : 'Pin server'}
+              aria-label={isPinned ? 'Unpin server' : 'Pin server'}
+              aria-pressed={isPinned}
+            >
+              {isPinned ? <FaStar /> : <FaRegStar />}
+            </button>
+          )}
           <div
             className={`text-xs md:text-sm px-3 py-1.5 rounded-full border ${
               server.status === 'running'
@@ -137,6 +263,60 @@ export default function ServersPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [runtimeFilter, setRuntimeFilter] = useState('all');
   const [modpackFilter, setModpackFilter] = useState('all');
+
+  // Custom drag-and-drop order (persisted in localStorage + synced to the
+  // backend so it follows the user across devices).
+  const [order, setOrder] = useState(loadServerOrder);
+  const [pins, setPins] = useState(loadServerPins);
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+
+  const isInitialized = useIsInitialized();
+
+  // On mount, adopt server-side preferences (source of truth). If the server
+  // has none yet but this browser has local data, migrate it up once.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const prefs = await fetchServerPrefs();
+      if (cancelled || !prefs) return;
+      const serverOrder = Array.isArray(prefs.server_order) ? prefs.server_order : [];
+      const serverPins = Array.isArray(prefs.server_pins) ? prefs.server_pins : [];
+      if (serverOrder.length) {
+        setOrder(serverOrder);
+        saveServerOrder(serverOrder);
+      } else {
+        const local = loadServerOrder();
+        if (local.length) saveServerPrefs({ server_order: local });
+      }
+      if (serverPins.length) {
+        setPins(serverPins);
+        saveServerPins(serverPins);
+      } else {
+        const local = loadServerPins();
+        if (local.length) saveServerPrefs({ server_pins: local });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const orderedServers = useMemo(() => {
+    const base = sortByOrder(normalizedServers, order);
+    if (!pins.length) return base;
+    const pinSet = new Set(pins);
+    const pinned = base.filter(s => pinSet.has(s.id));
+    const rest = base.filter(s => !pinSet.has(s.id));
+    return [...pinned, ...rest];
+  }, [normalizedServers, order, pins]);
+
+  const togglePin = useCallback((id) => {
+    setPins(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      saveServerPins(next);
+      saveServerPrefs({ server_pins: next });
+      return next;
+    });
+  }, []);
 
   const deriveRuntime = useCallback((server) => {
     const image = typeof server?.image === 'string' ? server.image.toLowerCase() : '';
@@ -232,7 +412,7 @@ export default function ServersPage() {
   }, [filterSummary.modpacks, normalizedServers.length]);
 
   const filteredServers = useMemo(() => {
-    return normalizedServers.filter(server => {
+    return orderedServers.filter(server => {
       const status = (server?.status || 'unknown').toString().toLowerCase();
       if (statusFilter !== 'all' && status !== statusFilter) return false;
       const runtime = deriveRuntime(server);
@@ -245,7 +425,7 @@ export default function ServersPage() {
       }
       return true;
     });
-  }, [normalizedServers, statusFilter, runtimeFilter, modpackFilter, deriveRuntime, deriveModpackKey]);
+  }, [orderedServers, statusFilter, runtimeFilter, modpackFilter, deriveRuntime, deriveModpackKey]);
 
   const hasFilters = statusFilter !== 'all' || runtimeFilter !== 'all' || modpackFilter !== 'all';
   const totalServers = normalizedServers.length;
@@ -265,6 +445,75 @@ export default function ServersPage() {
   const handleSelectServer = useCallback((serverId) => {
     navigate(`/servers/${serverId}`);
   }, [navigate]);
+
+  // Pointer-based drag-and-drop reordering. Uses Pointer Events so it works
+  // for mouse, pen and touch alike (HTML5 native DnD has no touch support).
+  const orderedRef = useRef(orderedServers);
+  orderedRef.current = orderedServers;
+  const dragCleanup = useRef(null);
+
+  const commitReorder = useCallback((sourceId, targetId) => {
+    if (!sourceId || sourceId === targetId) return;
+    const ids = orderedRef.current.map(s => s.id);
+    const from = ids.indexOf(sourceId);
+    if (from === -1) return;
+    ids.splice(from, 1);
+    const insertAt = targetId ? ids.indexOf(targetId) : -1;
+    if (insertAt === -1) ids.push(sourceId);
+    else ids.splice(insertAt, 0, sourceId);
+    setOrder(ids);
+    saveServerOrder(ids);
+    saveServerPrefs({ server_order: ids });
+  }, []);
+
+  const findServerIdAt = useCallback((x, y) => {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    const card = el.closest('[data-server-id]');
+    return card ? card.getAttribute('data-server-id') : null;
+  }, []);
+
+  const beginDrag = useCallback((e, id) => {
+    // Only start on primary button / touch / pen contact.
+    if (typeof e.button === 'number' && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // Tear down any previous drag listeners defensively.
+    if (dragCleanup.current) dragCleanup.current();
+    setDragId(id);
+
+    const onMove = (ev) => {
+      const overId = findServerIdAt(ev.clientX, ev.clientY);
+      setDragOverId(overId && overId !== id ? overId : null);
+    };
+    const finish = (ev) => {
+      const targetId = ev ? findServerIdAt(ev.clientX, ev.clientY) : null;
+      cleanup();
+      setDragId(null);
+      setDragOverId(null);
+      if (targetId) commitReorder(id, targetId);
+    };
+    const onUp = (ev) => finish(ev);
+    const onCancel = () => finish(null);
+    const onKey = (ev) => { if (ev.key === 'Escape') finish(null); };
+
+    function cleanup() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey);
+      dragCleanup.current = null;
+    }
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKey);
+    dragCleanup.current = cleanup;
+  }, [findServerIdAt, commitReorder]);
+
+  // Clean up drag listeners if the component unmounts mid-drag.
+  useEffect(() => () => { if (dragCleanup.current) dragCleanup.current(); }, []);
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">
@@ -297,6 +546,11 @@ export default function ServersPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-lg font-semibold text-white">{t('servers.yourServers')}</h3>
           <div className="flex items-center gap-3 text-xs text-white/60">
+            {totalServers > 1 && (
+              <span className="inline-flex items-center gap-1 text-white/40">
+                <FaGripVertical className="text-[10px]" /> Drag to reorder
+              </span>
+            )}
             <span>{filteredServers.length} / {totalServers}</span>
             {hasFilters ? (
               <button
@@ -367,7 +621,13 @@ export default function ServersPage() {
           </div>
         </div>
 
-        {totalServers === 0 ? (
+        {!isInitialized && totalServers === 0 ? (
+          <div className="space-y-4">
+            <ServerCardSkeleton />
+            <ServerCardSkeleton />
+            <ServerCardSkeleton />
+          </div>
+        ) : totalServers === 0 ? (
           <div className="text-white/60 text-center py-8 space-y-3">
             <div>No servers created yet. Use Templates to create your first server.</div>
             <button
@@ -385,11 +645,19 @@ export default function ServersPage() {
         ) : (
           <div className="space-y-4">
             {filteredServers.map((server) => (
-              <ServerListCard
+              <div
                 key={server.id}
-                server={server}
-                onClick={() => handleSelectServer(server.id)}
-              />
+                data-server-id={server.id}
+                className={`rounded-xl transition-all duration-150 ${dragId === server.id ? 'opacity-40' : ''} ${dragOverId === server.id && dragId && dragId !== server.id ? 'ring-2 ring-brand-400' : ''}`}
+              >
+                <ServerListCard
+                  server={server}
+                  onClick={() => handleSelectServer(server.id)}
+                  onHandleDragStart={(e) => beginDrag(e, server.id)}
+                  isPinned={pins.includes(server.id)}
+                  onTogglePin={togglePin}
+                />
+              </div>
             ))}
           </div>
         )}

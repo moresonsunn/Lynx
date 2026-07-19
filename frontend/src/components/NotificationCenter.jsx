@@ -146,7 +146,7 @@ export default function NotificationCenter() {
 
       {/* Dropdown Panel */}
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[360px] max-h-[480px] bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-[100] flex flex-col overflow-hidden sm:right-0 -right-2">
+        <div className="absolute -right-2 sm:right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] bg-ink border border-white/10 ring-1 ring-black/30 rounded-xl shadow-2xl z-[100] flex flex-col overflow-hidden animate-fade-in origin-top-right">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
             <div className="flex items-center gap-2">

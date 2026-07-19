@@ -248,6 +248,44 @@ async def get_current_user_info(
     """Get information about the current authenticated user."""
     return user
 
+@router.get("/me/preferences")
+async def get_my_preferences(
+    user: User = Depends(require_auth)
+):
+    """Get the current user's UI preferences (server order, pins, etc.)."""
+    return user.preferences or {}
+
+@router.put("/me/preferences")
+async def update_my_preferences(
+    preferences: Dict[str, Any] = Body(...),
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Merge the provided keys into the current user's UI preferences.
+
+    Only a small, known set of UI keys is accepted to avoid unbounded growth.
+    Unknown keys are ignored.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    allowed_keys = {"server_order", "server_pins", "sidebar_collapsed", "theme"}
+    current = dict(user.preferences or {})
+    for key, value in preferences.items():
+        if key not in allowed_keys:
+            continue
+        # Sanitize list-type prefs to reasonable bounds
+        if key in ("server_order", "server_pins"):
+            if not isinstance(value, list):
+                continue
+            value = [str(v) for v in value][:500]
+        current[key] = value
+
+    user.preferences = current
+    flag_modified(user, "preferences")
+    db.commit()
+    db.refresh(user)
+    return user.preferences or {}
+
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_password(
     request: Request,

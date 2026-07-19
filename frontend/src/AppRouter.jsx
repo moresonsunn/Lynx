@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useNavigate, useLocation, NavLink } from 'react-router-dom';
 import { I18nProvider, useTranslation, LanguageSwitcherCompact } from './i18n';
 import { AppProviders, useAuth, API, authHeaders } from './context/AppContext';
 import { GlobalDataProvider, useGlobalData } from './context/GlobalDataContext';
@@ -37,6 +37,7 @@ import HytalePage from './pages/HytalePage';
 
 import GlobalSearchBar from './components/GlobalSearchBar';
 import NotificationCenter from './components/NotificationCenter';
+import CommandPalette from './components/CommandPalette';
 import MonitoringPage from './components/MonitoringPage';
 import SecurityPage from './pages/SecurityPage';
 import MultiServerPage from './pages/MultiServerPage';
@@ -55,7 +56,7 @@ const PageLoader = () => (
 const APP_NAME = 'Lynx';
 
 
-function AppLayout({ children }) {
+function AppLayout() {
   const { currentUser, isAdmin, logout } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -111,6 +112,14 @@ function AppLayout({ children }) {
     );
     return item?.label || t('nav.dashboard');
   }, [location.pathname, sidebarItems, t]);
+
+  // Animate page transitions, but keep the same key across server-detail tabs
+  // so switching tabs within a server does not re-trigger the fade.
+  const transitionKey = useMemo(() => {
+    const parts = location.pathname.split('/').filter(Boolean);
+    if (parts[0] === 'servers' && parts.length >= 2) return `/servers/${parts[1]}`;
+    return location.pathname;
+  }, [location.pathname]);
 
 
   const handleGlobalNavigate = useCallback((target) => {
@@ -265,15 +274,20 @@ function AppLayout({ children }) {
 
         {/* Main Content Area */}
         <main className="flex-1 min-h-0 overflow-y-auto">
-          {children}
+          <div key={transitionKey} className="min-h-full animate-fade-in">
+            <Outlet />
+          </div>
         </main>
       </div>
+
+      {/* Global command palette (Ctrl/⌘+K) */}
+      <CommandPalette />
     </div>
   );
 }
 
 
-function ProtectedRoute({ children }) {
+function ProtectedLayout() {
   const { isAuthenticated, loading, mustChangePassword } = useAuth();
   const location = useLocation();
 
@@ -289,11 +303,11 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/change-password" replace />;
   }
 
-  return <AppLayout>{children}</AppLayout>;
+  return <AppLayout />;
 }
 
 
-function AdminRoute({ children }) {
+function AdminLayout() {
   const { isAuthenticated, isAdmin, loading } = useAuth();
 
   if (loading) {
@@ -308,7 +322,7 @@ function AdminRoute({ children }) {
     return <Navigate to="/" replace />;
   }
 
-  return <AppLayout>{children}</AppLayout>;
+  return <AppLayout />;
 }
 
 
@@ -563,22 +577,25 @@ function AppRoutes() {
       <Route path="/change-password" element={<MustChangePasswordWrapper />} />
       <Route path="/status" element={<PublicStatusPage />} />
 
-      {/* Protected routes */}
-      <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-      <Route path="/servers" element={<ProtectedRoute><ServersPage /></ProtectedRoute>} />
-      <Route path="/servers/:serverId" element={<ProtectedRoute><ServerDetailsPage /></ProtectedRoute>} />
-      <Route path="/servers/:serverId/:tab" element={<ProtectedRoute><ServerDetailsPage /></ProtectedRoute>} />
-
-      <Route path="/templates" element={<ProtectedRoute><TemplatesPageWrapper /></ProtectedRoute>} />
-      <Route path="/steam" element={<ProtectedRoute><SteamGamesPage /></ProtectedRoute>} />
-      <Route path="/hytale" element={<ProtectedRoute><HytalePage /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-      <Route path="/monitoring" element={<ProtectedRoute><MonitoringPage /></ProtectedRoute>} />
-      <Route path="/security" element={<ProtectedRoute><SecurityPage /></ProtectedRoute>} />
-      <Route path="/multi-server" element={<ProtectedRoute><MultiServerPage /></ProtectedRoute>} />
+      {/* Protected routes share a single persistent layout (Outlet) */}
+      <Route element={<ProtectedLayout />}>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/servers" element={<ServersPage />} />
+        <Route path="/servers/:serverId" element={<ServerDetailsPage />} />
+        <Route path="/servers/:serverId/:tab" element={<ServerDetailsPage />} />
+        <Route path="/templates" element={<TemplatesPageWrapper />} />
+        <Route path="/steam" element={<SteamGamesPage />} />
+        <Route path="/hytale" element={<HytalePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/monitoring" element={<MonitoringPage />} />
+        <Route path="/security" element={<SecurityPage />} />
+        <Route path="/multi-server" element={<MultiServerPage />} />
+      </Route>
 
       {/* Admin routes */}
-      <Route path="/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
+      <Route element={<AdminLayout />}>
+        <Route path="/users" element={<UsersPage />} />
+      </Route>
 
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />

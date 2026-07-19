@@ -120,11 +120,8 @@ export default function GlobalSearchBar({ onNavigate, className = '' }) {
       if (!key || key !== 'k') return;
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      if (inputRef.current) {
-        inputRef.current.focus();
-        inputRef.current.select();
-        setOpen(true);
-      }
+      // Open the global command palette instead of focusing the inline search.
+      try { window.dispatchEvent(new CustomEvent('lynx:open-command-palette')); } catch (_) { }
     }
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
