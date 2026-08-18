@@ -427,6 +427,12 @@ class DockerManager:
         host = (self._steam_docker_host or "").strip()
         if not host:
             return None
+        # Security: refuse insecure TCP connections without TLS
+        if host.startswith("tcp://") and not host.startswith("tcp://") and "tlsverify" not in host:
+            # Check if it's an insecure TCP connection (no TLS)
+            if "2375" in host or "2376" in host:
+                logger.warning(f"Refusing insecure Docker TCP connection to {host}. Use unix:// socket or enable TLS.")
+                return None
         if self._steam_client is not None:
             return self._steam_client
         try:

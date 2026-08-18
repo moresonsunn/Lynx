@@ -32,6 +32,8 @@ services:
       # CasaOS v2 compose apps (Steam servers)
       - CASAOS_API_BASE=${CASAOS_API_BASE:-}
       - CASAOS_API_TOKEN=${CASAOS_API_TOKEN:-}
+      # Disable insecure Steam Docker TCP ports (security fix)
+      - STEAM_DOCKER_HOST=
     volumes:
       - servers_data:/data/servers
       - sqlite_data:/data/sqlite

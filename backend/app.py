@@ -1307,6 +1307,44 @@ def api_set_remote_config(request: Request, current_user: User = Depends(require
 def api_test_remote_config(current_user: User = Depends(require_admin)):
     return test_remote_connection()
 
+# Alias endpoints for frontend compatibility
+@app.get("/api/servers/{name}/schedules")
+@app.get("/servers/{name}/schedules")
+def api_server_schedules(name: str, current_user: User = Depends(require_auth)):
+    """Get backup schedules for a specific server (alias for /api/backup-schedules/{name})."""
+    return {"schedules": get_schedule(name)}
+
+
+@app.get("/api/servers/{name}/worlds")
+@app.get("/servers/{name}/worlds")
+def api_server_worlds(name: str, current_user: User = Depends(require_auth)):
+    """Get worlds for a specific server (alias for /worlds/{name})."""
+    from world_routes import _server_dir, _detect_world_dirs
+    server_dir = _server_dir(name)
+    worlds = _detect_world_dirs(server_dir)
+    items = []
+    for w in worlds:
+        size = 0
+        try:
+            for f in w.rglob('*'):
+                if f.is_file():
+                    size += f.stat().st_size
+        except Exception:
+            pass
+        items.append({
+            "name": w.name,
+            "path": str(w.relative_to(server_dir)),
+            "size": size,
+        })
+    return {"worlds": items}
+
+
+@app.get("/api/backup-remote-config")
+@app.get("/api/api/backup-remote-config")  # Handle double /api prefix from frontend
+def api_get_remote_config_alias(current_user: User = Depends(require_admin)):
+    return {"remote": get_remote_config()}
+
+
 @app.get("/servers/{name}/players")
 @app.get("/api/servers/{name}/players")
 def players_list(name: str, container_id: str | None = Query(None), current_user: User = Depends(require_auth)):
