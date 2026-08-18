@@ -67,14 +67,34 @@ def is_client_only_cf(cf_file: Dict[str, Any], project: Dict[str, Any] | None = 
 
     return False
 
+def _get_curseforge_api_key() -> str:
+    """Get CurseForge API key from the integrations store."""
+    try:
+        from integrations_store import get_integration_key
+        key = get_integration_key("curseforge")
+        if key:
+            return key.strip()
+    except Exception:
+        pass
+    # Fallback to environment variable for backwards compatibility
+    return os.getenv("CURSEFORGE_API_KEY", "")
+
 class CurseForgeProvider:
     id = "curseforge"
     name = "CurseForge"
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: Optional[str] = None):
+        if api_key is None:
+            api_key = _get_curseforge_api_key()
         if not api_key:
             raise ValueError("CurseForge API key is required")
         self.api_key = api_key
+
+    def refresh_api_key(self) -> None:
+        """Refresh the API key from the store (in case it was updated)."""
+        self.api_key = _get_curseforge_api_key()
+        if not self.api_key:
+            raise ValueError("CurseForge API key is required")
 
     def _headers(self) -> Dict[str, str]:
         return {

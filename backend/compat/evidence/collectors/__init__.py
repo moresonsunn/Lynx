@@ -10,6 +10,7 @@ from .base import EvidenceCollector, loader_compatibility
 from .local import FilenameCollector, JarMetadataCollector, KnowledgeBaseCollector
 from .remote import CurseForgeCollector, GitHubReleaseCollector, ModrinthCollector
 from .bytecode_collector import BytecodeCollector
+from .allowlist_collector import AllowlistCollector
 
 
 def default_collectors(*, use_api: bool = True, use_bytecode: bool = True) -> list[EvidenceCollector]:
@@ -17,6 +18,7 @@ def default_collectors(*, use_api: bool = True, use_bytecode: bool = True) -> li
         JarMetadataCollector(),
         KnowledgeBaseCollector(),
         FilenameCollector(),
+        AllowlistCollector(),  # Check allowlist early for high-priority signals
     ]
     if use_bytecode:
         collectors.append(BytecodeCollector())
@@ -35,6 +37,7 @@ __all__ = [
     "JarMetadataCollector",
     "KnowledgeBaseCollector",
     "FilenameCollector",
+    "AllowlistCollector",
     "BytecodeCollector",
     "ModrinthCollector",
     "CurseForgeCollector",

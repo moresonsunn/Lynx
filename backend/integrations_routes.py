@@ -34,6 +34,17 @@ async def set_curseforge_key(payload: ApiKeyPayload, current_user: User = Depend
     if not payload.api_key or len(payload.api_key.strip()) < 10:
         raise HTTPException(status_code=400, detail="Invalid API key")
     set_integration_key("curseforge", payload.api_key.strip())
+    
+    # Refresh the CurseForge provider if it exists
+    try:
+        from catalog_routes import get_providers_live
+        from modpack_providers.curseforge import CurseForgeProvider
+        providers = get_providers_live()
+        if "curseforge" in providers:
+            providers["curseforge"].refresh_api_key()
+    except Exception:
+        pass  # Provider will be recreated on next use
+    
     return {"ok": True}
 
 @router.post("/nexus-key")

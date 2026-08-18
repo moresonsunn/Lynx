@@ -183,8 +183,18 @@ def get_providers_live() -> Dict[str, Any]:
             log.exception("Failed to instantiate CurseForgeProvider")
             _PROVIDER_ERRORS["curseforge"] = str(e)
     else:
-        
-        _PROVIDER_ERRORS.pop("curseforge", None)
+        # Try to get key from store directly (handles env var fallback)
+        from modpack_providers.curseforge import _get_curseforge_api_key
+        cf_key = _get_curseforge_api_key()
+        if cf_key:
+            try:
+                prov["curseforge"] = CurseForgeProvider(cf_key)
+                _PROVIDER_ERRORS.pop("curseforge", None)
+            except Exception as e:
+                log.exception("Failed to instantiate CurseForgeProvider")
+                _PROVIDER_ERRORS["curseforge"] = str(e)
+        else:
+            _PROVIDER_ERRORS.pop("curseforge", None)
     return prov
 
 

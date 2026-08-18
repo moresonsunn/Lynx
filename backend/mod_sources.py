@@ -15,9 +15,6 @@ MODRINTH_API = "https://api.modrinth.com/v2"
 CURSEFORGE_API = "https://api.curseforge.com"
 SPIGET_API = "https://api.spiget.org/v2"
 
-# CurseForge requires an API key - get from environment
-CURSEFORGE_API_KEY = os.getenv("CURSEFORGE_API_KEY", "")
-
 # Minecraft game ID on CurseForge
 CURSEFORGE_MINECRAFT_GAME_ID = 432
 
@@ -42,6 +39,20 @@ HYBRID_LOADER_MAP = {
 def _resolve_loader(loader: str) -> str:
     """Resolve a hybrid server type to its underlying mod loader name."""
     return HYBRID_LOADER_MAP.get(loader.lower(), loader.lower())
+
+
+def _get_curseforge_api_key() -> str:
+    """Get CurseForge API key from the integrations store."""
+    try:
+        from integrations_store import get_integration_key
+        key = get_integration_key("curseforge")
+        if key:
+            return key.strip()
+    except Exception:
+        pass
+    # Fallback to environment variable for backwards compatibility
+    return os.getenv("CURSEFORGE_API_KEY", "")
+
 
 # User agent for API requests
 USER_AGENT = "Lynx-Server-Manager/1.0 (https://github.com/moresonsunn/Lynx)"
@@ -182,13 +193,21 @@ class CurseForgeClient:
     
     def __init__(self):
         self.base_url = CURSEFORGE_API
-        self.api_key = CURSEFORGE_API_KEY
+        self.api_key = _get_curseforge_api_key()
         self.headers = {
             "User-Agent": USER_AGENT,
             "Accept": "application/json",
         }
         if self.api_key:
             self.headers["x-api-key"] = self.api_key
+    
+    def refresh_api_key(self) -> None:
+        """Refresh the API key from the store (in case it was updated)."""
+        self.api_key = _get_curseforge_api_key()
+        if self.api_key:
+            self.headers["x-api-key"] = self.api_key
+        else:
+            self.headers.pop("x-api-key", None)
     
     def is_available(self) -> bool:
         """Check if CurseForge API is available (has API key)."""

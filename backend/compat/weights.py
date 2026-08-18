@@ -20,6 +20,8 @@ TRUST = {
     "kb": 0.80,
     "filename": 0.30,
     "graph": 0.90,
+    "bytecode": 0.85,
+    "allowlist": 0.95,
 }
 
 # Per-signal intrinsic weight. Filename is capped low so it can never gate.
@@ -41,6 +43,14 @@ WEIGHT = {
     "addon_prefix": 2.0,
     "experimental": 1.0,
     "github_supports": 1.8,
+    # New weights for bytecode and allowlist
+    "bytecode_client": 2.5,
+    "bytecode_server": 2.5,
+    "bytecode_both": 1.0,
+    "onlyin_client": 3.0,
+    "onlyin_server": 3.0,
+    "allowlist_forced": 3.5,
+    "user_override": 4.0,
 }
 
 # Thresholds used by the reasoner / veto logic.
