@@ -217,11 +217,30 @@ MIN_RAM="${MIN_RAM:-1G}"
 MAX_RAM="${MAX_RAM:-2G}"
 MEM_ARGS="-Xmx${MAX_RAM} -Xms${MIN_RAM}"
 JAVA_OPTS="${JAVA_OPTS:-}"
+
+# ============ NEU: Bereinigung von JAVA_OPTS ============
+EXTRA_SERVER_ARGS=""
+# 1. Entferne versehentlich enthaltene Java-Binärnamen (java, java21, etc.)
+if echo "$JAVA_OPTS" | grep -qE '(^| )java[0-9]*( |$)'; then
+  echo "WARNING: JAVA_OPTS contains 'java' executable; cleaning..."
+  JAVA_OPTS=$(echo "$JAVA_OPTS" | sed -E 's/(^| )java[0-9]*( |$)/ /g' | xargs)
+fi
+
+# 2. Extrahiere alles nach '-jar' (inkl. --safeMode) in EXTRA_SERVER_ARGS
+if echo "$JAVA_OPTS" | grep -q ' -jar '; then
+  echo "WARNING: JAVA_OPTS contains '-jar'; moving to server args..."
+  EXTRA_SERVER_ARGS=$(echo "$JAVA_OPTS" | sed -E 's/.* -jar //')
+  JAVA_OPTS=$(echo "$JAVA_OPTS" | sed -E 's/ -jar .*//')
+  echo "DEBUG: Extracted server args: $EXTRA_SERVER_ARGS"
+fi
+# ========================================================
+
 ALL_JAVA_ARGS="$MEM_ARGS $JAVA_OPTS"
 
 echo "DEBUG: Memory configuration - Min: $MIN_RAM, Max: $MAX_RAM"
 echo "DEBUG: Java memory args: $MEM_ARGS"
 echo "DEBUG: Extra Java opts: $JAVA_OPTS"
+echo "DEBUG: Extra server args (extracted from JAVA_OPTS): $EXTRA_SERVER_ARGS"
 
 # Debug: Print environment and directory info
 echo "DEBUG: SERVER_DIR_NAME=$SERVER_DIR_NAME"
@@ -935,7 +954,7 @@ start_server_with_recovery() {
         tail -f -n +1 console.in | bash ./run.sh
         ;;
       "java")
-        tail -f -n +1 console.in | "$JAVA_BIN" $ALL_JAVA_ARGS "${cmd_args[@]}"
+        tail -f -n +1 console.in | "$JAVA_BIN" $ALL_JAVA_ARGS "${cmd_args[@]}" $EXTRA_SERVER_ARGS
         ;;
     esac
     local exit_code=$?

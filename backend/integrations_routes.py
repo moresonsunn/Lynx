@@ -41,7 +41,7 @@ async def set_curseforge_key(payload: ApiKeyPayload, current_user: User = Depend
         from modpack_providers.curseforge import CurseForgeProvider
         providers = get_providers_live()
         if "curseforge" in providers:
-            providers["curseforge"].refresh_api_key()
+            providers["curseforge"].refresh_api_key() 
     except Exception:
         pass  # Provider will be recreated on next use
     
