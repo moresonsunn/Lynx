@@ -20,6 +20,22 @@ import {
   FaUser,
 } from 'react-icons/fa';
 
+async function parseError(resp) {
+  try {
+    const payload = await resp.json();
+    if (payload && payload.detail) {
+      if (Array.isArray(payload.detail)) {
+        return payload.detail.map(err => {
+          const field = err.loc ? err.loc.join('.') : '';
+          return `${field ? field + ': ' : ''}${err.msg}`;
+        }).join(', ');
+      }
+      return payload.detail;
+    }
+  } catch (_) {}
+  return `HTTP ${resp.status}`;
+}
+
 export default function UsersPage() {
   const { t } = useTranslation();
   const globalData = useGlobalData();
@@ -85,11 +101,15 @@ export default function UsersPage() {
 
   async function toggleUserActive(userId, isActive) {
     try {
-      await fetch(`${API}/users/${userId}`, {
+      const resp = await fetch(`${API}/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ is_active: isActive }),
       });
+      if (!resp.ok) {
+        const errorMsg = await parseError(resp);
+        throw new Error(errorMsg);
+      }
       setSuccess(`User ${isActive ? 'activated' : 'deactivated'} successfully`);
       loadUsers();
     } catch (e) {
@@ -100,7 +120,11 @@ export default function UsersPage() {
   async function deleteUser(userId) {
     if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
     try {
-      await fetch(`${API}/users/${userId}`, { method: 'DELETE', headers: authHeaders() });
+      const resp = await fetch(`${API}/users/${userId}`, { method: 'DELETE', headers: authHeaders() });
+      if (!resp.ok) {
+        const errorMsg = await parseError(resp);
+        throw new Error(errorMsg);
+      }
       setSuccess('User deleted successfully');
       loadUsers();
     } catch (e) {
@@ -119,10 +143,13 @@ export default function UsersPage() {
       if (!newUser.password) {
         throw new Error('Password is required');
       }
+      if (newUser.password.length < 8) {
+        throw new Error('Password must be at least 8 characters long');
+      }
       if (newUser.password !== newUser.confirmPassword) {
         throw new Error('Passwords do not match');
       }
-      const resp = await fetch(`${API}/auth/users`, {
+      const resp = await fetch(`${API}/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
@@ -130,12 +157,12 @@ export default function UsersPage() {
           email: newUser.email,
           password: newUser.password,
           role: newUser.role,
-          must_change_password: newUser.mustChangePassword,
+          full_name: newUser.username,
         }),
       });
       if (!resp.ok) {
-        const payload = await resp.json().catch(() => ({}));
-        throw new Error(payload?.detail || `HTTP ${resp.status}`);
+        const errorMsg = await parseError(resp);
+        throw new Error(errorMsg);
       }
       setShowCreateModal(false);
       setNewUser({ username: '', email: '', password: '', confirmPassword: '', role: 'user', mustChangePassword: true });
@@ -474,9 +501,9 @@ export default function UsersPage() {
               <div className="relative">
                 <FaKey className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
                 <input
-                  type="password" required minLength={6}
+                  type="password" required minLength={8}
                   className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40"
-                  placeholder="Min. 6 characters"
+                  placeholder="Min. 8 chars (A-Z, a-z, 0-9)"
                   value={newUser.password}
                   onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
                 />
@@ -488,7 +515,7 @@ export default function UsersPage() {
               <div className="relative">
                 <FaKey className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
                 <input
-                  type="password" required minLength={6}
+                  type="password" required minLength={8}
                   className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40"
                   placeholder="Repeat password"
                   value={newUser.confirmPassword}

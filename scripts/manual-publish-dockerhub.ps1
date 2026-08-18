@@ -19,7 +19,7 @@
 
 .EXAMPLE
   $env:DOCKERHUB_USERNAME="moresonsun"
-  $env:DOCKERHUB_TOKEN="<token>"
+  $env:DOCKERHUB_TOKEN="dckr_pat_iB-1VpMi4fMpXYq-iNrEBzYnwZA"
   ./scripts/manual-publish-dockerhub.ps1 -Version v0.1.1
 
 .EXAMPLE

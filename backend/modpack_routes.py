@@ -829,13 +829,24 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
             artifact = None
             for f in files:
                 fn = (f.get("filename") or "").lower()
-                if f.get("primary") or fn.endswith(".mrpack") or fn.endswith(".zip"):
+                # Check for primary flag, .mrpack, .zip, or any file with a download URL
+                if f.get("primary") or fn.endswith(".mrpack") or fn.endswith(".zip") or not fn:
                     artifact = f
                     break
             if not artifact and files:
-                artifact = files[0]
+                # Fallback: use first file that has a download URL
+                for f in files:
+                    if f.get("url"):
+                        artifact = f
+                        break
             if not artifact or not artifact.get("url"):
-                raise RuntimeError("No downloadable file for this version")
+                # Try to find any file with a URL as last resort
+                for f in files:
+                    if f.get("url"):
+                        artifact = f
+                        break
+                if not artifact or not artifact.get("url"):
+                    raise RuntimeError("No downloadable file for this version")
 
             # Prepare server dir
             servers_root = SERVERS_ROOT

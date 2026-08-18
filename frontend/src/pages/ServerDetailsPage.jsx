@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from '../i18n';
 import { useServerById, useServerStats, useServerInfo, useGlobalActions } from '../context/GlobalDataContext';
@@ -109,6 +109,18 @@ export default function ServerDetailsPage() {
   const [actionLoading, setActionLoading] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
+  const [showMoreDropdown, setShowMoreDropdown] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowMoreDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const stats = useServerStats(serverId);
 
@@ -385,21 +397,68 @@ export default function ServerDetailsPage() {
           )}
 
           {/* Tabs */}
-          <div className="flex gap-1 mt-4 overflow-x-auto pb-1">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${activeTab === tab.id
-                  ? 'bg-white/10 text-white border-b-2 border-brand-500'
-                  : 'text-white/60 hover:text-white hover:bg-white/5'
-                  }`}
-              >
-                <tab.icon className="text-xs" />
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          {(() => {
+            const primaryTabIds = ['overview', 'console', 'files', 'config'];
+            const primaryTabs = tabs.filter(t => primaryTabIds.includes(t.id));
+            const secondaryTabs = tabs.filter(t => !primaryTabIds.includes(t.id));
+            const isSecondaryActive = secondaryTabs.some(t => t.id === activeTab);
+            const activeSecondaryTab = secondaryTabs.find(t => t.id === activeTab);
+            const DropdownIcon = activeSecondaryTab ? activeSecondaryTab.icon : FaSlidersH;
+
+            return (
+              <div className="flex gap-1 mt-4 overflow-x-auto pb-1 select-none">
+                {primaryTabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => handleTabChange(tab.id)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${activeTab === tab.id
+                      ? 'bg-white/10 text-white border-b-2 border-brand-500'
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                      }`}
+                  >
+                    <tab.icon className="text-xs" />
+                    {tab.label}
+                  </button>
+                ))}
+                
+                {secondaryTabs.length > 0 && (
+                  <div className="relative" ref={dropdownRef}>
+                    <button
+                      onClick={() => setShowMoreDropdown(!showMoreDropdown)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${isSecondaryActive
+                        ? 'bg-white/10 text-white border-b-2 border-brand-500 font-medium'
+                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                        }`}
+                    >
+                      <DropdownIcon className="text-xs" />
+                      {isSecondaryActive ? activeSecondaryTab.label : 'More...'}
+                      <span className="text-[10px] opacity-60 ml-0.5">▼</span>
+                    </button>
+                    {showMoreDropdown && (
+                      <div className="absolute left-0 md:left-auto md:right-0 mt-1 w-52 rounded-lg bg-[#151525] border border-white/10 shadow-2xl z-[100] py-1">
+                        {secondaryTabs.map(tab => (
+                          <button
+                            key={tab.id}
+                            onClick={() => {
+                              handleTabChange(tab.id);
+                              setShowMoreDropdown(false);
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left ${activeTab === tab.id
+                              ? 'bg-brand-500 text-white'
+                              : 'text-white/70 hover:text-white hover:bg-white/5'
+                              }`}
+                          >
+                            <tab.icon className="text-xs flex-shrink-0" />
+                            <span className="truncate">{tab.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
