@@ -235,10 +235,22 @@ class CurseForgeProvider:
                             has_server_pack = True
                 except Exception:
                     pass
+            
             # Add the regular file (client pack) as fallback
+            # If the direct download URL is missing, fetch the file info to get the actual download URL
+            final_dl_url = dl_url
+            if not final_dl_url:
+                try:
+                    fr = requests.get(f"{CURSE_API_BASE}/mods/files/{file_id}", headers=self._headers(), timeout=15)
+                    if fr.ok:
+                        fd = fr.json().get("data") or {}
+                        final_dl_url = fd.get("downloadUrl")
+                except Exception:
+                    pass
+            
             files_list.append({
                 "filename": file_name,
-                "url": dl_url,
+                "url": final_dl_url,
                 "primary": not has_server_pack,
                 "is_server_pack": False,
                 "file_id": file_id
