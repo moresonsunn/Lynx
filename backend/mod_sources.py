@@ -142,10 +142,10 @@ class ModrinthClient:
     ) -> list:
         """Get available versions/files for a project."""
         import json as _json
-
+        
         # Bukkit-family loaders are all compatible with each other
         BUKKIT_FAMILY = {"paper", "spigot", "bukkit", "purpur"}
-
+        
         params = {}
         if game_version:
             params["game_versions"] = f'["{game_version}"]'
