@@ -934,15 +934,99 @@ fi
 # For Forge/NeoForge servers: if a jar exists, try running installer first headlessly
 # For Forge/NeoForge: prefer run.sh immediately; do not try to 'install' non-installer jars
 
-# -------- Server Start with Crash Recovery --------
-# Wrap server start in a function for crash recovery
+# Function to check if crash log indicates datapack/dimension issues
+check_datapack_crash() {
+  local logs_dir="./logs"
+  local crash_dir="./crash-reports"
+  local found=0
+  
+  # Datapack/dimension error patterns
+  local patterns=(
+    "Unknown registry key"
+    "Missing data pack"
+    "Unknown dimension"
+    "Unknown chunk generator"
+    "Unknown biome source"
+    "Could not find dimension type"
+    "Missing dimension type"
+    "Failed to load data pack"
+    "Failed to load dimension"
+    "Dimension type.*not found"
+    "Chunk generator.*not found"
+  )
+  
+  # Check latest crash report
+  if [ -d "$crash_dir" ]; then
+    local latest_crash
+    latest_crash=$(ls -t "$crash_dir"/crash-*.txt 2>/dev/null | head -n1)
+    if [ -n "$latest_crash" ] && [ -f "$latest_crash" ]; then
+      for pattern in "${patterns[@]}"; do
+        if grep -Eqi "$pattern" "$latest_crash" 2>/dev/null; then
+          echo "INFO: Found datapack/dimension crash indicator: $pattern"
+          return 0
+        fi
+      done
+    fi
+  fi
+  
+  # Check latest.log
+  if [ "$found" -eq 0 ] && [ -f "$logs_dir/latest.log" ]; then
+    for pattern in "${patterns[@]}"; do
+      if grep -Eqi "$pattern" "$logs_dir/latest.log" 2>/dev/null; then
+        echo "INFO: Found datapack/dimension crash indicator in log: $pattern"
+        return 0
+      fi
+    done
+  fi
+  
+  return 1
+}
+
+# Function to disable problematic datapacks automatically
+disable_datapacks_auto() {
+  local datapacks_dir="./datapacks"
+  local disabled_dir="./datapacks-disabled"
+  
+  [ -d "$datapacks_dir" ] || return 1
+  
+  mkdir -p "$disabled_dir"
+  local moved=0
+  
+  # Move all datapacks to disabled (conservative approach for safe mode)
+  for dp in "$datapacks_dir"/*; do
+    [ -e "$dp" ] || continue
+    local name=$(basename "$dp")
+    echo "INFO: [Safe Mode] Disabling datapack: $name"
+    mv -f "$dp" "$disabled_dir/" 2>/dev/null || true
+    moved=$((moved+1))
+  done
+  
+  if [ "$moved" -gt 0 ]; then
+    echo "INFO: [Safe Mode] Moved $moved datapack(s) to $disabled_dir"
+    return 0
+  fi
+  return 1
+}
+
+# Function to start server with safe mode fallback
 start_server_with_recovery() {
   local cmd_type="$1"
   shift
   local cmd_args=("$@")
   
+  local safe_mode_attempted=0
+  
   while true; do
-    echo "INFO: Starting server (recovery attempt: $CRASH_RECOVERY_ATTEMPT)..."
+    echo "INFO: Starting server (recovery attempt: $CRASH_RECOVERY_ATTEMPT, safe_mode: $safe_mode_attempted)..."
+    
+    # Build safe mode args if needed
+    local effective_args=("${cmd_args[@]}")
+    if [ "$safe_mode_attempted" -eq 1 ]; then
+      echo "INFO: Attempting start in SAFE MODE (--safeMode)..."
+      effective_args=("--safeMode" "${cmd_args[@]}")
+      # Also try to auto-disable datapacks
+      disable_datapacks_auto
+    fi
     
     # Create console FIFO
     mkfifo -m 600 console.in 2>/dev/null || true
@@ -954,7 +1038,7 @@ start_server_with_recovery() {
         tail -f -n +1 console.in | bash ./run.sh
         ;;
       "java")
-        tail -f -n +1 console.in | "$JAVA_BIN" $ALL_JAVA_ARGS "${cmd_args[@]}" $EXTRA_SERVER_ARGS
+        tail -f -n +1 console.in | "$JAVA_BIN" $ALL_JAVA_ARGS "${effective_args[@]}" $EXTRA_SERVER_ARGS
         ;;
     esac
     local exit_code=$?
@@ -964,8 +1048,23 @@ start_server_with_recovery() {
     
     # Clean exit (0) or stop command (143 = SIGTERM)
     if [ "$exit_code" -eq 0 ] || [ "$exit_code" -eq 143 ]; then
-      echo "INFO: Server stopped gracefully."
+      if [ "$safe_mode_attempted" -eq 1 ]; then
+        echo "INFO: Server started successfully in SAFE MODE."
+        echo "WARNING: Some datapacks were disabled. Check datapacks-disabled/ folder."
+        echo "WARNING: You may need to re-enable datapacks manually if desired."
+      else
+        echo "INFO: Server stopped gracefully."
+      fi
       exit 0
+    fi
+    
+    # Check for datapack/dimension crash
+    if [ "$safe_mode_attempted" -eq 0 ] && check_datapack_crash; then
+      echo "INFO: Datapack/dimension error detected. Will retry in safe mode..."
+      safe_mode_attempted=1
+      rm -f console.in 2>/dev/null || true
+      sleep 3
+      continue
     fi
     
     # Crash - attempt recovery

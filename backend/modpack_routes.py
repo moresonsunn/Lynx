@@ -205,6 +205,67 @@ def _purge_client_only_mods_legacy(target_dir: Path, push_event=lambda ev: None)
         pass
 
 
+def _has_custom_dimensions(datapack_path: Path) -> bool:
+    """
+    Check if a datapack (directory or zip) contains custom dimension/worldgen definitions.
+    Looks for:
+    - data/*/dimension_type/*.json
+    - data/*/worldgen/noise_settings/*.json
+    - data/*/worldgen/biome/*.json
+    """
+    try:
+        if datapack_path.is_dir():
+            # Check directory
+            for pattern in ("**/dimension_type/*.json", "**/worldgen/noise_settings/*.json", "**/worldgen/biome/*.json"):
+                if any(datapack_path.glob(pattern)):
+                    return True
+        elif datapack_path.is_file() and datapack_path.suffix.lower() == ".zip":
+            # Check zip file
+            import zipfile
+            with zipfile.ZipFile(datapack_path, 'r') as zf:
+                for name in zf.namelist():
+                    if (name.startswith("data/") and 
+                        ("/dimension_type/" in name or 
+                         "/worldgen/noise_settings/" in name or 
+                         "/worldgen/biome/" in name)):
+                        return True
+    except Exception:
+        pass
+    return False
+
+
+def _move_dimension_datapacks(target_dir: Path, push_event=lambda ev: None) -> int:
+    """
+    Move datapacks that register custom dimensions to a disabled folder.
+    Returns the number of datapacks moved.
+    """
+    datapacks_dir = target_dir / "datapacks"
+    if not datapacks_dir.exists() or not datapacks_dir.is_dir():
+        return 0
+    
+    disabled_dir = target_dir / "datapacks-disabled"
+    disabled_dir.mkdir(exist_ok=True)
+    
+    moved = 0
+    for dp in datapacks_dir.iterdir():
+        if dp.is_dir() or (dp.is_file() and dp.suffix.lower() == ".zip"):
+            if _has_custom_dimensions(dp):
+                try:
+                    dest = disabled_dir / dp.name
+                    shutil.move(str(dp), str(dest))
+                    moved += 1
+                    log.info(f"Moved dimension datapack: {dp.name}")
+                    push_event({
+                        "type": "progress",
+                        "step": "datapack_cleanup",
+                        "message": f"Disabled dimension datapack: {dp.name}",
+                        "progress": 65
+                    })
+                except Exception as e:
+                    log.warning(f"Failed to move dimension datapack {dp.name}: {e}")
+    return moved
+
+
 def _process_client_pack(
     target_dir: Path,
     push_event=lambda ev: None,
@@ -215,8 +276,9 @@ def _process_client_pack(
     """
     Process a client pack to make it server-ready:
     1. Detect and remove client-only mods using comprehensive detection
-    2. Ensure server JAR is present (auto-download if needed)
-    3. Accept EULA
+    2. Detect and disable dimension-adding datapacks
+    3. Ensure server JAR is present (auto-download if needed)
+    4. Accept EULA
     """
     _push_event = lambda ev: push_event({**ev, "step": ev.get("step", "client_pack")})
     
@@ -237,14 +299,25 @@ def _process_client_pack(
         except Exception:
             pass
     
-    # Step 2: Ensure server JAR
-    _push_event({"type": "progress", "step": "client_pack", "message": "Ensuring server JAR...", "progress": 62})
+    # Step 2: Detect and disable dimension-adding datapacks
+    _push_event({"type": "progress", "step": "client_pack", "message": "Scanning for dimension-adding datapacks...", "progress": 61})
+    try:
+        moved = _move_dimension_datapacks(target_dir, push_event=_push_event)
+        if moved > 0:
+            _push_event({"type": "progress", "step": "client_pack", "message": f"Disabled {moved} dimension-adding datapack(s)", "progress": 63})
+        else:
+            _push_event({"type": "progress", "step": "client_pack", "message": "No dimension-adding datapacks found", "progress": 63})
+    except Exception as e:
+        _push_event({"type": "progress", "step": "client_pack", "message": f"Datapack scan failed: {e}", "progress": 62})
+    
+    # Step 3: Ensure server JAR
+    _push_event({"type": "progress", "step": "client_pack", "message": "Ensuring server JAR...", "progress": 65})
     try:
         _ensure_server_jar(target_dir, loader, mc_version, loader_version, push_event=_push_event)
     except Exception as e:
         _push_event({"type": "progress", "step": "client_pack", "message": f"Server JAR setup failed: {e}", "progress": 64})
     
-    # Step 3: Accept EULA
+    # Step 4: Accept EULA
     try:
         (target_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
     except Exception:
