@@ -6,12 +6,16 @@ numeric score, ranked human-readable reasons, and concrete alternatives.
 
 from __future__ import annotations
 
+import logging
+
 from ..evidence.context import AnalysisContext
 from ..graph import ResolvedEdge
 from ..models import (Axis, CanonicalMod, Conflict, Evidence, ModVerdict,
                       Severity, Side, Verdict)
 from .. import weights as W
 from .confidence import combine_score, fuse_axis, overall_confidence
+
+logger = logging.getLogger(__name__)
 
 
 def build_dependency_axis(resolved: list[ResolvedEdge]) -> Axis:
@@ -48,16 +52,24 @@ def build_conflict_axis(conflicts: list[Conflict]) -> Axis:
 
 def determine_side(side_axis: Axis, mod: CanonicalMod) -> tuple[Side, float]:
     if mod.declared_side == Side.SERVER:
+        logger.debug(f"Mod {mod.canonical_id}: declared_side=SERVER -> final=SERVER, conf={max(side_axis.confidence, 0.8)}")
         return Side.SERVER, max(side_axis.confidence, 0.8)
+    if mod.declared_side == Side.CLIENT:
+        logger.debug(f"Mod {mod.canonical_id}: declared_side=CLIENT -> final=CLIENT, conf={max(side_axis.confidence, 0.8)}")
+        return Side.CLIENT, max(side_axis.confidence, 0.8)
     if not side_axis.evidence:
-        return Side.UNKNOWN, 0.0
+        logger.debug(f"Mod {mod.canonical_id}: no side evidence -> default=BOTH, conf=0.0")
+        return Side.BOTH, 0.0  # Default to BOTH when no evidence
     p_needs_server = side_axis.score / 100.0
     conf = side_axis.confidence
-    if p_needs_server < 0.4:
+    if p_needs_server < 0.25:  # was 0.4 - only clear client-only evidence triggers CLIENT
+        logger.debug(f"Mod {mod.canonical_id}: p_needs_server={p_needs_server:.3f} < 0.25 -> CLIENT, conf={conf:.3f}, evidence={[e.detail for e in side_axis.evidence]}")
         return Side.CLIENT, conf
-    if p_needs_server > 0.6:
+    if p_needs_server > 0.55:  # was 0.6 - lower threshold for BOTH
+        logger.debug(f"Mod {mod.canonical_id}: p_needs_server={p_needs_server:.3f} > 0.55 -> BOTH, conf={conf:.3f}, evidence={[e.detail for e in side_axis.evidence]}")
         return Side.BOTH, conf
-    return Side.UNKNOWN, conf
+    logger.debug(f"Mod {mod.canonical_id}: p_needs_server={p_needs_server:.3f} in [0.25, 0.55] -> UNKNOWN (needs review), conf={conf:.3f}, evidence={[e.detail for e in side_axis.evidence]}")
+    return Side.UNKNOWN, conf  # Needs review, not CLIENT
 
 
 def _map_verdict(score: float, confidence: float, has_critical: bool,
@@ -142,6 +154,15 @@ def decide(mod: CanonicalMod, grouped: dict[str, list[Evidence]],
     side, side_conf = determine_side(side_axis, mod)
 
     unresolved = [e.dep for e in resolved if e.status in ("missing", "wrong_version")]
+
+    # Debug logging
+    logger.debug(
+        f"Mod {mod.canonical_id}: loader_axis.score={loader_axis.score:.1f}, "
+        f"mc_axis.score={mc_axis.score:.1f}, side_axis.score={side_axis.score:.1f}, "
+        f"dep_axis.score={dep_axis.score:.1f}, conflict_axis.score={conflict_axis.score:.1f}, "
+        f"final_score={score:.1f}, confidence={confidence:.3f}, "
+        f"side={side.value}, side_conf={side_conf:.3f}, verdict={verdict.value}"
+    )
 
     return ModVerdict(
         mod=mod,

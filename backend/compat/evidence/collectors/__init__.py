@@ -9,14 +9,17 @@ from __future__ import annotations
 from .base import EvidenceCollector, loader_compatibility
 from .local import FilenameCollector, JarMetadataCollector, KnowledgeBaseCollector
 from .remote import CurseForgeCollector, GitHubReleaseCollector, ModrinthCollector
+from .bytecode_collector import BytecodeCollector
 
 
-def default_collectors(*, use_api: bool = True) -> list[EvidenceCollector]:
+def default_collectors(*, use_api: bool = True, use_bytecode: bool = True) -> list[EvidenceCollector]:
     collectors: list[EvidenceCollector] = [
         JarMetadataCollector(),
         KnowledgeBaseCollector(),
         FilenameCollector(),
     ]
+    if use_bytecode:
+        collectors.append(BytecodeCollector())
     if use_api:
         collectors += [
             ModrinthCollector(),
@@ -32,6 +35,7 @@ __all__ = [
     "JarMetadataCollector",
     "KnowledgeBaseCollector",
     "FilenameCollector",
+    "BytecodeCollector",
     "ModrinthCollector",
     "CurseForgeCollector",
     "GitHubReleaseCollector",

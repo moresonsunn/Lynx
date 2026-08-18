@@ -1,0 +1,4 @@
+{
+  "user_overrides": {},
+  "description": "User overrides for mod side detection. Key is mod canonical_id, value is 'client', 'server', or 'both'. These take precedence over automated detection."
+}

@@ -180,7 +180,7 @@ def _parse_fabric(data: dict) -> dict:
 
     env = str(data.get("environment", "*")).strip().lower()
     side = {"client": Side.CLIENT, "server": Side.SERVER,
-            "*": Side.BOTH, "": Side.BOTH, "both": Side.BOTH}.get(env, Side.UNKNOWN)
+            "*": Side.BOTH, "": Side.BOTH, "both": Side.BOTH}.get(env, Side.BOTH)
 
     for kind, edge in (("depends", EdgeType.REQUIRES),
                        ("recommends", EdgeType.SUGGESTS),
@@ -225,7 +225,7 @@ def _parse_quilt(data: dict) -> dict:
 
     env = str(data.get("environment", "*")).strip().lower()
     side = {"client": Side.CLIENT, "server": Side.SERVER, "dedicated_server": Side.SERVER,
-            "*": Side.BOTH, "": Side.BOTH}.get(env, Side.UNKNOWN)
+            "*": Side.BOTH, "": Side.BOTH}.get(env, Side.BOTH)
 
     for kind, edge in (("depends", EdgeType.REQUIRES), ("breaks", EdgeType.INCOMPATIBLE)):
         for item in _as_list(ql.get(kind)):
@@ -250,7 +250,7 @@ def _parse_forge(content: str, toml_name: str) -> dict:
     mc_ranges: list = []
     name = ""
     version_raw = ""
-    side = Side.UNKNOWN
+    side = Side.BOTH  # Default to BOTH instead of UNKNOWN
 
     is_neo = "neoforge" in toml_name
 
@@ -263,17 +263,23 @@ def _parse_forge(content: str, toml_name: str) -> dict:
             name = m.get("displayName") or mid
             version_raw = str(m.get("version") or "")
         # NeoForge per-mod side
-        s = str(m.get("side") or "").strip().upper()
+        s = str(m.get("side") or "BOTH").strip().upper()
         if s == "CLIENT":
             side = Side.CLIENT
-        elif s == "SERVER" and side == Side.UNKNOWN:
+        elif s == "SERVER":
             side = Side.SERVER
+        elif s == "BOTH":
+            side = Side.BOTH
+        else:
+            side = Side.BOTH  # default to BOTH, not UNKNOWN
 
-    # Older Forge flag
-    if "clientsideonly" in content.lower():
-        import re as _re
-        if _re.search(r"clientsideonly\s*=\s*true", content.lower()):
-            side = Side.CLIENT
+    # Older Forge flag - only match the actual mod's clientsideonly flag, not comments
+    # Look for "clientsideonly = true" in the [[mods]] section only
+    import re as _re
+    # Match clientsideonly = true within a [[mods]] block (not in comments or other sections)
+    mods_block_pattern = _re.compile(r"\[\[mods\]\].*?clientsideonly\s*=\s*true", _re.IGNORECASE | _re.DOTALL)
+    if mods_block_pattern.search(content):
+        side = Side.CLIENT
 
     deps_map = parsed.get("dependencies") or {}
     for _owner, dep_list in deps_map.items():
