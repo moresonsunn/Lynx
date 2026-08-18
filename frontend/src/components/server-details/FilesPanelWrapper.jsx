@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FaFolder, FaUpload, FaSave, FaEdit, FaTimes, FaCheck, FaBan, FaArrowUp, FaSyncAlt, FaFolderPlus, FaFileAlt, FaSearch } from 'react-icons/fa';
+import { FaFolder, FaUpload, FaSave, FaEdit, FaTimes, FaCheck, FaBan, FaArrowUp, FaSyncAlt, FaFolderPlus, FaFileAlt, FaSearch, FaDownload } from 'react-icons/fa';
 import { useTranslation } from '../../i18n';
 import { API, getStoredToken } from '../../lib/api';
 import { authHeaders } from '../../context/AppContext';
 
-export default function FilesPanelWrapper({ serverName, initialItems = null, isBlockedFile, onEditStart, onEdit, onBlockedFileError, initialPath, onPathChange }) {
+export default function FilesPanelWrapper({ serverName, initialItems = null, isBlockedFile, onEditStart, onEdit, onBlockedFileError, initialPath, onPathChange, onNavigateToBackup }) {
   const { t } = useTranslation();
   // Accept both `onEditStart` (old name) and `onEdit` (used by pages)
   const onEditCallback = onEditStart || onEdit;
@@ -569,6 +569,9 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
                 </label>
                 <button onClick={() => loadDir(path, { force: true })} className={btn} title={t('fileBrowser.refresh')} aria-label="Refresh">
                   <FaSyncAlt /> <span className="hidden sm:inline">Refresh</span>
+                </button>
+                <button onClick={onNavigateToBackup} className={btn} title={t('tabs.backup') || 'Backups'} aria-label="Backups">
+                  <FaDownload /> <span className="hidden sm:inline">Backups</span>
                 </button>
               </>
             );

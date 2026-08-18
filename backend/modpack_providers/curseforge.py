@@ -192,9 +192,11 @@ class CurseForgeProvider:
             file_id = f.get("id")
             file_name = f.get("fileName")
             dl_url = f.get("downloadUrl")
+            game_versions = f.get("gameVersions", [])
             # Prefer server pack if available
             spid = f.get("serverPackFileId") or f.get("serverPackFileID")
             files_list: List[Dict[str, Any]] = []
+            has_server_pack = False
             if spid:
                 try:
                     fr = requests.get(f"{CURSE_API_BASE}/mods/files/{spid}", headers=self._headers(), timeout=15)
@@ -203,20 +205,33 @@ class CurseForgeProvider:
                         sp_name = fd.get("fileName") or f"server-pack-{spid}.zip"
                         sp_url = fd.get("downloadUrl")
                         if sp_url:
-                            files_list.append({"filename": sp_name, "url": sp_url, "primary": True})
+                            files_list.append({
+                                "filename": sp_name,
+                                "url": sp_url,
+                                "primary": True,
+                                "is_server_pack": True,
+                                "file_id": spid
+                            })
+                            has_server_pack = True
                 except Exception:
                     pass
-            # Fallback to the regular file
-            if not files_list:
-                files_list.append({"filename": file_name, "url": dl_url, "primary": True})
+            # Add the regular file (client pack) as fallback
+            files_list.append({
+                "filename": file_name,
+                "url": dl_url,
+                "primary": not has_server_pack,
+                "is_server_pack": False,
+                "file_id": file_id
+            })
 
             out.append(cast(PackVersion, {
                 "id": file_id,
                 "name": f.get("displayName"),
                 "version_number": file_name,
-                "game_versions": f.get("gameVersions", []),
+                "game_versions": game_versions,
                 "date_published": f.get("fileDate"),
                 "files": files_list,
+                "has_server_pack": has_server_pack,
             }))
         return out
 

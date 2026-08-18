@@ -29,7 +29,6 @@ import {
   FaShieldAlt,
   FaInfoCircle,
   FaMicrochip,
-  FaSlidersH,
   FaChartArea,
   FaUserShield,
 } from 'react-icons/fa';
@@ -91,6 +90,140 @@ function formatDate(dateStr) {
   }
 }
 
+function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTabChange, onClose }) {
+  const { t } = useTranslation();
+  const serverType = (typeVersionData?.server_type || server?.type || '').toLowerCase();
+  const isModdedServer = ['fabric', 'forge', 'neoforge'].includes(serverType);
+  const isPluginServer = ['paper', 'purpur', 'spigot', 'bukkit'].includes(serverType);
+  const isHybridServer = ['mohist', 'magma', 'banner', 'catserver', 'spongeforge'].includes(serverType);
+
+  return (
+    <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Server Info */}
+        <div className="glassmorphism rounded-xl p-4">
+          <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <FaInfoCircle className="text-blue-400" />
+            Server Info
+          </h4>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-white/50">Type</span>
+              <span className="text-white font-medium">{isSteam ? `Steam · ${server.steam_game || server.type}` : serverType}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Version</span>
+              <span className="text-white font-medium">{typeVersionData?.server_version || server.version || 'Unknown'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Status</span>
+              <span className={`flex items-center gap-2 ${server.status === 'running' ? 'text-green-300' : 'text-yellow-300'}`}>
+                <span className={`w-2 h-2 rounded-full ${server.status === 'running' ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
+                {server.status}
+              </span>
+            </div>
+            {server.host_port && (
+              <div className="flex justify-between">
+                <span className="text-white/50">Port</span>
+                <span className="text-white font-mono">{server.host_port}</span>
+              </div>
+            )}
+            {typeVersionData?.java_version && (
+              <div className="flex justify-between">
+                <span className="text-white/50">Java</span>
+                <span className="text-white font-medium">Java {typeVersionData.java_version}</span>
+              </div>
+            )}
+            {typeVersionData?.loader_version && (
+              <div className="flex justify-between">
+                <span className="text-white/50">Loader</span>
+                <span className="text-white font-medium">{typeVersionData.loader_version}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="glassmorphism rounded-xl p-4">
+          <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <FaCog className="text-brand-400" />
+            Quick Actions
+          </h4>
+          <div className="space-y-2">
+            <button
+              onClick={() => { onTabChange('files'); onClose(); }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              <FaFolder className="text-white/40" />
+              <span>File Manager</span>
+            </button>
+            <button
+              onClick={() => { onTabChange('config'); onClose(); }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              <FaCog className="text-white/40" />
+              <span>Configuration</span>
+            </button>
+            <button
+              onClick={() => { onTabChange('backup'); onClose(); }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              <FaDownload className="text-white/40" />
+              <span>Backups</span>
+            </button>
+            <button
+              onClick={() => { onTabChange('schedule'); onClose(); }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              <FaClock className="text-white/40" />
+              <span>Scheduled Tasks</span>
+            </button>
+            {(isModdedServer || isHybridServer) && (
+              <button
+                onClick={() => { onTabChange('mods'); onClose(); }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              >
+                <FaCube className="text-white/40" />
+                <span>Mods</span>
+              </button>
+            )}
+            {(isPluginServer || isHybridServer) && (
+              <button
+                onClick={() => { onTabChange('plugins'); onClose(); }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              >
+                <FaPlug className="text-white/40" />
+                <span>Plugins</span>
+              </button>
+            )}
+            <button
+              onClick={() => { onTabChange('players'); onClose(); }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              <FaUsers className="text-white/40" />
+              <span>Players</span>
+            </button>
+            <button
+              onClick={() => { onTabChange('worlds'); onClose(); }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              <FaHdd className="text-white/40" />
+              <span>Worlds</span>
+            </button>
+            <button
+              onClick={() => { onTabChange('graphs'); onClose(); }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              <FaChartArea className="text-white/40" />
+              <span>Resource Graphs</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ServerDetailsPage() {
   const { serverId, tab: urlTab = 'overview' } = useParams();
   const navigate = useNavigate();
@@ -109,18 +242,7 @@ export default function ServerDetailsPage() {
   const [actionLoading, setActionLoading] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
-  const [showMoreDropdown, setShowMoreDropdown] = useState(false);
-  const dropdownRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setShowMoreDropdown(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   const stats = useServerStats(serverId);
 
@@ -186,35 +308,26 @@ export default function ServerDetailsPage() {
       { id: 'console', label: t('tabs.console') || 'Console', icon: FaTerminal },
       { id: 'files', label: t('tabs.files'), icon: FaFolder },
       { id: 'config', label: t('tabs.config'), icon: FaCog },
-      { id: 'players', label: t('tabs.players'), icon: FaUsers },
-      { id: 'worlds', label: t('tabs.worlds'), icon: FaFolder },
-      { id: 'backup', label: t('tabs.backup'), icon: FaDownload },
-      { id: 'schedule', label: t('tabs.schedule'), icon: FaClock },
-      { id: 'graphs', label: 'Graphs', icon: FaChartArea },
-      { id: 'permissions', label: 'Permissions', icon: FaUserShield },
     ];
 
     // Add Mods tab for Fabric/Forge/NeoForge
     if (isModdedServer || isHybridServer) {
-      base.splice(3, 0, { id: 'mods', label: 'Mods', icon: FaCube });
-      base.splice(4, 0, { id: 'mod-manager', label: 'Mod Manager', icon: FaPuzzlePiece });
-      base.splice(5, 0, { id: 'client-mod-filter', label: 'Client Mod Filter', icon: FaShieldAlt });
+      base.push({ id: 'mods', label: 'Mods', icon: FaCube });
+      base.push({ id: 'mod-manager', label: 'Mod Manager', icon: FaPuzzlePiece });
+      base.push({ id: 'client-mod-filter', label: 'Client Mod Filter', icon: FaShieldAlt });
     }
 
     // Add Plugins tab for Paper/Purpur/Spigot and hybrid servers
     if (isPluginServer || isHybridServer) {
-      base.splice(3, 0, { id: 'plugins', label: 'Plugins', icon: FaPlug });
+      base.push({ id: 'plugins', label: 'Plugins', icon: FaPlug });
     }
 
     if (isSteam) {
-      const allowed = new Set(['overview', 'console', 'files', 'mods', 'backup', 'schedule', 'graphs', 'permissions']);
-      // Add mods tab for Steam games
+      const allowed = new Set(['overview', 'console', 'files', 'mods', 'backup', 'schedule', 'graphs', 'permissions', 'settings']);
       const steamBase = base.filter(tab => allowed.has(tab.id));
-      // Insert settings tab after files
       const filesIdx = steamBase.findIndex(t => t.id === 'files');
       if (filesIdx !== -1) {
-        steamBase.splice(filesIdx + 1, 0, { id: 'settings', label: 'Settings', icon: FaSlidersH });
-        // Insert mods tab after settings
+        steamBase.splice(filesIdx + 1, 0, { id: 'settings', label: 'Settings', icon: FaCog });
         if (!steamBase.find(t => t.id === 'mods')) {
           steamBase.splice(filesIdx + 2, 0, { id: 'mods', label: 'Mods', icon: FaCube });
         }
@@ -382,6 +495,14 @@ export default function ServerDetailsPage() {
               >
                 <FaTrash />
               </button>
+              {/* Settings gear icon */}
+              <button
+                onClick={() => setShowSettingsModal(true)}
+                className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                title={t('common.settings') || 'Settings'}
+              >
+                <FaCog className="text-lg" />
+              </button>
             </div>
           </div>
 
@@ -396,69 +517,29 @@ export default function ServerDetailsPage() {
             </div>
           )}
 
-          {/* Tabs */}
-          {(() => {
-            const primaryTabIds = ['overview', 'console', 'files', 'config'];
-            const primaryTabs = tabs.filter(t => primaryTabIds.includes(t.id));
-            const secondaryTabs = tabs.filter(t => !primaryTabIds.includes(t.id));
-            const isSecondaryActive = secondaryTabs.some(t => t.id === activeTab);
-            const activeSecondaryTab = secondaryTabs.find(t => t.id === activeTab);
-            const DropdownIcon = activeSecondaryTab ? activeSecondaryTab.icon : FaSlidersH;
+{/* Tabs */}
+            {(() => {
+              const primaryTabIds = ['overview', 'console', 'files', 'config'];
+              const primaryTabs = tabs.filter(t => primaryTabIds.includes(t.id));
 
-            return (
-              <div className="flex gap-1 mt-4 overflow-x-auto pb-1 select-none">
-                {primaryTabs.map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => handleTabChange(tab.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${activeTab === tab.id
-                      ? 'bg-white/10 text-white border-b-2 border-brand-500'
-                      : 'text-white/60 hover:text-white hover:bg-white/5'
-                      }`}
-                  >
-                    <tab.icon className="text-xs" />
-                    {tab.label}
-                  </button>
-                ))}
-                
-                {secondaryTabs.length > 0 && (
-                  <div className="relative" ref={dropdownRef}>
+              return (
+                <div className="flex gap-1 mt-4 overflow-x-auto pb-1 select-none">
+                  {primaryTabs.map(tab => (
                     <button
-                      onClick={() => setShowMoreDropdown(!showMoreDropdown)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${isSecondaryActive
-                        ? 'bg-white/10 text-white border-b-2 border-brand-500 font-medium'
+                      key={tab.id}
+                      onClick={() => handleTabChange(tab.id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${activeTab === tab.id
+                        ? 'bg-white/10 text-white border-b-2 border-brand-500'
                         : 'text-white/60 hover:text-white hover:bg-white/5'
                         }`}
                     >
-                      <DropdownIcon className="text-xs" />
-                      {isSecondaryActive ? activeSecondaryTab.label : 'More...'}
-                      <span className="text-[10px] opacity-60 ml-0.5">▼</span>
+                      <tab.icon className="text-xs" />
+                      {tab.label}
                     </button>
-                    {showMoreDropdown && (
-                      <div className="absolute left-0 md:left-auto md:right-0 mt-1 w-52 rounded-lg bg-[#151525] border border-white/10 shadow-2xl z-[100] py-1">
-                        {secondaryTabs.map(tab => (
-                          <button
-                            key={tab.id}
-                            onClick={() => {
-                              handleTabChange(tab.id);
-                              setShowMoreDropdown(false);
-                            }}
-                            className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left ${activeTab === tab.id
-                              ? 'bg-brand-500 text-white'
-                              : 'text-white/70 hover:text-white hover:bg-white/5'
-                              }`}
-                          >
-                            <tab.icon className="text-xs flex-shrink-0" />
-                            <span className="truncate">{tab.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+                  ))}
+                </div>
+              );
+            })()}
         </div>
       </div>
 
@@ -927,6 +1008,7 @@ export default function ServerDetailsPage() {
             onEdit={handleEditStart}
             initialPath={filesPath}
             onPathChange={setFilesPath}
+            onNavigateToBackup={() => handleTabChange('backup')}
           />
         )}
 
@@ -1041,6 +1123,19 @@ export default function ServerDetailsPage() {
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteModal(false)}
         isLoading={actionLoading === 'delete'}
+      />
+
+      {/* Settings Modal */}
+      <ConfirmModal
+        isOpen={showSettingsModal}
+        title={t('common.settings') || 'Settings'}
+        message={<SettingsModalContent server={server} serverId={serverId} typeVersionData={typeVersionData} isSteam={isSteam} onTabChange={handleTabChange} onClose={() => setShowSettingsModal(false)} />}
+        confirmText={t('common.close') || 'Close'}
+        cancelText={null}
+        onConfirm={() => setShowSettingsModal(false)}
+        onCancel={() => setShowSettingsModal(false)}
+        confirmVariant="primary"
+        size="lg"
       />
     </div>
   );

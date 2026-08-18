@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, HttpUrl
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pathlib import Path
 import tempfile
 import shutil
@@ -13,11 +13,19 @@ import json
 import uuid
 from urllib.parse import urlparse
 import os
+import re
 
 from auth import require_moderator
 from models import User
 from runtime_adapter import get_runtime_manager_or_docker
 from config import SERVERS_ROOT
+from client_mod_detector import (
+    load_client_only_config,
+    detect_client_only_mods,
+    remove_client_only_mods,
+    process_client_pack,
+    is_client_only_jar,
+)
 
 router = APIRouter(prefix="/modpacks", tags=["modpacks"])
 
@@ -195,6 +203,53 @@ def _purge_client_only_mods_legacy(target_dir: Path, push_event=lambda ev: None)
             push_event({"type": "progress", "step": "mods", "message": f"Moved {moved} client-only mods to mods-disabled-client/", "progress": 61})
     except Exception:
         pass
+
+
+def _process_client_pack(
+    target_dir: Path,
+    push_event=lambda ev: None,
+    mc_version: Optional[str] = None,
+    loader: Optional[str] = None,
+    loader_version: Optional[str] = None
+):
+    """
+    Process a client pack to make it server-ready:
+    1. Detect and remove client-only mods using comprehensive detection
+    2. Ensure server JAR is present (auto-download if needed)
+    3. Accept EULA
+    """
+    _push_event = lambda ev: push_event({**ev, "step": ev.get("step", "client_pack")})
+    
+    # Step 1: Process client-only mods
+    _push_event({"type": "progress", "step": "client_pack", "message": "Scanning for client-only mods...", "progress": 55})
+    try:
+        config = load_client_only_config()
+        result = process_client_pack(target_dir, push_event=_push_event)
+        if result["removed"] > 0:
+            _push_event({"type": "progress", "step": "client_pack", "message": f"Removed {result['removed']} client-only mods", "progress": 60})
+        else:
+            _push_event({"type": "progress", "step": "client_pack", "message": "No client-only mods detected", "progress": 60})
+    except Exception as e:
+        _push_event({"type": "progress", "step": "client_pack", "message": f"Client mod detection failed: {e}", "progress": 58})
+        # Fallback to legacy
+        try:
+            _purge_client_only_mods_legacy(target_dir, _push_event)
+        except Exception:
+            pass
+    
+    # Step 2: Ensure server JAR
+    _push_event({"type": "progress", "step": "client_pack", "message": "Ensuring server JAR...", "progress": 62})
+    try:
+        _ensure_server_jar(target_dir, loader, mc_version, loader_version, push_event=_push_event)
+    except Exception as e:
+        _push_event({"type": "progress", "step": "client_pack", "message": f"Server JAR setup failed: {e}", "progress": 64})
+    
+    # Step 3: Accept EULA
+    try:
+        (target_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
+    except Exception:
+        pass
+
 
 def _ensure_server_jar(
     target_dir: Path,
@@ -824,29 +879,40 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
             if not v:
                 raise RuntimeError("No versions available for this pack")
 
-            # Determine downloadable artifact (modrinth .mrpack or curseforge .zip server pack)
+            # Determine downloadable artifact
+            # First, try to find a server pack (is_server_pack=True)
             files = v.get("files") or []
             artifact = None
+            is_client_pack_fallback = False
+            
+            # Look for server pack first
             for f in files:
-                fn = (f.get("filename") or "").lower()
-                # Check for primary flag, .mrpack, .zip, or any file with a download URL
-                if f.get("primary") or fn.endswith(".mrpack") or fn.endswith(".zip") or not fn:
+                if f.get("is_server_pack") and f.get("url"):
                     artifact = f
                     break
-            if not artifact and files:
-                # Fallback: use first file that has a download URL
+            
+            # If no server pack, fall back to client pack (any file with URL)
+            if not artifact:
                 for f in files:
                     if f.get("url"):
                         artifact = f
+                        is_client_pack_fallback = True
                         break
+            
             if not artifact or not artifact.get("url"):
-                # Try to find any file with a URL as last resort
-                for f in files:
-                    if f.get("url"):
-                        artifact = f
-                        break
-                if not artifact or not artifact.get("url"):
-                    raise RuntimeError("No downloadable file for this version")
+                # Provide helpful error message with guidance
+                raise RuntimeError(
+                    "No downloadable file for this version.\n\n"
+                    "This modpack does not have a server pack available on CurseForge.\n"
+                    "Lynx can attempt to build a server pack from the client pack automatically.\n\n"
+                    "To enable this:\n"
+                    "1. Ensure a CurseForge API key is configured in Settings > Integrations\n"
+                    "2. The installer will download the client pack and convert it for server use\n"
+                    "3. Client-only mods (shaders, minimaps, etc.) will be moved to mods-disabled-client/\n"
+                    "4. The correct server JAR (Fabric/Forge/NeoForge) will be downloaded automatically\n\n"
+                    "Manual alternative: Download the client pack from CurseForge, extract it, "
+                    "remove client-only mods, add the server JAR, and use 'Import Server Pack' in Lynx."
+                )
 
             # Prepare server dir
             servers_root = SERVERS_ROOT
@@ -858,293 +924,182 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
             filename = artifact.get("filename") or "artifact.bin"
             url = artifact.get("url")
             lower_name = filename.lower()
-            if lower_name.endswith(".mrpack"):
-                _push_event(task_id, {"type": "progress", "step": "download", "message": "Downloading modpack (.mrpack)", "progress": 25})
-                artifact_path = tmpdir / filename
-                with requests.get(url, stream=True, timeout=60) as r:
-                    r.raise_for_status()
-                    with open(artifact_path, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-            elif lower_name.endswith(".zip"):
-                _push_event(task_id, {"type": "progress", "step": "download", "message": "Downloading server pack (.zip)", "progress": 25})
-                artifact_path = tmpdir / filename
-                with requests.get(url, stream=True, timeout=120) as r:
-                    r.raise_for_status()
-                    with open(artifact_path, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-            else:
-                raise RuntimeError("Unsupported modpack file type")
+            
+            _push_event(task_id, {"type": "progress", "step": "download", 
+                "message": f"Downloading {'client pack (fallback)' if is_client_pack_fallback else 'server pack'} (.zip)", 
+                "progress": 25})
+            
+            artifact_path = tmpdir / filename
+            with requests.get(url, stream=True, timeout=180) as r:
+                r.raise_for_status()
+                with open(artifact_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
 
             # Initialize variables used by both paths
             idx = None
             loader = None
             mc_version = None
             loader_version = None
-            if lower_name.endswith(".mrpack"):
-                # Extract overrides and parse Modrinth index
-                _push_event(task_id, {"type": "progress", "step": "extract", "message": "Extracting overrides and index", "progress": 40})
-                with zipfile.ZipFile(artifact_path, 'r') as z:
-                    names = z.namelist()
-                    # Extract overrides/
-                    for name in names:
-                        if name.startswith("overrides/") and not name.endswith("/"):
-                            dest = target_dir / name[len("overrides/"):]
-                            dest.parent.mkdir(parents=True, exist_ok=True)
-                            with z.open(name) as src, open(dest, 'wb') as dst:
-                                shutil.copyfileobj(src, dst)
-                    # Read index (modrinth.index.json or index.json)
-                    index_name = None
-                    for cand in ("modrinth.index.json", "index.json"):
-                        if cand in names:
-                            index_name = cand
-                            break
-                    if index_name:
-                        with z.open(index_name) as s:
-                            idx = json.load(s)
-            elif lower_name.endswith(".zip"):
-                # Extract entire server pack zip into target_dir
-                _push_event(task_id, {"type": "progress", "step": "extract", "message": "Unpacking server pack zip", "progress": 40})
-                extract_dir = tmpdir / "extracted"
-                extract_dir.mkdir(parents=True, exist_ok=True)
-                with zipfile.ZipFile(artifact_path, 'r') as z:
-                    z.extractall(extract_dir)
-                # If a single top-level dir, move contents; else move all
-                def _single_top_level_dir(base: Path):
-                    entries = [p for p in base.iterdir()]
-                    if len(entries) == 1 and entries[0].is_dir():
-                        return entries[0]
-                    return None
-                src_dir = _single_top_level_dir(extract_dir) or extract_dir
-                # Move contents into target_dir
-                for p in src_dir.iterdir():
-                    dest = target_dir / p.name
-                    if p.is_dir():
-                        shutil.move(str(p), str(dest))
-                    else:
-                        target_dir.mkdir(parents=True, exist_ok=True)
-                        shutil.move(str(p), str(dest))
-                # If overrides/ exists, merge its contents into root and remove folder
-                for ov_name in ("overrides", "server-overrides"):
-                    ov_dir = target_dir / ov_name
-                    if ov_dir.exists() and ov_dir.is_dir():
-                        for root, dirs, files in os.walk(ov_dir):
-                            rel = Path(root).relative_to(ov_dir)
-                            out_dir = target_dir / rel
-                            out_dir.mkdir(parents=True, exist_ok=True)
-                            for fn in files:
-                                srcf = Path(root) / fn
-                                shutil.move(str(srcf), str(out_dir / fn))
-                        try:
-                            shutil.rmtree(ov_dir, ignore_errors=True)
-                        except Exception:
-                            pass
-                # If manifest.json exists, use CurseForge API to download listed mods into mods/
-                manifest_path = None
-                for cand in (target_dir / "manifest.json",):
-                    if cand.exists():
-                        manifest_path = cand
-                        break
-                # also search one-level deep if not found
-                if not manifest_path:
-                    for child in target_dir.iterdir():
-                        if child.is_dir() and (child / "manifest.json").exists():
-                            manifest_path = child / "manifest.json"
-                            break
-                if manifest_path and manifest_path.exists():
+            
+            # Extract the zip
+            _push_event(task_id, {"type": "progress", "step": "extract", "message": "Unpacking modpack zip", "progress": 40})
+            extract_dir = tmpdir / "extracted"
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(artifact_path, 'r') as z:
+                z.extractall(extract_dir)
+            
+            # If a single top-level dir, move contents; else move all
+            def _single_top_level_dir(base: Path):
+                entries = [p for p in base.iterdir()]
+                if len(entries) == 1 and entries[0].is_dir():
+                    return entries[0]
+                return None
+            src_dir = _single_top_level_dir(extract_dir) or extract_dir
+            # Move contents into target_dir
+            for p in src_dir.iterdir():
+                dest = target_dir / p.name
+                if p.is_dir():
+                    shutil.move(str(p), str(dest))
+                else:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(p), str(dest))
+            
+            # If overrides/ exists, merge its contents into root and remove folder
+            for ov_name in ("overrides", "server-overrides"):
+                ov_dir = target_dir / ov_name
+                if ov_dir.exists() and ov_dir.is_dir():
+                    for root, dirs, files in os.walk(ov_dir):
+                        rel = Path(root).relative_to(ov_dir)
+                        out_dir = target_dir / rel
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                        for fn in files:
+                            srcf = Path(root) / fn
+                            shutil.move(str(srcf), str(out_dir / fn))
                     try:
-                        with open(manifest_path, 'r', encoding='utf-8') as f:
-                            mani = json.load(f)
-                        # Derive loader/minecraft version
-                        mc = mani.get("minecraft", {})
-                        mv = mc.get("version")
-                        if isinstance(mv, str):
-                            mc_version = mv
-                        mls = mc.get("modLoaders") or []
-                        if isinstance(mls, list) and mls:
-                            # Scan all entries, prefer NeoForge > Forge > Fabric
-                            preferred = ["neoforge", "forge", "fabric"]
-                            for pref in preferred:
-                                for entry in mls:
-                                    mid = str((entry or {}).get("id") or "")
-                                    mid_l = mid.lower()
-                                    if pref == "neoforge" and (mid_l.startswith("neoforge") or mid_l == "neoforge"):
-                                        loader = "neoforge"
-                                        try:
-                                            loader_version = mid.split("-", 1)[1]
-                                        except Exception:
-                                            pass
-                                        break
-                                    if pref == "forge" and (mid_l.startswith("forge") or mid_l == "forge" or ("forge" in mid_l and not mid_l.startswith("neo"))):
-                                        loader = "forge"
-                                        try:
-                                            loader_version = mid.split("-", 1)[1]
-                                        except Exception:
-                                            pass
-                                        break
-                                    if pref == "fabric" and (mid_l.startswith("fabric") or "fabric" in mid_l):
-                                        loader = "fabric"
-                                        try:
-                                            loader_version = mid.split("-", 1)[1]
-                                        except Exception:
-                                            pass
-                                        break
-                                if loader:
-                                    break
-                        files_list = mani.get("files") or []
-                        if files_list:
-                            from integrations_store import get_integration_key
-                            api_key = get_integration_key("curseforge")
-                            if not api_key:
-                                # Abort install early to avoid a broken server missing required dependencies
-                                raise RuntimeError("CurseForge API key not configured; cannot download listed mods from manifest.json")
-                            else:
-                                headers = {"x-api-key": api_key, "Accept": "application/json", "User-Agent": "minecraft-controller/1.0"}
-                                mods_dir = target_dir / "mods"
-                                mods_dir.mkdir(parents=True, exist_ok=True)
-                                total = len(files_list)
-                                done = 0
-                                for entry in files_list:
-                                    proj = entry.get("projectID") or entry.get("projectId")
-                                    fid = entry.get("fileID") or entry.get("fileId")
-                                    if not proj or not fid:
-                                        continue
-                                    try:
-                                        url_meta = f"https://api.curseforge.com/v1/mods/{proj}/files/{fid}"
-                                        rr = requests.get(url_meta, headers=headers, timeout=30)
-                                        rr.raise_for_status()
-                                        data = rr.json().get("data") or {}
-                                        # Skip client-only files on dedicated servers
-                                        try:
-                                            gv = [str(x).lower() for x in (data.get("gameVersions") or [])]
-                                            if ("client" in gv) and ("server" not in gv):
-                                                done += 1
-                                                pct = 55 + int((done/total) * 10)
-                                                _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Skipped client-only mod {proj}/{fid}", "progress": pct})
-                                                continue
-                                        except Exception:
-                                            pass
-                                        dl = data.get("downloadUrl")
-                                        out_name = data.get("fileName") or f"{proj}-{fid}.jar"
-                                        if dl:
-                                            with requests.get(dl, stream=True, timeout=120) as dr:
-                                                dr.raise_for_status()
-                                                with open(mods_dir / out_name, 'wb') as f2:
-                                                    for chunk in dr.iter_content(chunk_size=8192):
-                                                        if chunk:
-                                                            f2.write(chunk)
-                                        done += 1
-                                        pct = 55 + int((done/total) * 10)
-                                        _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Downloaded {done}/{total} mods", "progress": pct})
-                                    except Exception as de:
-                                        _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Failed mod {proj}/{fid}: {de}", "progress": 58})
-                                # After Mods download, remove client-only mods that slip through
-                                try:
-                                    _purge_client_only_mods(target_dir, push_event=lambda ev: _push_event(task_id, ev))
-                                except Exception:
-                                    pass
-                    except Exception as e:
-                        _push_event(task_id, {"type": "progress", "step": "mods", "message": f"manifest.json processing failed: {e}", "progress": 52})
+                        shutil.rmtree(ov_dir, ignore_errors=True)
+                    except Exception:
+                        pass
 
-                # After processing manifest and overrides, ensure a server jar/installer is present
+            # If manifest.json exists, use CurseForge API to download listed mods into mods/
+            manifest_path = None
+            for cand in (target_dir / "manifest.json",):
+                if cand.exists():
+                    manifest_path = cand
+                    break
+            # also search one-level deep if not found
+            if not manifest_path:
+                for child in target_dir.iterdir():
+                    if child.is_dir() and (child / "manifest.json").exists():
+                        manifest_path = child / "manifest.json"
+                        break
+            
+            if manifest_path and manifest_path.exists():
+                try:
+                    with open(manifest_path, 'r', encoding='utf-8') as f:
+                        mani = json.load(f)
+                    # Derive loader/minecraft version
+                    mc = mani.get("minecraft", {})
+                    mv = mc.get("version")
+                    if isinstance(mv, str):
+                        mc_version = mv
+                    mls = mc.get("modLoaders") or []
+                    if isinstance(mls, list) and mls:
+                        # Scan all entries, prefer NeoForge > Forge > Fabric
+                        preferred = ["neoforge", "forge", "fabric"]
+                        for pref in preferred:
+                            for entry in mls:
+                                mid = str((entry or {}).get("id") or "")
+                                mid_l = mid.lower()
+                                if pref == "neoforge" and (mid_l.startswith("neoforge") or mid_l == "neoforge"):
+                                    loader = "neoforge"
+                                    try:
+                                        loader_version = mid.split("-", 1)[1]
+                                    except Exception:
+                                        pass
+                                    break
+                                if pref == "forge" and (mid_l.startswith("forge") or mid_l == "forge" or ("forge" in mid_l and not mid_l.startswith("neo"))):
+                                    loader = "forge"
+                                    try:
+                                        loader_version = mid.split("-", 1)[1]
+                                    except Exception:
+                                        pass
+                                    break
+                                if pref == "fabric" and (mid_l.startswith("fabric") or "fabric" in mid_l):
+                                    loader = "fabric"
+                                    try:
+                                        loader_version = mid.split("-", 1)[1]
+                                    except Exception:
+                                        pass
+                                    break
+                            if loader:
+                                break
+                    files_list = mani.get("files") or []
+                    if files_list:
+                        from integrations_store import get_integration_key
+                        api_key = get_integration_key("curseforge")
+                        if not api_key:
+                            # Abort install early to avoid a broken server missing required dependencies
+                            raise RuntimeError("CurseForge API key not configured; cannot download listed mods from manifest.json")
+                        else:
+                            headers = {"x-api-key": api_key, "Accept": "application/json", "User-Agent": "minecraft-controller/1.0"}
+                            mods_dir = target_dir / "mods"
+                            mods_dir.mkdir(parents=True, exist_ok=True)
+                            total = len(files_list)
+                            done = 0
+                            for entry in files_list:
+                                proj = entry.get("projectID") or entry.get("projectId")
+                                fid = entry.get("fileID") or entry.get("fileId")
+                                if not proj or not fid:
+                                    continue
+                                try:
+                                    url_meta = f"https://api.curseforge.com/v1/mods/{proj}/files/{fid}"
+                                    rr = requests.get(url_meta, headers=headers, timeout=30)
+                                    rr.raise_for_status()
+                                    data = rr.json().get("data") or {}
+                                    # Skip client-only files on dedicated servers
+                                    try:
+                                        gv = [str(x).lower() for x in (data.get("gameVersions") or [])]
+                                        if ("client" in gv) and ("server" not in gv):
+                                            done += 1
+                                            pct = 55 + int((done/total) * 10)
+                                            _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Skipped client-only mod {proj}/{fid}", "progress": pct})
+                                            continue
+                                    except Exception:
+                                        pass
+                                    dl = data.get("downloadUrl")
+                                    out_name = data.get("fileName") or f"{proj}-{fid}.jar"
+                                    if dl:
+                                        with requests.get(dl, stream=True, timeout=120) as dr:
+                                            dr.raise_for_status()
+                                            with open(mods_dir / out_name, 'wb') as f2:
+                                                for chunk in dr.iter_content(chunk_size=8192):
+                                                    if chunk:
+                                                        f2.write(chunk)
+                                    done += 1
+                                    pct = 55 + int((done/total) * 10)
+                                    _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Downloaded {done}/{total} mods", "progress": pct})
+                                except Exception as de:
+                                    _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Failed mod {proj}/{fid}: {de}", "progress": 58})
+                except Exception as e:
+                    _push_event(task_id, {"type": "progress", "step": "mods", "message": f"manifest.json processing failed: {e}", "progress": 52})
+
+            # If we used client pack fallback, process it to make server-ready
+            if is_client_pack_fallback:
+                _push_event(task_id, {"type": "progress", "step": "client_pack", "message": "Converting client pack to server pack...", "progress": 50})
+                try:
+                    _process_client_pack(target_dir, push_event=lambda ev: _push_event(task_id, ev), 
+                                       mc_version=mc_version, loader=loader, loader_version=loader_version)
+                except Exception as e:
+                    _push_event(task_id, {"type": "progress", "step": "client_pack", "message": f"Client pack processing failed: {e}", "progress": 55})
+                    # Continue anyway - server creation might still work
+            else:
+                # For server pack, just ensure server JAR
                 try:
                     _ensure_server_jar(target_dir, loader, mc_version, loader_version, push_event=lambda ev: _push_event(task_id, ev))
                 except Exception as e:
                     _push_event(task_id, {"type": "progress", "step": "server", "message": f"Server jar check failed: {e}", "progress": 64})
-
-            # Derive loader/mc_version (for .mrpack path only). Do not clobber if already known.
-            if isinstance(idx, dict):
-                deps = idx.get("dependencies", {})
-                if mc_version is None:
-                    mc_version = deps.get("minecraft") or mc_version
-                if loader is None:
-                    if deps.get("fabric-loader"):
-                        loader = "fabric"
-                        loader_version = deps.get("fabric-loader")
-                    elif deps.get("neoforge"):
-                        loader = "neoforge"
-                        loader_version = deps.get("neoforge")
-                    elif deps.get("forge"):
-                        loader = "forge"
-                        loader_version = deps.get("forge")
-
-            # Download files listed in index (mods/config/etc.) for .mrpack
-            # Cache Modrinth project server_side info to avoid repeated lookups
-            modrinth_side_cache: dict[str, str] = {}
-            if isinstance(idx, dict) and isinstance(idx.get("files"), list):
-                _push_event(task_id, {"type": "progress", "step": "mods", "message": "Downloading mods and files", "progress": 55})
-                for entry in idx["files"]:
-                    path = entry.get("path")
-                    downloads = entry.get("downloads") or []
-                    if not path or not downloads:
-                        continue
-                    # Skip client-only files if env marks server unsupported
-                    env = entry.get("env") or {}
-                    if isinstance(env, dict) and str(env.get("server", "")).lower() == "unsupported":
-                        continue
-                    # If env missing, best-effort: Detect Modrinth project from URL and skip if server_side is unsupported
-                    url0 = downloads[0]
-                    try:
-                        if isinstance(url0, str) and "cdn.modrinth.com/data/" in url0:
-                            import re as _re
-                            m = _re.search(r"cdn\.modrinth\.com/data/([^/]+)/versions/", url0)
-                            if m:
-                                proj_id = m.group(1)
-                                side = modrinth_side_cache.get(proj_id)
-                                if side is None:
-                                    pr = requests.get(f"https://api.modrinth.com/v2/project/{proj_id}", timeout=15)
-                                    if pr.ok:
-                                        side = (pr.json().get("server_side") or "").lower()
-                                        modrinth_side_cache[proj_id] = side
-                                if side == "unsupported":
-                                    _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Skipped client-only mod (Modrinth) for {path}", "progress": 56})
-                                    continue
-                    except Exception:
-                        pass
-                    dest = target_dir / path
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    try:
-                        with requests.get(url0, stream=True, timeout=60) as r:
-                            r.raise_for_status()
-                            with open(dest, 'wb') as f:
-                                for chunk in r.iter_content(chunk_size=8192):
-                                    if chunk:
-                                        f.write(chunk)
-                        # Verify hashes if provided
-                        hashes = entry.get("hashes") or {}
-                        import hashlib
-                        if isinstance(hashes, dict):
-                            if hashes.get("sha512"):
-                                h = hashlib.sha512()
-                                with open(dest, 'rb') as f:
-                                    while True:
-                                        data = f.read(8192)
-                                        if not data:
-                                            break
-                                        h.update(data)
-                                if h.hexdigest().lower() != str(hashes["sha512"]).lower():
-                                    raise ValueError(f"SHA512 mismatch for {path}")
-                            elif hashes.get("sha1"):
-                                h = hashlib.sha1()
-                                with open(dest, 'rb') as f:
-                                    while True:
-                                        data = f.read(8192)
-                                        if not data:
-                                            break
-                                        h.update(data)
-                                if h.hexdigest().lower() != str(hashes["sha1"]).lower():
-                                    raise ValueError(f"SHA1 mismatch for {path}")
-                    except Exception as de:
-                        # Continue even if a mod fails; log event
-                        _push_event(task_id, {"type": "progress", "step": "mods", "message": f"Failed to fetch {path}: {de}", "progress": 58})
-            # After Mods download, remove client-only mods that slip through
-            try:
-                _purge_client_only_mods(target_dir, push_event=lambda ev: _push_event(task_id, ev))
-            except Exception:
-                pass
 
             dm = get_docker_manager()
             def normalize_ram(s: str) -> str:
@@ -1157,86 +1112,42 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                 except Exception:
                     return "2048M"
 
-            # Two paths: .mrpack => create_server; .zip => create_server_from_existing
-            if lower_name.endswith(".mrpack"):
-                # Fallbacks if not found earlier
-                if not loader:
-                    loaders = v.get("loaders") or []
-                    for cand in ("neoforge", "forge", "fabric"):
-                        if cand in [l.lower() for l in loaders]:
-                            loader = cand
-                            break
-                if not mc_version:
-                    games = v.get("game_versions") or []
-                    mc_version = games[0] if games else "1.21"
-                if not loader:
-                    loader = "paper"
+            # Ensure EULA accepted
+            try:
+                (target_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
+            except Exception:
+                pass
 
-                _push_event(task_id, {"type": "progress", "step": "prepare", "message": f"Preparing {loader} server", "progress": 70})
+            _push_event(task_id, {"type": "progress", "step": "prepare", "message": "Preparing server files", "progress": 70})
+            
+            min_ram = req.min_ram or "2048M"
+            max_ram = req.max_ram or "4096M"
+            min_ram_n = normalize_ram(min_ram)
+            max_ram_n = normalize_ram(max_ram)
 
-                # Ensure server JAR exists for .mrpack - auto-download if missing
-                try:
-                    _ensure_server_jar(target_dir, loader, mc_version, loader_version, push_event=lambda ev: _push_event(task_id, ev))
-                except Exception as e:
-                    _push_event(task_id, {"type": "progress", "step": "server", "message": f"Server jar auto-download: {e}", "progress": 72})
-
-                min_ram = req.min_ram or ("2048M" if loader != "paper" else "1024M")
-                max_ram = req.max_ram or ("4096M" if loader != "paper" else "2048M")
-                min_ram_n = normalize_ram(min_ram)
-                max_ram_n = normalize_ram(max_ram)
-
-                _push_event(task_id, {"type": "progress", "step": "create", "message": "Creating server", "progress": 85})
-
-                result = dm.create_server(
-                    req.name,
-                    loader,
-                    mc_version or "1.21",
-                    req.host_port,
-                    loader_version,
-                    min_ram_n,
-                    max_ram_n,
-                    None,
-                    extra_labels={
-                        "mc.modpack.provider": req.provider,
-                        "mc.modpack.id": str(req.pack_id),
-                        "mc.modpack.version_id": str(v.get("id")),
-                    }
-                )
-            else:
-                # .zip server pack path
-                _push_event(task_id, {"type": "progress", "step": "prepare", "message": "Preparing existing server files", "progress": 70})
-                # Ensure EULA accepted
-                try:
-                    (target_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
-                except Exception:
-                    pass
-                min_ram = req.min_ram or "2048M"
-                max_ram = req.max_ram or "4096M"
-                min_ram_n = normalize_ram(min_ram)
-                max_ram_n = normalize_ram(max_ram)
-
-                _push_event(task_id, {"type": "progress", "step": "create", "message": "Creating server container", "progress": 85})
-                # Try to pass loader/version to runtime for Java selection if known
-                extra_env = {}
-                try:
-                    if loader:
-                        extra_env["SERVER_TYPE"] = loader
-                    if mc_version:
-                        extra_env["SERVER_VERSION"] = mc_version
-                except Exception:
-                    pass
-                result = dm.create_server_from_existing(
-                    name=req.name,
-                    host_port=req.host_port,
-                    min_ram=min_ram_n,
-                    max_ram=max_ram_n,
-                    extra_env=extra_env or None,
-                    extra_labels={
-                        "mc.modpack.provider": req.provider,
-                        "mc.modpack.id": str(req.pack_id),
-                        "mc.modpack.version_id": str(v.get("id")),
-                    }
-                )
+            _push_event(task_id, {"type": "progress", "step": "create", "message": "Creating server container", "progress": 85})
+            # Try to pass loader/version to runtime for Java selection if known
+            extra_env = {}
+            try:
+                if loader:
+                    extra_env["SERVER_TYPE"] = loader
+                if mc_version:
+                    extra_env["SERVER_VERSION"] = mc_version
+            except Exception:
+                pass
+            result = dm.create_server_from_existing(
+                name=req.name,
+                host_port=req.host_port,
+                min_ram=min_ram_n,
+                max_ram=max_ram_n,
+                extra_env=extra_env or None,
+                extra_labels={
+                    "mc.modpack.provider": req.provider,
+                    "mc.modpack.id": str(req.pack_id),
+                    "mc.modpack.version_id": str(v.get("id")),
+                    "mc.modpack.client_pack_fallback": "true" if is_client_pack_fallback else "false",
+                }
+            )
 
             _push_event(task_id, {"type": "done", "message": "Installation complete", "server": result})
         except Exception as e:
