@@ -218,21 +218,32 @@ MAX_RAM="${MAX_RAM:-2G}"
 MEM_ARGS="-Xmx${MAX_RAM} -Xms${MIN_RAM}"
 JAVA_OPTS="${JAVA_OPTS:-}"
 
-# ============ NEU: Bereinigung von JAVA_OPTS ============
+# ============ Bereinigung von JAVA_OPTS ============
 EXTRA_SERVER_ARGS=""
+
 # 1. Entferne versehentlich enthaltene Java-Binärnamen (java, java21, etc.)
 if echo "$JAVA_OPTS" | grep -qE '(^| )java[0-9]*( |$)'; then
   echo "WARNING: JAVA_OPTS contains 'java' executable; cleaning..."
   JAVA_OPTS=$(echo "$JAVA_OPTS" | sed -E 's/(^| )java[0-9]*( |$)/ /g' | xargs)
 fi
 
-# 2. Extrahiere alles nach '-jar' (inkl. --safeMode) in EXTRA_SERVER_ARGS
-if echo "$JAVA_OPTS" | grep -q ' -jar '; then
-  echo "WARNING: JAVA_OPTS contains '-jar'; moving to server args..."
-  EXTRA_SERVER_ARGS=$(echo "$JAVA_OPTS" | sed -E 's/.* -jar //')
-  JAVA_OPTS=$(echo "$JAVA_OPTS" | sed -E 's/ -jar .*//')
-  echo "DEBUG: Extracted server args: $EXTRA_SERVER_ARGS"
+# 2. Extrahiere NUR Flags wie --safeMode aus JAVA_OPTS
+if echo "$JAVA_OPTS" | grep -q ' --safeMode'; then
+  echo "WARNING: JAVA_OPTS contains '--safeMode'; moving to server args..."
+  EXTRA_SERVER_ARGS="--safeMode"
+  JAVA_OPTS=$(echo "$JAVA_OPTS" | sed -E 's/ --safeMode//')
 fi
+
+# 3. Entferne -jar und den JAR-Namen vollständig aus JAVA_OPTS (wird separat übergeben)
+if echo "$JAVA_OPTS" | grep -q ' -jar '; then
+  echo "WARNING: JAVA_OPTS contains '-jar'; removing it (will be passed separately)..."
+  JAVA_OPTS=$(echo "$JAVA_OPTS" | sed -E 's/ -jar server\.jar//')
+  JAVA_OPTS=$(echo "$JAVA_OPTS" | sed -E 's/ -jar [^ ]*\.jar//')
+  JAVA_OPTS=$(echo "$JAVA_OPTS" | xargs)  # Trim whitespace
+fi
+
+echo "DEBUG: Cleaned JAVA_OPTS: $JAVA_OPTS"
+echo "DEBUG: Extra server args: $EXTRA_SERVER_ARGS"
 # ========================================================
 
 ALL_JAVA_ARGS="$MEM_ARGS $JAVA_OPTS"
