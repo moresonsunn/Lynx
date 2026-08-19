@@ -707,9 +707,11 @@ def create_server(req: ServerCreateRequest, current_user: User = Depends(require
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 
+from server_permissions import require_server_permission
+
 @app.post("/servers/{container_id}/start")
 @app.post("/api/servers/{container_id}/start")
-def start_server(container_id: str, current_user: User = Depends(require_moderator)):
+def start_server(container_id: str, current_user: User = Depends(require_server_permission("operate"))):
     try:
         return get_docker_manager().start_server(container_id)
     except Exception as e:
@@ -717,7 +719,7 @@ def start_server(container_id: str, current_user: User = Depends(require_moderat
 
 @app.post("/servers/{container_id}/stop")
 @app.post("/api/servers/{container_id}/stop")
-def stop_server(container_id: str, current_user: User = Depends(require_moderator)):
+def stop_server(container_id: str, current_user: User = Depends(require_server_permission("operate"))):
     try:
         return get_docker_manager().stop_server(container_id)
     except Exception as e:
@@ -725,7 +727,7 @@ def stop_server(container_id: str, current_user: User = Depends(require_moderato
 
 @app.post("/servers/{container_id}/restart")
 @app.post("/api/servers/{container_id}/restart")
-def restart_server(container_id: str, current_user: User = Depends(require_moderator)):
+def restart_server(container_id: str, current_user: User = Depends(require_server_permission("operate"))):
     try:
         return get_docker_manager().restart_server(container_id)
     except Exception as e:
@@ -741,7 +743,7 @@ class MkdirRequest(BaseModel):
 
 @app.post("/servers/{container_id}/power")
 @app.post("/api/servers/{container_id}/power")
-def power_server(container_id: str, payload: PowerSignal, current_user: User = Depends(require_moderator)):
+def power_server(container_id: str, payload: PowerSignal, current_user: User = Depends(require_server_permission("operate"))):
     try:
         signal = payload.signal.lower().strip()
         dm = get_docker_manager()
@@ -762,7 +764,7 @@ def power_server(container_id: str, payload: PowerSignal, current_user: User = D
 
 @app.get("/servers/{container_id}/state")
 @app.get("/api/servers/{container_id}/state")
-def get_server_state(container_id: str, current_user: User = Depends(require_auth)):
+def get_server_state(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     """Lightweight container state with phase + uptime heuristic.
 
     Phases:
@@ -830,7 +832,7 @@ def get_server_state(container_id: str, current_user: User = Depends(require_aut
 
 @app.get("/servers/{container_id}/resources")
 @app.get("/api/servers/{container_id}/resources")
-def get_server_resources(container_id: str, current_user: User = Depends(require_auth)):
+def get_server_resources(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     try:
         dm = get_docker_manager()
         stats = dm.get_server_stats(container_id)
@@ -869,7 +871,7 @@ def get_server_resources(container_id: str, current_user: User = Depends(require
 
 @app.delete("/servers/{container_id}")
 @app.delete("/api/servers/{container_id}")
-def delete_server(container_id: str, current_user: User = Depends(require_moderator)):
+def delete_server(container_id: str, current_user: User = Depends(require_server_permission("manage"))):
     try:
         result = get_docker_manager().delete_server(container_id)
         if result.get("error") and not result.get("deleted"):
@@ -885,7 +887,7 @@ def delete_server(container_id: str, current_user: User = Depends(require_modera
 # Simple directory creation endpoint for Files panel
 @app.post("/servers/{name}/mkdir")
 @app.post("/api/servers/{name}/mkdir")
-def mkdir_path(name: str, req: MkdirRequest, current_user: User = Depends(require_moderator)):
+def mkdir_path(name: str, req: MkdirRequest, current_user: User = Depends(require_server_permission("manage"))):
     try:
         base = SERVERS_ROOT.resolve() / name
         target = (base / req.path).resolve()
@@ -902,7 +904,7 @@ def mkdir_path(name: str, req: MkdirRequest, current_user: User = Depends(requir
 
 @app.post("/servers/{container_id}/command")
 @app.post("/api/servers/{container_id}/command")
-def send_command(container_id: str, command: str = Body(..., embed=True)):
+def send_command(container_id: str, command: str = Body(..., embed=True), current_user: User = Depends(require_server_permission("operate"))):
     try:
         if not command or not command.strip():
             raise HTTPException(status_code=400, detail="Command cannot be empty")
@@ -914,7 +916,7 @@ def send_command(container_id: str, command: str = Body(..., embed=True)):
 
 @app.get("/servers/{container_id}/stats")
 @app.get("/api/servers/{container_id}/stats")
-def get_server_stats(container_id: str, current_user: User = Depends(require_auth)):
+def get_server_stats(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     try:
         return get_docker_manager().get_server_stats(container_id)
     except Exception as e:
@@ -926,7 +928,7 @@ def get_server_stats_history(
     container_id: str,
     hours: int = Query(1, ge=1, le=168),
     resolution: int = Query(0, ge=0, le=60),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(require_server_permission("view")),
 ):
     """Return time-series stats for a server. resolution=0 for raw, else N-minute buckets."""
     try:
@@ -947,7 +949,7 @@ def get_bulk_stats(ttl: int = Query(3, ge=0, le=60), current_user: User = Depend
 
 @app.get("/servers/{container_id}/info")
 @app.get("/api/servers/{container_id}/info")
-def get_server_info(container_id: str, request: Request):
+def get_server_info(container_id: str, request: Request, current_user: User = Depends(require_server_permission("view"))):
     try:
         info = get_docker_manager().get_server_info(container_id)
         # Attach top-level directory snapshot and common subdirs for instant files panel
@@ -1048,7 +1050,7 @@ async def stream_servers(request: Request, token: str | None = Query(None)):
 
 @app.get("/servers/{container_id}/console")
 @app.get("/api/servers/{container_id}/console")
-def get_server_console(container_id: str, tail: int = 100, current_user: User = Depends(require_auth)):
+def get_server_console(container_id: str, tail: int = 100, current_user: User = Depends(require_server_permission("view"))):
     try:
         return get_docker_manager().get_server_terminal(container_id, tail=tail)
     except Exception as e:
@@ -1058,7 +1060,7 @@ def get_server_console(container_id: str, tail: int = 100, current_user: User = 
 
 @app.get("/servers/{name}/files")
 @app.get("/api/servers/{name}/files")
-def files_list(name: str, request: Request, path: str = ".", current_user: User = Depends(require_auth)):
+def files_list(name: str, request: Request, path: str = ".", current_user: User = Depends(require_server_permission("view"))):
     # Compute a simple ETag based on directory mtime to enable client caching
     try:
         from pathlib import Path
@@ -1095,7 +1097,7 @@ def files_list(name: str, request: Request, path: str = ".", current_user: User 
 
 @app.get("/servers/{name}/file")
 @app.get("/api/servers/{name}/file")
-def file_read(name: str, request: Request, path: str, current_user: User = Depends(require_auth)):
+def file_read(name: str, request: Request, path: str, current_user: User = Depends(require_server_permission("view"))):
     # ETag based on file size and mtime
     try:
         from pathlib import Path
@@ -1122,19 +1124,19 @@ def file_read(name: str, request: Request, path: str, current_user: User = Depen
 
 @app.post("/servers/{name}/file")
 @app.post("/api/servers/{name}/file")
-def file_write(name: str, path: str, content: str = Form(""), current_user: User = Depends(require_moderator)):
+def file_write(name: str, path: str, content: str = Form(""), current_user: User = Depends(require_server_permission("manage"))):
     fm_write_file(name, path, content)
     return {"ok": True}
 
 @app.delete("/servers/{name}/file")
 @app.delete("/api/servers/{name}/file")
-def file_delete(name: str, path: str, current_user: User = Depends(require_moderator)):
+def file_delete(name: str, path: str, current_user: User = Depends(require_server_permission("manage"))):
     fm_delete_path(name, path)
     return {"ok": True}
 
 @app.get("/servers/{name}/download")
 @app.get("/api/servers/{name}/download")
-def file_or_folder_download(name: str, path: str = Query("."), current_user: User = Depends(require_auth)):
+def file_or_folder_download(name: str, path: str = Query("."), current_user: User = Depends(require_server_permission("view"))):
     """
     Download a single file directly, or if a directory is requested, return a zipped archive on the fly.
     """
@@ -1163,7 +1165,7 @@ async def file_upload(
     name: str,
     path: str = Query("."),
     file: UploadFile = File(...),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(require_server_permission("manage")),
 ):
     if not file:
         raise HTTPException(status_code=400, detail="No file provided")
@@ -1206,13 +1208,13 @@ class ServerRenameRequest(BaseModel):
 
 @app.post("/servers/{name}/rename")
 @app.post("/api/servers/{name}/rename")
-def file_rename(name: str, req: FileRenameRequest, current_user: User = Depends(require_moderator)):
+def file_rename(name: str, req: FileRenameRequest, current_user: User = Depends(require_server_permission("manage"))):
     fm_rename_path(name, req.src, req.dest)
     return {"ok": True}
 
 @app.post("/servers/{name}/rename-server")
 @app.post("/api/servers/{name}/rename-server")
-def rename_server(name: str, req: ServerRenameRequest, current_user: User = Depends(require_moderator)):
+def rename_server(name: str, req: ServerRenameRequest, current_user: User = Depends(require_server_permission("manage"))):
     """Rename an existing server (directory + container)."""
     dm = get_docker_manager()
     try:
@@ -1227,7 +1229,7 @@ async def files_upload(
     name: str,
     path: str = Form("."),
     files: list[UploadFile] = File(...),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(require_server_permission("manage")),
 ):
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
@@ -1244,29 +1246,29 @@ class UnzipRequest(BaseModel):
 
 @app.post("/servers/{name}/zip")
 @app.post("/api/servers/{name}/zip")
-def make_zip(name: str, req: ZipRequest, current_user: User = Depends(require_moderator)):
+def make_zip(name: str, req: ZipRequest, current_user: User = Depends(require_server_permission("manage"))):
     archive_rel = fm_zip_path(name, req.path, req.dest)
     return {"ok": True, "archive": archive_rel}
 
 @app.post("/servers/{name}/unzip")
 @app.post("/api/servers/{name}/unzip")
-def do_unzip(name: str, req: UnzipRequest, current_user: User = Depends(require_moderator)):
+def do_unzip(name: str, req: UnzipRequest, current_user: User = Depends(require_server_permission("manage"))):
     dest_rel = fm_unzip_path(name, req.path, req.dest)
     return {"ok": True, "dest": dest_rel}
 
 @app.get("/servers/{name}/backups")
 @app.get("/api/servers/{name}/backups")
-def backups_list(name: str, current_user: User = Depends(require_auth)):
+def backups_list(name: str, current_user: User = Depends(require_server_permission("view"))):
     return {"items": bk_list(name)}
 
 @app.post("/servers/{name}/backups")
 @app.post("/api/servers/{name}/backups")
-def backups_create(name: str, current_user: User = Depends(require_moderator)):
+def backups_create(name: str, current_user: User = Depends(require_server_permission("manage"))):
     return bk_create(name)
 
 @app.post("/servers/{name}/restore")
 @app.post("/api/servers/{name}/restore")
-def backups_restore(name: str, file: str, current_user: User = Depends(require_moderator)):
+def backups_restore(name: str, file: str, current_user: User = Depends(require_server_permission("manage"))):
     bk_restore(name, file)
     return {"ok": True}
 
@@ -1310,14 +1312,14 @@ def api_test_remote_config(current_user: User = Depends(require_admin)):
 # Alias endpoints for frontend compatibility
 @app.get("/api/servers/{name}/schedules")
 @app.get("/servers/{name}/schedules")
-def api_server_schedules(name: str, current_user: User = Depends(require_auth)):
+def api_server_schedules(name: str, current_user: User = Depends(require_server_permission("view"))):
     """Get backup schedules for a specific server (alias for /api/backup-schedules/{name})."""
     return {"schedules": get_schedule(name)}
 
 
 @app.get("/api/servers/{name}/worlds")
 @app.get("/servers/{name}/worlds")
-def api_server_worlds(name: str, current_user: User = Depends(require_auth)):
+def api_server_worlds(name: str, current_user: User = Depends(require_server_permission("view"))):
     """Get worlds for a specific server (alias for /worlds/{name})."""
     from world_routes import _server_dir, _detect_world_dirs
     server_dir = _server_dir(name)
@@ -1347,7 +1349,7 @@ def api_get_remote_config_alias(current_user: User = Depends(require_admin)):
 
 @app.get("/servers/{name}/players")
 @app.get("/api/servers/{name}/players")
-def players_list(name: str, container_id: str | None = Query(None), current_user: User = Depends(require_auth)):
+def players_list(name: str, container_id: str | None = Query(None), current_user: User = Depends(require_server_permission("view"))):
     """Return online players by querying the server via RCON 'list' command."""
     players = []
     online = 0
@@ -1395,7 +1397,7 @@ _CONFIG_PATTERNS = [
 
 @app.get("/servers/{name}/configs")
 @app.get("/api/servers/{name}/configs")
-def configs_list(name: str, current_user: User = Depends(require_auth)):
+def configs_list(name: str, current_user: User = Depends(require_server_permission("view"))):
     """Dynamically discover config files that actually exist in the server directory."""
     found = []
     try:
@@ -1480,7 +1482,7 @@ def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
 
 @app.post("/servers/{container_id}/java-version")
 @app.post("/api/servers/{container_id}/java-version")
-def set_server_java_version(container_id: str, request: dict = Body(...)):
+def set_server_java_version(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage"))):
     """Set the Java version for a server."""
     try:
         # Use the runtime manager abstraction (local or docker) to perform the update
@@ -1510,7 +1512,7 @@ def set_server_java_version(container_id: str, request: dict = Body(...)):
 
 @app.get("/servers/{container_id}/java-args")
 @app.get("/api/servers/{container_id}/java-args")
-def get_server_java_args(container_id: str):
+def get_server_java_args(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     try:
         rm = get_runtime_manager_or_docker()
         info = rm.get_server_info(container_id)
@@ -1520,7 +1522,7 @@ def get_server_java_args(container_id: str):
 
 @app.post("/servers/{container_id}/java-args")
 @app.post("/api/servers/{container_id}/java-args")
-def set_server_java_args(container_id: str, request: dict = Body(...)):
+def set_server_java_args(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage"))):
     raw_args = request.get("java_args") if isinstance(request, dict) else ""
     if raw_args is None:
         raw_args = ""
@@ -1552,7 +1554,7 @@ def set_server_java_args(container_id: str, request: dict = Body(...)):
 
 @app.get("/servers/{container_id}/java-versions")
 @app.get("/api/servers/{container_id}/java-versions")
-def get_available_java_versions(container_id: str):
+def get_available_java_versions(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     """Get available Java versions and current selection."""
     try:
         docker_manager = get_docker_manager()
@@ -1590,7 +1592,7 @@ def version_info():
 # --- Added convenience endpoints for server detail & logs ---
 @app.get("/servers/{container_id}")
 @app.get("/api/servers/{container_id}")
-def get_server_details(container_id: str, current_user: User = Depends(require_auth)):
+def get_server_details(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     """Return detailed info (including port mappings, java version, stats) for a server container."""
     try:
         dm = get_docker_manager()
@@ -1605,7 +1607,7 @@ def get_server_details(container_id: str, current_user: User = Depends(require_a
 
 @app.get("/servers/{container_id}/logs")
 @app.get("/api/servers/{container_id}/logs")
-def get_server_logs_endpoint(container_id: str, tail: int = Query(200, ge=1, le=2000), current_user: User = Depends(require_auth)):
+def get_server_logs_endpoint(container_id: str, tail: int = Query(200, ge=1, le=2000), current_user: User = Depends(require_server_permission("view"))):
     """Return the last N lines of console output for the server container."""
     try:
         dm = get_docker_manager()

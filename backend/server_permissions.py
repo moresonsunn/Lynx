@@ -9,10 +9,10 @@ Permission levels (cumulative):
 Admins & owners bypass all checks. Regular users only see servers
 they have an explicit ServerPermission row for.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Callable
 
 from database import get_db
 from auth import require_auth, require_admin
@@ -53,6 +53,43 @@ def get_user_server_names(user: User, db: Session) -> Optional[List[str]]:
         return None  # no filter needed
     rows = db.query(ServerPermission.server_name).filter(ServerPermission.user_id == user.id).all()
     return [r[0] for r in rows]
+
+
+def require_server_permission(required: str = "view"):
+    """
+    FastAPI dependency factory that checks if the current user has the required
+    permission level on the requested server (identified by container_id path param).
+    """
+    def dependency(
+        container_id: str = Path(..., description="Server container ID or name"),
+        current_user: User = Depends(require_auth),
+        db: Session = Depends(get_db),
+    ):
+        if current_user.role in ("admin", "owner"):
+            return current_user
+        
+        # For local runtime, container_id is the server name
+        # For Docker, we need to resolve the server name from the container ID
+        server_name = container_id
+        try:
+            # Try to get the actual server name from metadata
+            from config import SERVERS_ROOT
+            import json
+            meta_path = Path(SERVERS_ROOT) / container_id / "server_meta.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                server_name = meta.get("name") or container_id
+        except Exception:
+            pass
+        
+        if not user_can_access_server(current_user, server_name, required, db):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Insufficient permission: '{required}' access required for server '{server_name}'"
+            )
+        return current_user
+    
+    return dependency
 
 
 # ── API Models ─────────────────────────────────────────────────────────────

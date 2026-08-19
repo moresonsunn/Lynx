@@ -12,6 +12,9 @@ from config import SERVERS_ROOT
 
 _RAM_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMGTP]?)(?:I?B)?\s*$", re.IGNORECASE)
 
+# Cache CPU core count for performance
+_CPU_CORES = psutil.cpu_count(logical=True) or 1
+
 
 def _parse_ram_to_mb(value: object, default_mb: float) -> float:
     try:
@@ -353,7 +356,11 @@ class LocalAdapter:
                         except Exception:
                             pass
                 mem_usage_mb = float(total_mem) / (1024 * 1024)
-                cpu_percent = total_cpu
+                # Normalize CPU percentage by number of logical CPU cores
+                # This matches Docker's behavior and system monitors like CasaOS
+                cpu_percent = (total_cpu / _CPU_CORES) if _CPU_CORES > 0 else 0.0
+                # Cap at 100% to avoid anomalies
+                cpu_percent = min(cpu_percent, 100.0)
                 if total_rx:
                     net_rx_mb = round(total_rx / (1024 * 1024), 2)
                 if total_tx:

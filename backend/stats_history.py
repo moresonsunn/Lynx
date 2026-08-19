@@ -116,9 +116,9 @@ def get_stats_history(server_id: str, hours: int = 1, resolution: int = 0) -> li
             rows = conn.execute(
                 """SELECT ts, cpu_percent, memory_used_mb, memory_limit_mb, memory_percent,
                           network_rx_mb, network_tx_mb, player_count
-                   FROM stats
-                   WHERE server_id = ? AND ts >= ?
-                   ORDER BY ts""",
+                     FROM stats
+                     WHERE server_id = ? AND ts >= ?
+                     ORDER BY ts""",
                 (server_id, since),
             ).fetchall()
             return [
@@ -144,50 +144,88 @@ def prune_old_stats():
 def _collector_loop():
     """Background thread that periodically collects stats from all running servers."""
     global _running
-    from docker_manager import DockerManager
+    
+    # Import here to avoid circular imports
+    try:
+        from runtime_adapter import get_runtime_manager
+    except Exception as e:
+        logger.error(f"Stats collector: Failed to import runtime adapter: {e}")
+        return
+
+    logger.info(f"Stats collector started (interval={_COLLECT_INTERVAL}s, retention={_RETENTION_HOURS}h)")
 
     while _running:
+        cycle_start = time.time()
         try:
-            dm = DockerManager()
-            servers = dm.get_all_servers()
-            for srv in servers:
-                if srv.get("status") != "running":
-                    continue
-                cid = srv.get("id") or srv.get("container_id")
-                name = srv.get("name") or srv.get("server_name") or ""
-                if not cid:
-                    continue
-                try:
-                    s = dm.get_server_stats(cid)
-                    if not s.get("error"):
-                        record_stats(cid, name, s)
-                except Exception:
-                    pass
+            # Try to get the runtime manager (handles both Docker and local)
+            manager = get_runtime_manager_or_docker()
+            if manager is None:
+                logger.debug("Stats collector: No runtime manager available")
+            else:
+                servers = manager.list_servers()
+                logger.debug(f"Stats collector: Found {len(servers)} servers")
+                for srv in servers:
+                    if not _running:
+                        break
+                    if srv.get("status") != "running":
+                        continue
+                    cid = srv.get("id") or srv.get("container_id") or srv.get("name")
+                    name = srv.get("name") or srv.get("server_name") or ""
+                    if not cid:
+                        continue
+                    try:
+                        s = manager.get_server_stats(str(cid))
+                        if s and not s.get("error"):
+                            record_stats(str(cid), name, s)
+                            logger.debug(f"Stats collector: Recorded stats for {name} ({cid}) - CPU: {s.get('cpu_percent', 0)}%")
+                        else:
+                            logger.debug(f"Stats collector: No stats for {cid} - {s.get('error') if s else 'None'}")
+                    except Exception as e:
+                        logger.warning(f"Stats collector: Failed to get stats for {cid}: {e}")
         except Exception as e:
-            logger.debug(f"Stats collector error: {e}")
+            logger.error(f"Stats collector error: {e}")
 
-        # Prune every 100 cycles (~50 min at 30s interval)
+        # Prune old stats every 100 cycles (~50 min at 30s interval)
         try:
             prune_old_stats()
         except Exception:
             pass
 
         # Sleep in small intervals so we can stop quickly
-        for _ in range(int(_COLLECT_INTERVAL)):
+        elapsed = time.time() - cycle_start
+        sleep_time = max(1, _COLLECT_INTERVAL - elapsed)
+        for _ in range(int(sleep_time)):
             if not _running:
                 break
             time.sleep(1)
+
+
+def get_runtime_manager_or_docker():
+    """Get runtime manager (local) or fall back to Docker manager."""
+    try:
+        from runtime_adapter import get_runtime_manager
+        adapter = get_runtime_manager()
+        if adapter is not None:
+            return adapter
+    except Exception:
+        pass
+    try:
+        from docker_manager import DockerManager
+        return DockerManager()
+    except Exception as e:
+        logger.error(f"Failed to get Docker manager: {e}")
+        return None
 
 
 def start_collector():
     """Start the background stats collection thread."""
     global _running, _collector_thread
     if _running:
+        logger.debug("Stats collector already running")
         return
     _running = True
     _collector_thread = threading.Thread(target=_collector_loop, daemon=True, name="stats-collector")
     _collector_thread.start()
-    logger.info(f"Stats collector started (interval={_COLLECT_INTERVAL}s, retention={_RETENTION_HOURS}h)")
 
 
 def stop_collector():

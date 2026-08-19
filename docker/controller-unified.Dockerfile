@@ -1,36 +1,46 @@
-# Unified Lynx image: backend API + built frontend + embedded multi-Java runtime
-# This eliminates the separate runtime image for single-container deployments.
+# Optimierte Unified Lynx Image: Backend API + gebautes Frontend + Multi-Java Runtime
+# Diese Datei ersetzt die alte, langsame unified.Dockerfile.
 
+# ---- Stage 1: Frontend bauen ----
 FROM node:20-alpine AS ui
 WORKDIR /ui
+
+# Abhängigkeiten installieren (mit explizitem react-is)
 COPY frontend/package*.json ./
-RUN npm ci --silent || npm install --silent
+RUN npm install --legacy-peer-deps && npm install react-is --save-dev
+
+# Frontend-Quellcode kopieren und bauen
 COPY frontend ./
 ENV NODE_ENV=production
 RUN npm run build
 
-# Base: start from OpenJDK 21 (includes Java 21)
-# Use Eclipse Temurin as official OpenJDK base to ensure tag stability across arches
+# ---- Stage 2: Haupt-Image ----
+# Basis: Eclipse Temurin 21 (enthält bereits Java 21)
 FROM eclipse-temurin:21-jdk-jammy AS unified
 WORKDIR /app
 
+# Build-Argumente für Versionierung
 ARG APP_VERSION=dev
 ARG GIT_COMMIT=unknown
 
+# OCI-Labels für bessere Rückverfolgbarkeit
 LABEL org.opencontainers.image.title="Lynx" \
-    org.opencontainers.image.description="Lynx controller + static frontend + embedded multi-Java runtime" \
+      org.opencontainers.image.description="Lynx Controller + statisches Frontend + Multi-Java Runtime" \
       org.opencontainers.image.version=$APP_VERSION \
       org.opencontainers.image.revision=$GIT_COMMIT \
       org.opencontainers.image.source="https://github.com/moresonsun/Lynx" \
       org.opencontainers.image.licenses="MIT"
 
-# System deps (minimal headless set to reduce multi-arch emulation issues)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# ---- APT-Mirror für schnellere Downloads ----
+RUN sed -i 's/archive.ubuntu.com/mirror.rackspace.com/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirror.rackspace.com/g' /etc/apt/sources.list
+
+# ---- System-Abhängigkeiten ----
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev gcc curl wget unzip bash ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Detect architecture and set download URLs accordingly
-# Multi-Java toolchain with multi-arch support (amd64 and arm64)
+# ---- Multi-Java Toolchain (Java 8, 11, 17) ----
 RUN ARCH=$(dpkg --print-architecture) && \
     echo "=== Detected architecture: $ARCH ===" && \
     if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then \
@@ -48,18 +58,17 @@ RUN ARCH=$(dpkg --print-architecture) && \
         JAVA17_URL="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.9%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.9_9.tar.gz"; \
         JAVA17_DIR="jdk-17.0.9+9"; \
     fi && \
-    echo "Downloading Java 8 from $JAVA8_URL" && \
+    echo "Downloading Java 8..." && \
     wget -qO- "$JAVA8_URL" | tar -xz -C /opt/ && \
     ln -sf /opt/$JAVA8_DIR/bin/java /usr/local/bin/java8 && \
-    echo "Downloading Java 11 from $JAVA11_URL" && \
+    echo "Downloading Java 11..." && \
     wget -qO- "$JAVA11_URL" | tar -xz -C /opt/ && \
     ln -sf /opt/$JAVA11_DIR/bin/java /usr/local/bin/java11 && \
-    echo "Downloading Java 17 from $JAVA17_URL" && \
+    echo "Downloading Java 17..." && \
     wget -qO- "$JAVA17_URL" | tar -xz -C /opt/ && \
     ln -sf /opt/$JAVA17_DIR/bin/java /usr/local/bin/java17
 
-# Note: eclipse-temurin:21-jdk-jammy already includes Java 21 at /opt/java/openjdk/bin/java
-# Create Java 21 symlink - try multiple possible locations
+# ---- Java 21 Symlink ----
 RUN if [ -x "/opt/java/openjdk/bin/java" ]; then \
         ln -sf /opt/java/openjdk/bin/java /usr/local/bin/java21; \
     elif [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then \
@@ -70,50 +79,50 @@ RUN if [ -x "/opt/java/openjdk/bin/java" ]; then \
         echo "WARNING: Could not find Java 21 to create symlink"; \
     fi
 
-# Also add java to PATH and create /usr/bin/java symlink as fallback
-RUN if [ ! -x "/usr/bin/java" ]; then \
-        if [ -x "/opt/java/openjdk/bin/java" ]; then \
-            ln -sf /opt/java/openjdk/bin/java /usr/bin/java; \
-        fi; \
+# ---- Fallback /usr/bin/java Symlink ----
+RUN if [ ! -x "/usr/bin/java" ] && [ -x "/opt/java/openjdk/bin/java" ]; then \
+        ln -sf /opt/java/openjdk/bin/java /usr/bin/java; \
     fi
 
-# Verify Java installations
+# ---- Java-Installationen verifizieren ----
 RUN echo "=== Verifying Java installations ===" && \
     ls -la /usr/local/bin/java* && \
-    ls -la /usr/bin/java 2>/dev/null || echo "No /usr/bin/java" && \
     echo "Java 8:" && /usr/local/bin/java8 -version 2>&1 | head -1 && \
     echo "Java 11:" && /usr/local/bin/java11 -version 2>&1 | head -1 && \
     echo "Java 17:" && /usr/local/bin/java17 -version 2>&1 | head -1 && \
     echo "Java 21:" && /usr/local/bin/java21 -version 2>&1 | head -1
 
-# Include runtime entrypoint so unified image can act as runtime image for server containers
+# ---- Runtime-Entrypoint ----
 COPY docker/runtime-entrypoint.sh /usr/local/bin/runtime-entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/runtime-entrypoint.sh && chmod +x /usr/local/bin/runtime-entrypoint.sh
 
+# ---- Umgebungsvariablen ----
 ENV JAVA_TOOL_OPTIONS="-Djava.awt.headless=true -Dsun.java2d.noddraw=true -Djava.net.preferIPv4Stack=true" \
     APP_VERSION=$APP_VERSION \
     GIT_COMMIT=$GIT_COMMIT
 
-# Python dependencies (use venv to avoid Debian PEP 668 externally managed restriction)
+# ---- Python-Abhängigkeiten ----
 COPY backend/requirements.txt ./
-RUN python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy backend
+# ---- Backend und Frontend kopieren ----
 COPY backend ./
-# Copy built frontend
 COPY --from=ui /ui/build ./static
 
-# Data dirs
+# ---- Datenverzeichnisse ----
 RUN mkdir -p /data/servers /data/sqlite
+
+# ---- Ports ----
 ENV PORT=8000
 EXPOSE 8000 25565
 
-# Provide an internal marker so backend can detect unified mode
+# ---- Modus-Erkennung ----
 ENV LYNX_UNIFIED_IMAGE=1 \
     BLOCKPANEL_UNIFIED_IMAGE=1
 
-# Uvicorn startup (same as controller base)
+# ---- Startbefehl ----
 CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
