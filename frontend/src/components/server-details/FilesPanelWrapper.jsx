@@ -99,11 +99,16 @@ async function loadDir(p = path, { force = false } = {}) {
         return;
       }
 
-      if (r.status === 422) {
-        const errData = await r.json().catch(() => ({}));
-        throw new Error(errData.detail || `Invalid server name or path: ${sName}`);
+      if (!r.ok) {
+        let errorMessage = `HTTP ${r.status}`;
+        try {
+          const errorData = await r.json();
+          errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage;
+        } catch {
+          errorMessage = r.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       const list = d.items || [];
       const etag = r.headers.get('etag') || (cached ? cached.etag : undefined);
@@ -123,7 +128,10 @@ async function loadDir(p = path, { force = false } = {}) {
         await attempt();
       } catch (e2) {
         if (e2?.name === 'AbortError') return;
-        setErr(String(e2));
+        // Properly extract error message
+        const message = e2?.message || e2?.response?.statusText || e2?.statusText || (typeof e2 === 'string' ? e2 : 'Failed to load files');
+        setErr(message);
+        console.error('Files load error:', e2);
       }
     } finally {
       setLoading(false);
@@ -145,6 +153,16 @@ async function loadDir(p = path, { force = false } = {}) {
       `${API}/servers/${encodeURIComponent(sName)}/file?path=${encodeURIComponent(filePath)}`,
       { headers: authHeaders() }
     );
+    if (!r.ok) {
+      let errorMessage = `HTTP ${r.status}`;
+      try {
+        const errorData = await r.json();
+        errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage;
+      } catch { }
+      setBlockedFileErrorLocal(errorMessage);
+      onBlockedFileError?.(errorMessage);
+      return;
+    }
     const d = await r.json();
     if (d && d.error) {
       setBlockedFileErrorLocal(d.error);
@@ -176,9 +194,17 @@ async function loadDir(p = path, { force = false } = {}) {
         `${API}/servers/${encodeURIComponent(sName)}/file?path=${encodeURIComponent(p)}`,
         { method: 'DELETE', headers: authHeaders() }
       );
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) {
+        let errorMessage = `HTTP ${r.status}`;
+        try {
+          const errorData = await r.json();
+          errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage;
+        } catch { }
+        throw new Error(errorMessage);
+      }
     } catch (e) {
       console.error('Delete failed:', e);
+      setErr(e.message || 'Delete failed');
     } finally {
       loadDir(path, { force: true });
     }
@@ -190,11 +216,24 @@ async function loadDir(p = path, { force = false } = {}) {
     if (!newName || newName === originalName) { setRenameTarget(null); return; }
     const dest = path === '.' ? newName : `${path}/${newName}`;
     if (!sName) throw new Error('Server name missing');
-    await fetch(`${API}/servers/${encodeURIComponent(sName)}/rename`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ src: p, dest })
-    });
+    try {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(sName)}/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ src: p, dest })
+      });
+      if (!r.ok) {
+        let errorMessage = `HTTP ${r.status}`;
+        try {
+          const errorData = await r.json();
+          errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage;
+        } catch { }
+        throw new Error(errorMessage);
+      }
+    } catch (e) {
+      console.error('Rename failed:', e);
+      setErr(e.message || 'Rename failed');
+    }
     setRenameTarget(null);
     setRenameValue('');
     try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
@@ -213,11 +252,24 @@ async function loadDir(p = path, { force = false } = {}) {
     const p = path === '.' ? name : `${path}/${name}`;
     try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
     if (!sName) throw new Error('Server name missing');
-    await fetch(`${API}/servers/${encodeURIComponent(sName)}/zip`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ path: p })
-    });
+    try {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(sName)}/zip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ path: p })
+      });
+      if (!r.ok) {
+        let errorMessage = `HTTP ${r.status}`;
+        try {
+          const errorData = await r.json();
+          errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage;
+        } catch { }
+        throw new Error(errorMessage);
+      }
+    } catch (e) {
+      console.error('Zip failed:', e);
+      setErr(e.message || 'Zip failed');
+    }
     loadDir(path, { force: true });
   }
 
@@ -229,11 +281,24 @@ async function loadDir(p = path, { force = false } = {}) {
     const dest = path === '.' ? destRel : `${path}/${destRel}`;
     try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
     if (!sName) throw new Error('Server name missing');
-    await fetch(`${API}/servers/${encodeURIComponent(sName)}/unzip`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ path: p, dest })
-    });
+    try {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(sName)}/unzip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ path: p, dest })
+      });
+      if (!r.ok) {
+        let errorMessage = `HTTP ${r.status}`;
+        try {
+          const errorData = await r.json();
+          errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage;
+        } catch { }
+        throw new Error(errorMessage);
+      }
+    } catch (e) {
+      console.error('Unzip failed:', e);
+      setErr(e.message || 'Unzip failed');
+    }
     loadDir(path, { force: true });
   }
 
@@ -266,11 +331,24 @@ async function loadDir(p = path, { force = false } = {}) {
     const p = path === '.' ? folder : `${path}/${folder}`;
     try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
     if (!sName) throw new Error('Server name missing');
-    await fetch(`${API}/servers/${encodeURIComponent(sName)}/mkdir`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ path: p })
-    });
+    try {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(sName)}/mkdir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ path: p })
+      });
+      if (!r.ok) {
+        let errorMessage = `HTTP ${r.status}`;
+        try {
+          const errorData = await r.json();
+          errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage;
+        } catch { }
+        throw new Error(errorMessage);
+      }
+    } catch (e) {
+      console.error('Create folder failed:', e);
+      setErr(e.message || 'Create folder failed');
+    }
     loadDir(path, { force: true });
   }
 
@@ -288,8 +366,12 @@ async function loadDir(p = path, { force = false } = {}) {
         { method: 'POST', headers: authHeaders(), body: formData }
       );
       if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        throw new Error(d.detail || `HTTP ${r.status}`);
+        let errorMessage = `HTTP ${r.status}`;
+        try {
+          const errorData = await r.json();
+          errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage;
+        } catch { }
+        throw new Error(errorMessage);
       }
       try { delete cacheRef.current[`${sName}::${path}`]; } catch { }
       await loadDir(path, { force: true });
