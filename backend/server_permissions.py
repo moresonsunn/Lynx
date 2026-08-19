@@ -55,30 +55,42 @@ def get_user_server_names(user: User, db: Session) -> Optional[List[str]]:
     return [r[0] for r in rows]
 
 
-def require_server_permission(required: str = "view"):
+def require_server_permission(required: str = "view", param_name: str = "container_id"):
     """
     FastAPI dependency factory that checks if the current user has the required
-    permission level on the requested server (identified by container_id path param).
+    permission level on the requested server.
+    
+    Args:
+        required: Required permission level ("view", "operate", "manage")
+        param_name: Name of the path parameter containing the server identifier (default: "container_id")
     """
     def dependency(
-        container_id: str = Path(..., description="Server container ID or name"),
         current_user: User = Depends(require_auth),
         db: Session = Depends(get_db),
+        **path_params,
     ):
         if current_user.role in ("admin", "owner"):
             return current_user
         
-        # For local runtime, container_id is the server name
+        # Get the server identifier from path parameters
+        server_identifier = path_params.get(param_name) or path_params.get("name") or path_params.get("server_name")
+        if not server_identifier:
+            raise HTTPException(
+                status_code=400,
+                detail="Server identifier not found in path parameters"
+            )
+        
+        # For local runtime, the identifier is the server name
         # For Docker, we need to resolve the server name from the container ID
-        server_name = container_id
+        server_name = server_identifier
         try:
             # Try to get the actual server name from metadata
             from config import SERVERS_ROOT
             import json
-            meta_path = Path(SERVERS_ROOT) / container_id / "server_meta.json"
+            meta_path = Path(SERVERS_ROOT) / server_identifier / "server_meta.json"
             if meta_path.exists():
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                server_name = meta.get("name") or container_id
+                server_name = meta.get("name") or server_identifier
         except Exception:
             pass
         

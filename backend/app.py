@@ -1060,7 +1060,7 @@ def get_server_console(container_id: str, tail: int = 100, current_user: User = 
 
 @app.get("/servers/{name}/files")
 @app.get("/api/servers/{name}/files")
-def files_list(name: str, request: Request, path: str = ".", current_user: User = Depends(require_server_permission("view"))):
+def files_list(name: str, request: Request, path: str = ".", current_user: User = Depends(require_server_permission("view", param_name="name"))):
     # Compute a simple ETag based on directory mtime to enable client caching
     try:
         from pathlib import Path
@@ -1097,7 +1097,7 @@ def files_list(name: str, request: Request, path: str = ".", current_user: User 
 
 @app.get("/servers/{name}/file")
 @app.get("/api/servers/{name}/file")
-def file_read(name: str, request: Request, path: str, current_user: User = Depends(require_server_permission("view"))):
+def file_read(name: str, request: Request, path: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     # ETag based on file size and mtime
     try:
         from pathlib import Path
@@ -1124,19 +1124,19 @@ def file_read(name: str, request: Request, path: str, current_user: User = Depen
 
 @app.post("/servers/{name}/file")
 @app.post("/api/servers/{name}/file")
-def file_write(name: str, path: str, content: str = Form(""), current_user: User = Depends(require_server_permission("manage"))):
+def file_write(name: str, path: str, content: str = Form(""), current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     fm_write_file(name, path, content)
     return {"ok": True}
 
 @app.delete("/servers/{name}/file")
 @app.delete("/api/servers/{name}/file")
-def file_delete(name: str, path: str, current_user: User = Depends(require_server_permission("manage"))):
+def file_delete(name: str, path: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     fm_delete_path(name, path)
     return {"ok": True}
 
 @app.get("/servers/{name}/download")
 @app.get("/api/servers/{name}/download")
-def file_or_folder_download(name: str, path: str = Query("."), current_user: User = Depends(require_server_permission("view"))):
+def file_or_folder_download(name: str, path: str = Query("."), current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """
     Download a single file directly, or if a directory is requested, return a zipped archive on the fly.
     """
@@ -1165,7 +1165,7 @@ async def file_upload(
     name: str,
     path: str = Query("."),
     file: UploadFile = File(...),
-    current_user: User = Depends(require_server_permission("manage")),
+    current_user: User = Depends(require_server_permission("manage", param_name="name")),
 ):
     if not file:
         raise HTTPException(status_code=400, detail="No file provided")
@@ -1208,13 +1208,13 @@ class ServerRenameRequest(BaseModel):
 
 @app.post("/servers/{name}/rename")
 @app.post("/api/servers/{name}/rename")
-def file_rename(name: str, req: FileRenameRequest, current_user: User = Depends(require_server_permission("manage"))):
+def file_rename(name: str, req: FileRenameRequest, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     fm_rename_path(name, req.src, req.dest)
     return {"ok": True}
 
 @app.post("/servers/{name}/rename-server")
 @app.post("/api/servers/{name}/rename-server")
-def rename_server(name: str, req: ServerRenameRequest, current_user: User = Depends(require_server_permission("manage"))):
+def rename_server(name: str, req: ServerRenameRequest, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     """Rename an existing server (directory + container)."""
     dm = get_docker_manager()
     try:
@@ -1229,7 +1229,7 @@ async def files_upload(
     name: str,
     path: str = Form("."),
     files: list[UploadFile] = File(...),
-    current_user: User = Depends(require_server_permission("manage")),
+    current_user: User = Depends(require_server_permission("manage", param_name="name")),
 ):
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
@@ -1246,29 +1246,29 @@ class UnzipRequest(BaseModel):
 
 @app.post("/servers/{name}/zip")
 @app.post("/api/servers/{name}/zip")
-def make_zip(name: str, req: ZipRequest, current_user: User = Depends(require_server_permission("manage"))):
+def make_zip(name: str, req: ZipRequest, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     archive_rel = fm_zip_path(name, req.path, req.dest)
     return {"ok": True, "archive": archive_rel}
 
 @app.post("/servers/{name}/unzip")
 @app.post("/api/servers/{name}/unzip")
-def do_unzip(name: str, req: UnzipRequest, current_user: User = Depends(require_server_permission("manage"))):
+def do_unzip(name: str, req: UnzipRequest, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     dest_rel = fm_unzip_path(name, req.path, req.dest)
     return {"ok": True, "dest": dest_rel}
 
 @app.get("/servers/{name}/backups")
 @app.get("/api/servers/{name}/backups")
-def backups_list(name: str, current_user: User = Depends(require_server_permission("view"))):
+def backups_list(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     return {"items": bk_list(name)}
 
 @app.post("/servers/{name}/backups")
 @app.post("/api/servers/{name}/backups")
-def backups_create(name: str, current_user: User = Depends(require_server_permission("manage"))):
+def backups_create(name: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     return bk_create(name)
 
 @app.post("/servers/{name}/restore")
 @app.post("/api/servers/{name}/restore")
-def backups_restore(name: str, file: str, current_user: User = Depends(require_server_permission("manage"))):
+def backups_restore(name: str, file: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     bk_restore(name, file)
     return {"ok": True}
 
@@ -1312,14 +1312,14 @@ def api_test_remote_config(current_user: User = Depends(require_admin)):
 # Alias endpoints for frontend compatibility
 @app.get("/api/servers/{name}/schedules")
 @app.get("/servers/{name}/schedules")
-def api_server_schedules(name: str, current_user: User = Depends(require_server_permission("view"))):
+def api_server_schedules(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """Get backup schedules for a specific server (alias for /api/backup-schedules/{name})."""
     return {"schedules": get_schedule(name)}
 
 
 @app.get("/api/servers/{name}/worlds")
 @app.get("/servers/{name}/worlds")
-def api_server_worlds(name: str, current_user: User = Depends(require_server_permission("view"))):
+def api_server_worlds(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """Get worlds for a specific server (alias for /worlds/{name})."""
     from world_routes import _server_dir, _detect_world_dirs
     server_dir = _server_dir(name)
@@ -1349,7 +1349,7 @@ def api_get_remote_config_alias(current_user: User = Depends(require_admin)):
 
 @app.get("/servers/{name}/players")
 @app.get("/api/servers/{name}/players")
-def players_list(name: str, container_id: str | None = Query(None), current_user: User = Depends(require_server_permission("view"))):
+def players_list(name: str, container_id: str | None = Query(None), current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """Return online players by querying the server via RCON 'list' command."""
     players = []
     online = 0
@@ -1397,7 +1397,7 @@ _CONFIG_PATTERNS = [
 
 @app.get("/servers/{name}/configs")
 @app.get("/api/servers/{name}/configs")
-def configs_list(name: str, current_user: User = Depends(require_server_permission("view"))):
+def configs_list(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """Dynamically discover config files that actually exist in the server directory."""
     found = []
     try:
@@ -1482,7 +1482,7 @@ def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
 
 @app.post("/servers/{container_id}/java-version")
 @app.post("/api/servers/{container_id}/java-version")
-def set_server_java_version(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage"))):
+def set_server_java_version(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage", param_name="container_id"))):
     """Set the Java version for a server."""
     try:
         # Use the runtime manager abstraction (local or docker) to perform the update
@@ -1512,7 +1512,7 @@ def set_server_java_version(container_id: str, request: dict = Body(...), curren
 
 @app.get("/servers/{container_id}/java-args")
 @app.get("/api/servers/{container_id}/java-args")
-def get_server_java_args(container_id: str, current_user: User = Depends(require_server_permission("view"))):
+def get_server_java_args(container_id: str, current_user: User = Depends(require_server_permission("view", param_name="container_id"))):
     try:
         rm = get_runtime_manager_or_docker()
         info = rm.get_server_info(container_id)
@@ -1522,7 +1522,7 @@ def get_server_java_args(container_id: str, current_user: User = Depends(require
 
 @app.post("/servers/{container_id}/java-args")
 @app.post("/api/servers/{container_id}/java-args")
-def set_server_java_args(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage"))):
+def set_server_java_args(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage", param_name="container_id"))):
     raw_args = request.get("java_args") if isinstance(request, dict) else ""
     if raw_args is None:
         raw_args = ""
@@ -1554,7 +1554,7 @@ def set_server_java_args(container_id: str, request: dict = Body(...), current_u
 
 @app.get("/servers/{container_id}/java-versions")
 @app.get("/api/servers/{container_id}/java-versions")
-def get_available_java_versions(container_id: str, current_user: User = Depends(require_server_permission("view"))):
+def get_available_java_versions(container_id: str, current_user: User = Depends(require_server_permission("view", param_name="container_id"))):
     """Get available Java versions and current selection."""
     try:
         docker_manager = get_docker_manager()
