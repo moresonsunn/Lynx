@@ -145,7 +145,7 @@ DEFAULT_ROLES = {
             "user.view", "user.create", "user.edit", "user.password.reset",
             "user.sessions.view", "user.sessions.revoke",
             
-            "role.view", "role.edit",
+            "role.view", "role.edit", "role.assign",
             
             "system.monitoring.view", "system.logs.view", "system.audit.view", "system.settings.view",
             

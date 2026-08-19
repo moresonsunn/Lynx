@@ -545,8 +545,8 @@ async def update_user(
     
     # Check if updating role and if user has permission
     if user_data.role is not None and user_data.role != current_user.role:
-        # Verify that the current user has permission to manage roles
-        if not user_service.user_has_permission(current_user, "user.manage_roles"):
+        # Verify that the current user has permission to assign roles
+        if not user_service.user_has_permission(current_user, "role.assign"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Permission denied: cannot change user roles"
