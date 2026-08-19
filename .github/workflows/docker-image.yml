@@ -113,16 +113,5 @@ jobs:
           color: 0xff0000  # Rot
           footer: "Lynx CI/CD"
           timestamp: true
-
-      - name: Send notification to Telegram (optional)
-        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: |
-            ${{ job.status == 'success' && '✅' || '❌' }} Lynx Docker Image build ${{ job.status }}!
-            Repository: ${{ github.repository }}
-            Version: ${{ github.sha }}
             Image: moresonsun/lynx:latest
             Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
