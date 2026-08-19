@@ -312,12 +312,27 @@ class LocalAdapter:
         mem_percent = 0.0
         net_rx_mb = 0.0
         net_tx_mb = 0.0
+        uptime_seconds = 0
+        restart_count = 0
+        health_status = "unknown"
+        player_count = 0
 
         try:
             meta_path = (p / "server_meta.json")
             if meta_path.exists():
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
                 mem_limit_mb = _parse_ram_to_mb(meta.get("max_ram_mb") or meta.get("max_ram"), mem_limit_mb)
+                # Get restart count and started time from meta
+                restart_count = meta.get("restart_count", 0)
+                started_ts = meta.get("started_ts") or meta.get("container_created_ts")
+                if started_ts:
+                    try:
+                        from datetime import datetime, timezone
+                        started_dt = datetime.fromtimestamp(int(started_ts), tz=timezone.utc)
+                        uptime_seconds = int((datetime.now(timezone.utc) - started_dt).total_seconds())
+                    except Exception:
+                        pass
+                health_status = "healthy" if pid and psutil.pid_exists(pid) else "unhealthy"
         except Exception:
             pass
 
@@ -357,16 +372,24 @@ class LocalAdapter:
                             pass
                 mem_usage_mb = float(total_mem) / (1024 * 1024)
                 # Normalize CPU percentage by number of logical CPU cores
-                # This matches Docker's behavior and system monitors like CasaOS
                 cpu_percent = (total_cpu / _CPU_CORES) if _CPU_CORES > 0 else 0.0
                 # Cap at 100% to avoid anomalies
                 cpu_percent = min(cpu_percent, 100.0)
+                # Network I/O - convert cumulative counters to MB (these are cumulative since process start)
                 if total_rx:
                     net_rx_mb = round(total_rx / (1024 * 1024), 2)
                 if total_tx:
                     net_tx_mb = round(total_tx / (1024 * 1024), 2)
                 if mem_limit_mb:
                     mem_percent = (mem_usage_mb / mem_limit_mb) * 100.0
+            except Exception:
+                pass
+
+        # Get player count via RCON/mcstatus if server is running
+        if pid and psutil.pid_exists(pid):
+            try:
+                player_info = self.get_player_info(container_id)
+                player_count = player_info.get("online", 0)
             except Exception:
                 pass
 
@@ -381,6 +404,10 @@ class LocalAdapter:
             "memory_percent": round(mem_percent, 2),
             "network_rx_mb": net_rx_mb,
             "network_tx_mb": net_tx_mb,
+            "uptime_seconds": uptime_seconds,
+            "restart_count": restart_count,
+            "health_status": health_status,
+            "player_count": player_count,
         }
 
     def get_bulk_server_stats(self, ttl_seconds: int = 3) -> Dict:

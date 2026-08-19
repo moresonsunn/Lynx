@@ -4,6 +4,7 @@ import { useFetch } from '../../lib/useFetch';
 import { useGlobalData, useGlobalActions } from '../../context/GlobalDataContext';
 import { API, authHeaders } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   FaPlus,
   FaTrash,
@@ -42,6 +43,7 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   const { showToast } = useToast();
   const globalData = useGlobalData();
   const { __refreshBG } = useGlobalActions();
+  const navigate = useNavigate();
   const servers = globalData.servers || [];
 
   const { data: tasks, loading: tasksLoading, error: tasksError, setData: setTasks } = useFetch(
@@ -237,12 +239,9 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
           </h2>
           <p className="text-white/60 mt-1">Automate server backups, restarts, commands, and cleanup</p>
         </div>
-        <button
-          onClick={() => { setEditingTask(null); setShowForm(true); }}
-          className="bg-brand-500 hover:bg-brand-600 px-4 py-2 rounded-lg flex items-center gap-2"
-        >
+        <Link to={`/servers/${propServerId}/schedules/new`} className="bg-brand-500 hover:bg-brand-600 px-4 py-2 rounded-lg flex items-center gap-2">
           <FaPlus /> Create Task
-        </button>
+        </Link>
       </div>
 
       {/* Tasks List */}
@@ -264,12 +263,9 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
           <div className="bg-white/5 border border-white/10 rounded-lg p-8 text-center">
             <FaClock className="text-4xl text-white/20 mx-auto mb-3" />
             <p className="text-white/60 mb-4">No scheduled tasks yet</p>
-            <button
-              onClick={() => { setEditingTask(null); setShowForm(true); }}
-              className="bg-brand-500 hover:bg-brand-600 px-4 py-2 rounded-lg flex items-center gap-2 mx-auto"
-            >
+            <Link to={`/servers/${propServerId}/schedules/new`} className="bg-brand-500 hover:bg-brand-600 px-4 py-2 rounded-lg flex items-center gap-2 mx-auto inline-flex">
               <FaPlus /> Create Your First Task
-            </button>
+            </Link>
           </div>
         )}
 

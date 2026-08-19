@@ -33,6 +33,7 @@ import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import SteamGamesPage from './pages/SteamGamesPage';
 import HytalePage from './pages/HytalePage';
+import CreateSchedulePage from './pages/CreateSchedulePage';
 
 
 import GlobalSearchBar from './components/GlobalSearchBar';
@@ -583,6 +584,7 @@ function AppRoutes() {
         <Route path="/servers" element={<ServersPage />} />
         <Route path="/servers/:serverId" element={<ServerDetailsPage />} />
         <Route path="/servers/:serverId/:tab" element={<ServerDetailsPage />} />
+        <Route path="/servers/:serverId/schedules/new" element={<CreateSchedulePage />} />
         <Route path="/templates" element={<TemplatesPageWrapper />} />
         <Route path="/steam" element={<SteamGamesPage />} />
         <Route path="/hytale" element={<HytalePage />} />

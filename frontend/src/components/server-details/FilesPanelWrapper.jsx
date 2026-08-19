@@ -57,7 +57,7 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
     }
   }, [serverName, initialItems]);
 
-  async function loadDir(p = path, { force = false } = {}) {
+async function loadDir(p = path, { force = false } = {}) {
     const key = `${sName}::${p}`;
     setErr('');
     const cached = cacheRef.current[key];
@@ -97,6 +97,11 @@ export default function FilesPanelWrapper({ serverName, initialItems = null, isB
         setItems(cached.items || []);
         setPath(p);
         return;
+      }
+
+      if (r.status === 422) {
+        const errData = await r.json().catch(() => ({}));
+        throw new Error(errData.detail || `Invalid server name or path: ${sName}`);
       }
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();

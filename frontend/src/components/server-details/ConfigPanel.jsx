@@ -127,7 +127,7 @@ export default function ConfigPanel({ server, onRestart }) {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`${API}/servers/${server.id}/java-versions`);
+        const response = await fetch(`${API}/servers/${server.id}/java-versions`, { headers: authHeaders() });
         if (!response.ok) { throw new Error(`HTTP ${response.status}`); }
         const data = await response.json();
         const raw = Array.isArray(data.available_versions) ? data.available_versions : [];
@@ -180,7 +180,7 @@ export default function ConfigPanel({ server, onRestart }) {
       setPropsError(''); setEulaError('');
       try {
         // Try bundled endpoint first (properties + eula + java info)
-        const bundle = await withTimeout(fetch(`${API}/servers/${encodeURIComponent(server.name)}/config-bundle?container_id=${encodeURIComponent(server.id)}`, { signal: abort.signal }), 8000, abort)
+        const bundle = await withTimeout(fetch(`${API}/servers/${encodeURIComponent(server.name)}/config-bundle?container_id=${encodeURIComponent(server.id)}`, { signal: abort.signal, headers: authHeaders() }), 8000, abort)
           .then(async (r) => {
             if (!r.ok) return null;
             const d = await r.json();
@@ -229,7 +229,7 @@ export default function ConfigPanel({ server, onRestart }) {
           })
           .catch(() => null);
 
-        const propsP = withTimeout(fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('server.properties')}`, { signal: abort.signal }), 10000, abort)
+        const propsP = withTimeout(fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('server.properties')}`, { signal: abort.signal, headers: authHeaders() }), 10000, abort)
           .then(async (r) => {
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const d = await r.json();
@@ -259,7 +259,7 @@ export default function ConfigPanel({ server, onRestart }) {
           })
           .catch((e) => { if (e?.name !== 'AbortError') setPropsError(String(e)); return null; });
 
-        const eulaP = withTimeout(fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('eula.txt')}`, { signal: abort.signal }), 10000, abort)
+        const eulaP = withTimeout(fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('eula.txt')}`, { signal: abort.signal, headers: authHeaders() }), 10000, abort)
           .then(async (r) => {
             if (!r.ok) return { eulaAccepted: false };
             const d = await r.json();
@@ -270,7 +270,7 @@ export default function ConfigPanel({ server, onRestart }) {
           })
           .catch((e) => { if (e?.name !== 'AbortError') setEulaError(String(e)); return null; });
 
-        const javaP = withTimeout(fetch(`${API}/servers/${server.id}/java-versions`, { signal: abort.signal }), 10000, abort)
+        const javaP = withTimeout(fetch(`${API}/servers/${server.id}/java-versions`, { signal: abort.signal, headers: authHeaders() }), 10000, abort)
           .then(async (r) => {
             if (!r.ok) return null;
             const data = await r.json();
@@ -287,7 +287,7 @@ export default function ConfigPanel({ server, onRestart }) {
           })
           .catch((e) => { /* ignore abort/other here */ return null; });
 
-        const javaArgsP = withTimeout(fetch(`${API}/servers/${server.id}/java-args`, { signal: abort.signal }), 8000, abort)
+        const javaArgsP = withTimeout(fetch(`${API}/servers/${server.id}/java-args`, { signal: abort.signal, headers: authHeaders() }), 8000, abort)
           .then(async (r) => {
             if (!r.ok) return null;
             const data = await r.json();
@@ -321,7 +321,7 @@ export default function ConfigPanel({ server, onRestart }) {
       setPropsError('');
       let baseText = baselinePropsRef.current;
       if (!baseText) {
-        const r = await fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('server.properties')}`);
+        const r = await fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('server.properties')}`, { headers: authHeaders() });
         const d = await r.json();
         baseText = d.content || '';
       }
@@ -340,7 +340,7 @@ export default function ConfigPanel({ server, onRestart }) {
       const newContent = lines.join('\n');
       baselinePropsRef.current = newContent;
       const body = new URLSearchParams({ content: newContent });
-      const wr = await fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('server.properties')}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+      const wr = await fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('server.properties')}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...authHeaders() }, body });
       if (!wr.ok) throw new Error(`HTTP ${wr.status}`);
       alert('server.properties saved. Restart the server to apply changes.');
     } catch (e) { setPropsError(String(e)); } finally { setPropsLoading(false); }
@@ -352,7 +352,7 @@ export default function ConfigPanel({ server, onRestart }) {
       setEulaError('');
       const content = `# EULA accepted via panel\neula=${accepted ? 'true' : 'false'}\n`;
       const body = new URLSearchParams({ content });
-      const wr = await fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('eula.txt')}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+      const wr = await fetch(`${API}/servers/${encodeURIComponent(server.name)}/file?path=${encodeURIComponent('eula.txt')}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...authHeaders() }, body });
       if (!wr.ok) throw new Error(`HTTP ${wr.status}`);
       setEulaAccepted(accepted);
     } catch (e) { setEulaError(String(e)); } finally { setEulaLoading(false); }
@@ -365,7 +365,7 @@ export default function ConfigPanel({ server, onRestart }) {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      await fetch(`${API}/servers/${encodeURIComponent(server.name)}/upload?path=.`, { method: 'POST', body: fd });
+      await fetch(`${API}/servers/${encodeURIComponent(server.name)}/upload?path=.`, { method: 'POST', headers: authHeaders(), body: fd });
       setIconMessage('server-icon uploaded. Restart server to apply.');
     } catch (e) { setIconMessage('Upload failed: ' + String(e)); } finally { setIconUploading(false); }
   }
@@ -374,12 +374,12 @@ export default function ConfigPanel({ server, onRestart }) {
     setUpdating(true);
     setError(null);
     try {
-      const response = await fetch(`${API}/servers/${server.id}/java-version`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ java_version: version }) });
+      const response = await fetch(`${API}/servers/${server.id}/java-version`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ java_version: version }) });
       if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.detail || `HTTP ${response.status}`); }
       const data = await response.json();
       // Re-query server info to confirm persisted value (handles recreate flows)
       try {
-        const infoResp = await fetch(`${API}/servers/${server.id}/info`);
+        const infoResp = await fetch(`${API}/servers/${server.id}/info`, { headers: authHeaders() });
         if (infoResp.ok) {
           const info = await infoResp.json();
           if (info && info.java_version) setCurrentVersion(info.java_version);
@@ -406,7 +406,7 @@ export default function ConfigPanel({ server, onRestart }) {
     try {
       const response = await fetch(`${API}/servers/${server.id}/java-args`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ java_args: javaArgs })
       });
       const data = await response.json().catch(() => ({}));
