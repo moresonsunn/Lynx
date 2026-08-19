@@ -9,7 +9,7 @@ Permission levels (cumulative):
 Admins & owners bypass all checks. Regular users only see servers
 they have an explicit ServerPermission row for.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, Path
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Callable
@@ -65,15 +65,15 @@ def require_server_permission(required: str = "view", param_name: str = "contain
         param_name: Name of the path parameter containing the server identifier (default: "container_id")
     """
     def dependency(
+        request: Request,
         current_user: User = Depends(require_auth),
         db: Session = Depends(get_db),
-        **path_params,
     ):
         if current_user.role in ("admin", "owner"):
             return current_user
         
         # Get the server identifier from path parameters
-        server_identifier = path_params.get(param_name) or path_params.get("name") or path_params.get("server_name")
+        server_identifier = request.path_params.get(param_name) or request.path_params.get("name") or request.path_params.get("server_name")
         if not server_identifier:
             raise HTTPException(
                 status_code=400,
