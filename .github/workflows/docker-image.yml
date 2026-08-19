@@ -106,3 +106,25 @@ jobs:
           
           docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           docker manifest push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.VERSION }}
+            notify:
+  notify:
+    name: Notify on completion
+    runs-on: ubuntu-latest
+    needs: [build, merge-manifest]
+    if: always()
+    steps:
+      - name: Send Discord notification
+        uses: sarisia/actions-status-discord@v1
+        if: success()
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title: "✅ Lynx Docker Image built successfully!"
+          description: "Version: ${{ github.sha }}"
+      
+      - name: Send failure notification
+        uses: sarisia/actions-status-discord@v1
+        if: failure()
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title: "❌ Lynx Docker Image build failed!"
+          description: "Check the logs: ${{ github.server_url }}/${{ github.repository }}/actions"
