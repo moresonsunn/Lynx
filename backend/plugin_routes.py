@@ -9,21 +9,14 @@ from auth import require_auth, require_moderator
 from models import User
 from file_manager import upload_file as fm_upload_file, delete_path as fm_delete_path
 from runtime_adapter import get_runtime_manager_or_docker
-from config import SERVERS_ROOT
+from config import get_server_dir
 import mod_sources
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
 
 
-def _server_dir(server_name: str) -> Path:
-    server_dir = (SERVERS_ROOT / server_name).resolve()
-    if not server_dir.exists():
-        raise HTTPException(status_code=404, detail="Server not found")
-    return server_dir
-
-
 def _plugins_dir(server_name: str) -> Path:
-    base = _server_dir(server_name)
+    base = get_server_dir(server_name)
     pdir = base / "plugins"
     pdir.mkdir(parents=True, exist_ok=True)
     return pdir
@@ -169,7 +162,7 @@ async def install_plugin(
 ):
     """Install a plugin by downloading from URL."""
     # Validate server exists
-    _server_dir(server_name)
+    get_server_dir(server_name)
     
     # For Spiget, get the download URL
     download_url = payload.url

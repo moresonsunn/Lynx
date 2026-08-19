@@ -1,5 +1,7 @@
 from pathlib import Path
 import os
+import re
+from fastapi import HTTPException
 
 # Container-visible servers directory (bind-mounted from host or a named volume)
 SERVERS_ROOT = Path(os.environ.get("SERVERS_CONTAINER_ROOT", "/data/servers"))
@@ -35,3 +37,17 @@ SERVERS_VOLUME_NAME = os.environ.get("SERVERS_VOLUME_NAME", "minecraft-server_mc
 # Branding / application identity
 APP_NAME = os.environ.get("APP_NAME", "Lynx")
 APP_VERSION = os.environ.get("APP_VERSION", "dev")
+
+
+def normalize_server_name(name: str) -> str:
+    """Normalize server name for filesystem safety."""
+    return re.sub(r'[^a-zA-Z0-9 \-_.]', '', name).strip()
+
+
+def get_server_dir(server_name: str) -> Path:
+    """Get validated server directory path."""
+    normalized = normalize_server_name(server_name)
+    server_dir = (SERVERS_ROOT / normalized).resolve()
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
+    return server_dir

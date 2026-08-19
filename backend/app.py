@@ -175,6 +175,23 @@ try:
 except Exception as e:
     print(f"[CORS] Skipped due to error: {e}")
 
+# Global exception handler for 422 validation errors
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+import logging
+
+logger = logging.getLogger(__name__)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    logger.error(f"Validation error: {exc}")
+    logger.error(f"Request path: {request.url.path}")
+    logger.error(f"Request query: {request.query_params}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Invalid request parameters", "errors": exc.errors()}
+    )
+
 # Enable gzip compression for API responses and static assets
 try:
     from starlette.middleware.gzip import GZipMiddleware
@@ -1063,11 +1080,11 @@ def get_server_console(container_id: str, tail: int = 100, current_user: User = 
 def files_list(name: str, request: Request, path: str = ".", current_user: User = Depends(require_server_permission("view", param_name="name"))):
     # Compute a simple ETag based on directory mtime to enable client caching
     try:
-        from pathlib import Path
-        base = (SERVERS_ROOT.resolve() / name / path).resolve()
+        from config import get_server_dir
+        server_dir = get_server_dir(name)
+        base = (server_dir / path).resolve()
         # Prevent path traversal
-        root = SERVERS_ROOT.resolve() / name
-        if not str(base).startswith(str(root)):
+        if not str(base).startswith(str(server_dir)):
             raise HTTPException(status_code=400, detail="Invalid path")
         if base.exists() and base.is_dir():
             # Combine mtime with entry count for better change detection
@@ -1100,10 +1117,11 @@ def files_list(name: str, request: Request, path: str = ".", current_user: User 
 def file_read(name: str, request: Request, path: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     # ETag based on file size and mtime
     try:
+        from config import get_server_dir
         from pathlib import Path
-        p = (SERVERS_ROOT.resolve() / name / path).resolve()
-        root = SERVERS_ROOT.resolve() / name
-        if not str(p).startswith(str(root)):
+        server_dir = get_server_dir(name)
+        p = (server_dir / path).resolve()
+        if not str(p).startswith(str(server_dir)):
             raise HTTPException(status_code=400, detail="Invalid path")
         if p.exists() and p.is_file():
             st = p.stat()
@@ -1140,8 +1158,10 @@ def file_or_folder_download(name: str, path: str = Query("."), current_user: Use
     """
     Download a single file directly, or if a directory is requested, return a zipped archive on the fly.
     """
+    from config import get_server_dir
     from pathlib import Path
-    base = (SERVERS_ROOT / name).resolve()
+    server_dir = get_server_dir(name)
+    base = server_dir
     target = (base / path).resolve()
     if not str(target).startswith(str(base)):
         raise HTTPException(status_code=400, detail="Invalid path")
@@ -1321,8 +1341,9 @@ def api_server_schedules(name: str, current_user: User = Depends(require_server_
 @app.get("/servers/{name}/worlds")
 def api_server_worlds(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """Get worlds for a specific server (alias for /worlds/{name})."""
-    from world_routes import _server_dir, _detect_world_dirs
-    server_dir = _server_dir(name)
+    from world_routes import _detect_world_dirs
+    from config import get_server_dir
+    server_dir = get_server_dir(name)
     worlds = _detect_world_dirs(server_dir)
     items = []
     for w in worlds:

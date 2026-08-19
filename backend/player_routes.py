@@ -19,6 +19,7 @@ class PlayerActionCreate(BaseModel):
     action_type: str  
     reason: Optional[str] = None
 
+
 class PlayerActionResponse(BaseModel):
     id: int
     server_name: str
@@ -51,6 +52,7 @@ def _server_dir(server_name: str):
         pass
     return None
 
+
 def _parse_log_timestamp(line: str, fallback_date: _dt.date | None) -> int | None:
     """Extract a timestamp (epoch seconds) from a log line if possible.
     Supports patterns like '2025-11-10 12:34:56' or '[12:34:56]'.
@@ -70,11 +72,15 @@ def _parse_log_timestamp(line: str, fallback_date: _dt.date | None) -> int | Non
         return None
     return None
 
+
 def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 8000) -> dict[str, dict]:
     """Scan recent logs and usercache.json to build {name: {last_seen, sources}}.
     Returns a map keyed by lowercase name.
     """
-    base = _server_dir(server_name)
+    try:
+        base = get_server_dir(server_name)
+    except HTTPException:
+        return {}
     hist: dict[str, dict] = {}
     if not base:
         return hist
@@ -111,6 +117,7 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
         total_lines = 0
         joined_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
         left_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out)", re.IGNORECASE)
+        
         for p in candidates:
             try:
                 fallback_date = _dt.date.fromtimestamp(p.stat().st_mtime)
@@ -150,6 +157,7 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
             v["sources"] = sorted(list(v["sources"]))
     return hist
 
+
 @router.get("/{server_name}/roster")
 async def get_player_roster(server_name: str, current_user: User = Depends(require_auth)):
     """Return online and offline players with last_seen.
@@ -182,7 +190,7 @@ async def get_player_roster(server_name: str, current_user: User = Depends(requi
         online_count = 0
         max_players = 0
         method = "error"
-
+    
     
     hist = _collect_history(server_name)
     online_set = {n.lower() for n in online_names}
@@ -201,6 +209,7 @@ async def get_player_roster(server_name: str, current_user: User = Depends(requi
         "max": max_players,
     }
 
+
 @router.get("/{server_name}/actions", response_model=List[PlayerActionResponse])
 async def list_player_actions(
     server_name: str,
@@ -213,6 +222,7 @@ async def list_player_actions(
     ).order_by(PlayerAction.performed_at.desc()).all()
     
     return actions
+
 
 @router.post("/{server_name}/whitelist", response_model=PlayerActionResponse)
 async def whitelist_player(
@@ -275,6 +285,7 @@ async def whitelist_player(
             detail=f"Failed to whitelist player: {str(e)}"
         )
 
+
 @router.delete("/{server_name}/whitelist/{player_name}")
 async def remove_from_whitelist(
     server_name: str,
@@ -334,6 +345,7 @@ async def remove_from_whitelist(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to remove player from whitelist: {str(e)}"
         )
+
 
 @router.post("/{server_name}/ban", response_model=PlayerActionResponse)
 async def ban_player(
@@ -399,6 +411,7 @@ async def ban_player(
             detail=f"Failed to ban player: {str(e)}"
         )
 
+
 @router.delete("/{server_name}/ban/{player_name}")
 async def unban_player(
     server_name: str,
@@ -457,6 +470,7 @@ async def unban_player(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to unban player: {str(e)}"
         )
+
 
 @router.post("/{server_name}/kick")
 async def kick_player(
@@ -522,6 +536,7 @@ async def kick_player(
             detail=f"Failed to kick player: {str(e)}"
         )
 
+
 @router.post("/{server_name}/op", response_model=PlayerActionResponse)
 async def op_player(
     server_name: str,
@@ -583,6 +598,7 @@ async def op_player(
             detail=f"Failed to OP player: {str(e)}"
         )
 
+
 @router.delete("/{server_name}/op/{player_name}")
 async def deop_player(
     server_name: str,
@@ -641,6 +657,7 @@ async def deop_player(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to de-OP player: {str(e)}"
         )
+
 
 @router.get("/{server_name}/online")
 async def get_online_players(

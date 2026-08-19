@@ -10,16 +10,9 @@ from typing import List
 from database import get_db
 from auth import require_auth, require_moderator
 from models import User
-from config import SERVERS_ROOT
+from config import get_server_dir
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
-
-
-def _server_dir(server_name: str) -> Path:
-    server_dir = (SERVERS_ROOT / server_name).resolve()
-    if not server_dir.exists():
-        raise HTTPException(status_code=404, detail="Server not found")
-    return server_dir
 
 
 def _detect_world_dirs(server_dir: Path) -> List[Path]:
@@ -42,7 +35,7 @@ async def list_worlds(
     server_name: str,
     current_user: User = Depends(require_auth)
 ):
-    server_dir = _server_dir(server_name)
+    server_dir = get_server_dir(server_name)
     worlds = _detect_world_dirs(server_dir)
     items = []
     for w in worlds:
@@ -67,7 +60,7 @@ async def download_world(
     world: str = Query("world"),
     current_user: User = Depends(require_auth)
 ):
-    server_dir = _server_dir(server_name)
+    server_dir = get_server_dir(server_name)
     world_dir = (server_dir / world).resolve()
     if not str(world_dir).startswith(str(server_dir)) or not world_dir.exists():
         raise HTTPException(status_code=404, detail="World not found")
@@ -97,12 +90,12 @@ async def upload_world(
     if not re.fullmatch(r"[A-Za-z0-9_-]+", world_name):
         raise HTTPException(status_code=400, detail="Invalid world name")
 
-    server_dir = _server_dir(server_name)
+    server_dir = get_server_dir(server_name)
     target_dir = (server_dir / world_name).resolve()
     if not str(target_dir).startswith(str(server_dir)):
         raise HTTPException(status_code=400, detail="Invalid target path")
     target_dir.mkdir(parents=True, exist_ok=True)
-
+    
     
     tmpdir = Path(tempfile.mkdtemp(prefix="worldup_"))
     tmpfile = tmpdir / fname
@@ -128,7 +121,7 @@ async def backup_world(
     compression: str = Query("zip"),
     current_user: User = Depends(require_moderator),
 ):
-    server_dir = _server_dir(server_name)
+    server_dir = get_server_dir(server_name)
     world_dir = (server_dir / world).resolve()
     if not str(world_dir).startswith(str(server_dir)) or not world_dir.exists():
         raise HTTPException(status_code=404, detail="World not found")
