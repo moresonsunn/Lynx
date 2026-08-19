@@ -78,7 +78,7 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
     Returns a map keyed by lowercase name.
     """
     try:
-        base = get_server_dir(server_name)
+        base = _server_dir(server_name)
     except HTTPException:
         return {}
     hist: dict[str, dict] = {}

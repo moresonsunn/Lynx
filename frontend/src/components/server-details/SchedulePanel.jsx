@@ -47,8 +47,8 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   const servers = globalData.servers || [];
 
   const { data: tasks, loading: tasksLoading, error: tasksError, setData: setTasks } = useFetch(
-    `${API}/schedule/tasks`,
-    []
+    propServerName ? `${API}/servers/${encodeURIComponent(propServerName)}/schedules` : null,
+    [propServerName]
   );
 
   // Form state
@@ -121,9 +121,10 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
 
     setSubmitting(true);
     try {
+      const baseUrl = `${API}/servers/${encodeURIComponent(propServerName)}/schedules`;
       const url = editingTask
-        ? `${API}/schedule/tasks/${editingTask.id}`
-        : `${API}/schedule/tasks`;
+        ? `${baseUrl}/${editingTask.id}`
+        : baseUrl;
       const method = editingTask ? 'PUT' : 'POST';
       const body = { ...formData };
       // Don't send is_active for create, only for update
@@ -145,7 +146,7 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
       setShowForm(false);
       setEditingTask(null);
       // Refresh tasks
-      __refreshBG('schedule', `${API}/schedule/tasks`, (d) => d);
+      __refreshBG('schedule', `${API}/servers/${encodeURIComponent(propServerName)}/schedules`, (d) => d);
     } catch (e) {
       showToast('error', e.message);
     } finally {
@@ -156,7 +157,7 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   const runTask = async (task) => {
     setRunLoading(task.id);
     try {
-      const r = await fetch(`${API}/schedule/tasks/${task.id}/run`, {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(propServerName)}/schedules/${task.id}/run`, {
         method: 'POST',
         headers: authHeaders(),
       });
@@ -176,7 +177,7 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
     if (!window.confirm(`Delete task "${task.name}"? This cannot be undone.`)) return;
     setDeleteLoading(task.id);
     try {
-      const r = await fetch(`${API}/schedule/tasks/${task.id}`, {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(propServerName)}/schedules/${task.id}`, {
         method: 'DELETE',
         headers: authHeaders(),
       });
@@ -196,7 +197,7 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   const toggleTask = async (task) => {
     setToggleLoading(task.id);
     try {
-      const r = await fetch(`${API}/schedule/tasks/${task.id}`, {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(propServerName)}/schedules/${task.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ is_active: !task.is_active }),

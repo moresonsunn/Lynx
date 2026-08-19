@@ -206,7 +206,6 @@ app.include_router(scheduler_router)
 app.include_router(player_router)
 app.include_router(world_router)
 app.include_router(plugin_router)
-app.include_router(user_router)
 app.include_router(monitoring_router)
 app.include_router(health_router)
 app.include_router(modpack_router)
@@ -277,6 +276,7 @@ for _router in [
     plugins_router,
     realtime_router,
     advanced_api_router,
+    user_router,
 ]:
     try:
         app.include_router(_router, prefix="/api")
