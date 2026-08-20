@@ -56,6 +56,18 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
     [scheduleUrl]
   );
 
+  // Show error state if fetch failed
+  if (tasksError) {
+    return (
+      <div className="p-4 bg-red-900/50 text-red-300 rounded-lg">
+        Failed to load tasks: {String(tasksError)}
+        <button onClick={() => window.location.reload()} className="ml-4 underline">
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   // Form state
   const [showForm, setShowForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
