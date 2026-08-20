@@ -106,18 +106,52 @@ export default function UsersPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { type: 'user'|'role', item }
 
   // Load data
-  const { __refreshBG } = useGlobalActions();
-  const loadData = useCallback(() => {
-    __refreshBG('users', `${API}/users`, (d) => d.users || []);
-    __refreshBG('roles', `${API}/users/roles`, (d) => d.roles || []);
-    __refreshBG('auditLogs', `${API}/users/audit-logs?page=1&page_size=50`, (d) => d.logs || []);
-  }, [__refreshBG]);
+  const { __refreshBG, __setGlobalData } = useGlobalActions();
+  const [loadingData, setLoadingData] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
+  const loadData = useCallback(async () => {
+    setLoadingData(true);
+    setLoadError(null);
+    try {
+      const [usersRes, rolesRes, auditRes] = await Promise.all([
+        fetch(`${API}/users`, { headers: authHeaders() }),
+        fetch(`${API}/users/roles`, { headers: authHeaders() }),
+        fetch(`${API}/users/audit-logs?page=1&page_size=50`, { headers: authHeaders() }),
+      ]);
+
+      if (!usersRes.ok) throw new Error(`Users: HTTP ${usersRes.status}`);
+      if (!rolesRes.ok) throw new Error(`Roles: HTTP ${rolesRes.status}`);
+      if (!auditRes.ok) throw new Error(`Audit logs: HTTP ${auditRes.status}`);
+
+      const usersData = await usersRes.json();
+      const rolesData = await rolesRes.json();
+      const auditData = await auditRes.json();
+
+      __setGlobalData(cur => ({
+        ...cur,
+        users: usersData.users || [],
+        roles: rolesData.roles || [],
+        auditLogs: auditData.logs || [],
+      }));
+    } catch (e) {
+      setLoadError(e.message);
+      console.error('Failed to load user management data:', e);
+    } finally {
+      setLoadingData(false);
+    }
+  }, [__setGlobalData]);
+
+  // Refresh periodically using background refresh (silent)
   useEffect(() => {
     loadData();
-    const id = setInterval(loadData, 15000);
+    const id = setInterval(() => {
+      __refreshBG('users', `${API}/users`, (d) => d.users || []);
+      __refreshBG('roles', `${API}/users/roles`, (d) => d.roles || []);
+      __refreshBG('auditLogs', `${API}/users/audit-logs?page=1&page_size=50`, (d) => d.logs || []);
+    }, 15000);
     return () => clearInterval(id);
-  }, [loadData]);
+  }, [loadData, __refreshBG]);
 
   const filteredUsers = safeUsers.filter(user => {
     const matchesSearch = user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -345,6 +379,21 @@ export default function UsersPage() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 animate-fade-in">
+      {loadingData && (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
+        </div>
+      )}
+      {loadError && (
+        <div className="bg-red-500/10 border border-red-500/20 text-red-300 p-4 rounded-lg flex items-center gap-3">
+          <FaExclamationTriangle />
+          <span>Failed to load data: {loadError}</span>
+          <button onClick={loadData} className="ml-auto text-red-400 hover:text-red-300 px-3 py-1 bg-red-500/10 rounded">Retry</button>
+        </div>
+      )}
+
+      {!loadingData && (
+        <>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -657,6 +706,8 @@ export default function UsersPage() {
             </div>
           </div>
         </div>
+      )}
+    </>
       )}
     </div>
   );

@@ -60,6 +60,22 @@ export default function CreateSchedulePage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [showCronHelp, setShowCronHelp] = useState(false);
+  const [serverLoading, setServerLoading] = useState(!serverName);
+
+  // Fetch server if not in global data
+  useEffect(() => {
+    if (!serverName && serverId) {
+      setServerLoading(true);
+      fetch(`${API}/servers/${serverId}`, { headers: authHeaders() })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.name) {
+            setFormData(prev => ({ ...prev, server_name: data.name }));
+          }
+        })
+        .finally(() => setServerLoading(false));
+    }
+  }, [serverId, serverName]);
 
   // Update server_name when server changes
   useEffect(() => {
@@ -91,7 +107,8 @@ export default function CreateSchedulePage() {
       return;
     }
 
-    if (!serverName) {
+    const currentServerName = formData.server_name;
+    if (!currentServerName) {
       showToast('error', 'Server not found');
       return;
     }
@@ -102,7 +119,7 @@ export default function CreateSchedulePage() {
       // Don't send is_active for create
       delete body.is_active;
 
-      const r = await fetch(`${API}/servers/${encodeURIComponent(serverName)}/schedules`, {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(currentServerName)}/schedules`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(body),
@@ -117,7 +134,7 @@ export default function CreateSchedulePage() {
       showToast('success', 'Task created');
       
       // Refresh tasks in global data
-      __refreshBG('schedule', `${API}/servers/${encodeURIComponent(serverName)}/schedules`, (d) => d);
+      __refreshBG('schedule', `${API}/servers/${encodeURIComponent(currentServerName)}/schedules`, (d) => d);
       
       // Navigate back to server details
       navigate(`/servers/${serverId}`);
@@ -133,6 +150,15 @@ export default function CreateSchedulePage() {
   };
 
   const taskTypeInfo = TASK_TYPES.find(t => t.value === formData.task_type);
+
+  // Show loading while fetching server
+  if (serverLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
