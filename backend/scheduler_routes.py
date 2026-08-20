@@ -12,7 +12,7 @@ from scheduler import get_scheduler
 router = APIRouter(prefix="/schedule", tags=["scheduling"])
 
 # Server-scoped router for scheduler tasks (not backup schedules)
-server_schedules_router = APIRouter(prefix="/servers/{server_name}/schedules", tags=["server-scheduling"])
+server_schedules_router = APIRouter(prefix="/servers", tags=["server-scheduling"])
 
 
 class ScheduledTaskCreate(BaseModel):
@@ -170,7 +170,7 @@ def _validate_task_data(task_data: ScheduledTaskCreate):
 
 
 # Server-scoped endpoints
-@server_schedules_router.get("", response_model=List[ScheduledTaskResponse])
+@server_schedules_router.get("/{server_name}/schedules", response_model=List[ScheduledTaskResponse])
 async def list_server_scheduled_tasks(
     server_name: str,
     current_user: User = Depends(require_auth),
@@ -187,7 +187,7 @@ async def list_server_scheduled_tasks(
     return tasks
 
 
-@server_schedules_router.post("", response_model=ScheduledTaskResponse)
+@server_schedules_router.post("/{server_name}/schedules", response_model=ScheduledTaskResponse)
 async def create_server_scheduled_task(
     server_name: str,
     task_data: ScheduledTaskCreate,
@@ -228,7 +228,7 @@ async def create_server_scheduled_task(
     return task
 
 
-@server_schedules_router.get("/{task_id}", response_model=ScheduledTaskResponse)
+@server_schedules_router.get("/{server_name}/schedules/{task_id}", response_model=ScheduledTaskResponse)
 async def get_server_scheduled_task(
     server_name: str,
     task_id: int,
@@ -249,7 +249,7 @@ async def get_server_scheduled_task(
     return _enrich_task_with_next_run(task, db)
 
 
-@server_schedules_router.put("/{task_id}", response_model=ScheduledTaskResponse)
+@server_schedules_router.put("/{server_name}/schedules/{task_id}", response_model=ScheduledTaskResponse)
 async def update_server_scheduled_task(
     server_name: str,
     task_id: int,
@@ -303,7 +303,7 @@ async def update_server_scheduled_task(
     return task
 
 
-@server_schedules_router.delete("/{task_id}")
+@server_schedules_router.delete("/{server_name}/schedules/{task_id}")
 async def delete_server_scheduled_task(
     server_name: str,
     task_id: int,
@@ -330,7 +330,7 @@ async def delete_server_scheduled_task(
     return {"message": "Task deleted successfully"}
 
 
-@server_schedules_router.post("/{task_id}/run")
+@server_schedules_router.post("/{server_name}/schedules/{task_id}/run")
 async def run_server_task_now(
     server_name: str,
     task_id: int,

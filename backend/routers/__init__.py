@@ -10,6 +10,7 @@ or inside a container where the working directory is the app root.
 # Import routers from top-level modules (files live alongside app.py)
 from auth_routes import router as auth_router  # Authentication & tokens
 from scheduler_routes import router as scheduler_router  # Scheduler & jobs
+from scheduler_routes import server_schedules_router  # Server-scoped scheduler tasks
 from player_routes import router as player_router  # Player management
 from world_routes import router as world_router  # World uploads/backups
 from plugin_routes import router as plugin_router  # Plugin uploads
@@ -26,6 +27,7 @@ from api.user_routes import router as user_router  # Admin user/roles/permission
 __all__ = [
     "auth_router",
     "scheduler_router",
+    "server_schedules_router",
     "player_router",
     "world_router",
     "plugin_router",
