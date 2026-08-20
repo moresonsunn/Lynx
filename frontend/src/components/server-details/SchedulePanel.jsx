@@ -124,9 +124,14 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
       return;
     }
 
+    if (!serverName) {
+      showToast('error', 'Server name not available');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const baseUrl = `${API}/servers/${encodeURIComponent(propServerName)}/schedules`;
+      const baseUrl = `${API}/servers/${encodeURIComponent(serverName)}/schedules`;
       const url = editingTask
         ? `${baseUrl}/${editingTask.id}`
         : baseUrl;
@@ -151,7 +156,7 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
       setShowForm(false);
       setEditingTask(null);
       // Refresh tasks
-      __refreshBG('schedule', `${API}/servers/${encodeURIComponent(propServerName)}/schedules`, (d) => d);
+      __refreshBG('schedule', `${API}/servers/${encodeURIComponent(serverName)}/schedules`, (d) => d);
     } catch (e) {
       showToast('error', e.message);
     } finally {
@@ -162,7 +167,11 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   const runTask = async (task) => {
     setRunLoading(task.id);
     try {
-      const r = await fetch(`${API}/servers/${encodeURIComponent(propServerName)}/schedules/${task.id}/run`, {
+      if (!serverName) {
+        showToast('error', 'Server name not available');
+        return;
+      }
+      const r = await fetch(`${API}/servers/${encodeURIComponent(serverName)}/schedules/${task.id}/run`, {
         method: 'POST',
         headers: authHeaders(),
       });
@@ -180,9 +189,13 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
 
   const deleteTask = async (task) => {
     if (!window.confirm(`Delete task "${task.name}"? This cannot be undone.`)) return;
+    if (!serverName) {
+      showToast('error', 'Server name not available');
+      return;
+    }
     setDeleteLoading(task.id);
     try {
-      const r = await fetch(`${API}/servers/${encodeURIComponent(propServerName)}/schedules/${task.id}`, {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(serverName)}/schedules/${task.id}`, {
         method: 'DELETE',
         headers: authHeaders(),
       });
@@ -200,9 +213,13 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   };
 
   const toggleTask = async (task) => {
+    if (!serverName) {
+      showToast('error', 'Server name not available');
+      return;
+    }
     setToggleLoading(task.id);
     try {
-      const r = await fetch(`${API}/servers/${encodeURIComponent(propServerName)}/schedules/${task.id}`, {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(serverName)}/schedules/${task.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ is_active: !task.is_active }),
