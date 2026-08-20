@@ -36,8 +36,17 @@ RUN sed -i 's/archive.ubuntu.com/mirror.rackspace.com/g' /etc/apt/sources.list &
     sed -i 's/security.ubuntu.com/mirror.rackspace.com/g' /etc/apt/sources.list
 
 # ---- System-Abhängigkeiten ----
+# Split into multiple RUN commands to avoid QEMU segfaults on ARM64
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv python3-dev gcc curl wget unzip bash ca-certificates \
+    python3 python3-venv python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    gcc curl wget unzip bash ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- Multi-Java Toolchain (Java 8, 11, 17) ----
