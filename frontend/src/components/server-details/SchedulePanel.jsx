@@ -21,6 +21,7 @@ import {
   FaSpinner,
   FaChevronDown,
   FaChevronUp,
+  FaHistory,
 } from 'react-icons/fa';
 
 const TASK_TYPES = [
