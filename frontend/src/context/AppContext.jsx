@@ -46,7 +46,9 @@ export function AuthProvider({ children }) {
   const [mustChangePassword, setMustChangePassword] = useState(false);
 
   const isAuthenticated = !!authToken;
-  const isAdmin = currentUser?.is_admin || currentUser?.role === 'admin' || currentUser?.roles?.includes('admin');
+  // Robust admin check - handle different user object structures
+  const userRole = currentUser?.role || currentUser?.user_role || currentUser?.userRole;
+  const isAdmin = currentUser?.is_admin === true || userRole === 'admin' || userRole === 'owner' || (Array.isArray(currentUser?.roles) && currentUser.roles.includes('admin'));
 
   // Validate token and fetch current user
   useEffect(() => {

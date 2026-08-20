@@ -97,10 +97,10 @@ function AppLayout() {
     ];
 
     if (isAdmin) {
-      items.push({ id: 'users', path: '/users', label: t('nav.users'), icon: FaUsers });
+      items.push({ id: 'users', path: '/users', label: t('nav.users') || 'User Management', icon: FaUsers });
     }
 
-    items.push({ id: 'settings', path: '/settings', label: t('nav.settings'), icon: FaCog });
+    items.push({ id: 'settings', path: '/settings', label: t('nav.settings') || 'Settings', icon: FaCog });
 
     return items;
   }, [isAdmin, t]);

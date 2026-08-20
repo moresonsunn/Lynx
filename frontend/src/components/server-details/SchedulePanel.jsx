@@ -46,9 +46,14 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   const navigate = useNavigate();
   const servers = globalData.servers || [];
 
+  // Validate serverName - if not provided or empty, try to get from serverId
+  const serverName = propServerName || (propServerId ? servers.find(s => s.id === propServerId)?.name : null);
+
+  const scheduleUrl = serverName ? `${API}/servers/${encodeURIComponent(serverName)}/schedules` : null;
+
   const { data: tasks, loading: tasksLoading, error: tasksError, setData: setTasks } = useFetch(
-    propServerName ? `${API}/servers/${encodeURIComponent(propServerName)}/schedules` : null,
-    [propServerName]
+    scheduleUrl,
+    [scheduleUrl]
   );
 
   // Form state
@@ -57,7 +62,7 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   const [formData, setFormData] = useState({
     name: '',
     task_type: 'backup',
-    server_name: propServerName || '',
+    server_name: serverName || '',
     cron_expression: '0 2 * * *',
     command: '',
     is_active: true,
@@ -74,13 +79,13 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
       setFormData({
         name: '',
         task_type: 'backup',
-        server_name: propServerName || '',
+        server_name: serverName || '',
         cron_expression: '0 2 * * *',
         command: '',
         is_active: true,
       });
     }
-  }, [showForm, editingTask, propServerName]);
+  }, [showForm, editingTask, serverName]);
 
   // Populate form when editing
   useEffect(() => {
