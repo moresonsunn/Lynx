@@ -45,11 +45,15 @@ export default function CreateSchedulePage() {
   const navigate = useNavigate();
   const servers = globalData.servers || [];
 
+  // Find server to get its name for API calls
+  const server = servers.find(s => s.id === serverId);
+  const serverName = server?.name;
+
   // Form state
   const [formData, setFormData] = useState({
     name: '',
     task_type: 'backup',
-    server_name: '',
+    server_name: serverName || '',
     cron_expression: '0 2 * * *',
     command: '',
     is_active: true,
@@ -57,15 +61,12 @@ export default function CreateSchedulePage() {
   const [submitting, setSubmitting] = useState(false);
   const [showCronHelp, setShowCronHelp] = useState(false);
 
-  // Pre-fill server_name if we can find the server
+  // Update server_name when server changes
   useEffect(() => {
-    if (serverId) {
-      const server = servers.find(s => s.id === serverId);
-      if (server) {
-        setFormData(prev => ({ ...prev, server_name: server.name }));
-      }
+    if (serverName) {
+      setFormData(prev => ({ ...prev, server_name: serverName }));
     }
-  }, [serverId, servers]);
+  }, [serverName]);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -90,13 +91,18 @@ export default function CreateSchedulePage() {
       return;
     }
 
+    if (!serverName) {
+      showToast('error', 'Server not found');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const body = { ...formData };
       // Don't send is_active for create
       delete body.is_active;
 
-      const r = await fetch(`${API}/schedule/tasks`, {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(serverName)}/schedules`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(body),
@@ -111,7 +117,7 @@ export default function CreateSchedulePage() {
       showToast('success', 'Task created');
       
       // Refresh tasks in global data
-      __refreshBG('schedule', `${API}/schedule/tasks`, (d) => d);
+      __refreshBG('schedule', `${API}/servers/${encodeURIComponent(serverName)}/schedules`, (d) => d);
       
       // Navigate back to server details
       navigate(`/servers/${serverId}`);
