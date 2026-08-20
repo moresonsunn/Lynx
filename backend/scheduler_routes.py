@@ -11,6 +11,9 @@ from scheduler import get_scheduler
 
 router = APIRouter(prefix="/schedule", tags=["scheduling"])
 
+# Server-scoped router for scheduler tasks (not backup schedules)
+server_schedules_router = APIRouter(prefix="/servers/{server_name}/schedules", tags=["server-scheduling"])
+
 
 class ScheduledTaskCreate(BaseModel):
     name: str
@@ -123,8 +126,252 @@ async def create_scheduled_task(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to schedule task: {str(e)}"
         )
+
+
+def _enrich_task_with_next_run(task: ScheduledTask, db: Session):
+    """Add next_run to task if active."""
+    if task.is_active:
+        scheduler = get_scheduler()
+        task.next_run = scheduler.get_next_run_time(task.cron_expression)
+    return task
+
+
+def _validate_task_data(task_data: ScheduledTaskCreate):
+    """Validate task creation data."""
+    valid_types = ["backup", "restart", "command", "cleanup"]
+    if task_data.task_type not in valid_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid task type. Must be one of: {valid_types}"
+        )
+
+    scheduler = get_scheduler()
+    try:
+        next_run = scheduler.get_next_run_time(task_data.cron_expression)
+        if next_run is None:
+            raise ValueError("Invalid cron expression")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid cron expression: {str(e)}"
+        )
+
+    if task_data.task_type in ["backup", "restart"] and not task_data.server_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"server_name is required for {task_data.task_type} tasks"
+        )
+
+    if task_data.task_type == "command" and not task_data.command:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="command is required for command tasks"
+        )
+
+
+# Server-scoped endpoints
+@server_schedules_router.get("", response_model=List[ScheduledTaskResponse])
+async def list_server_scheduled_tasks(
+    server_name: str,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """List all scheduled tasks for a specific server."""
+    tasks = db.query(ScheduledTask).filter(ScheduledTask.server_name == server_name).all()
+    
+    scheduler = get_scheduler()
+    for task in tasks:
+        if task.is_active:
+            task.next_run = scheduler.get_next_run_time(task.cron_expression)
+    
+    return tasks
+
+
+@server_schedules_router.post("", response_model=ScheduledTaskResponse)
+async def create_server_scheduled_task(
+    server_name: str,
+    task_data: ScheduledTaskCreate,
+    current_user: User = Depends(require_moderator),
+    db: Session = Depends(get_db)
+):
+    """Create a new scheduled task for a specific server."""
+    # Override server_name from path
+    task_data.server_name = server_name
+    _validate_task_data(task_data)
+
+    task = ScheduledTask(
+        name=task_data.name,
+        task_type=task_data.task_type,
+        server_name=task_data.server_name,
+        cron_expression=task_data.cron_expression,
+        command=task_data.command,
+        created_by=current_user.id,
+        is_active=True
+    )
+    
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    
+    try:
+        scheduler = get_scheduler()
+        scheduler.add_scheduled_task(task)
+        task.next_run = scheduler.get_next_run_time(task.cron_expression)
+    except Exception as e:
+        db.delete(task)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to schedule task: {str(e)}"
+        )
     
     return task
+
+
+@server_schedules_router.get("/{task_id}", response_model=ScheduledTaskResponse)
+async def get_server_scheduled_task(
+    server_name: str,
+    task_id: int,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get a specific scheduled task for a server."""
+    task = db.query(ScheduledTask).filter(
+        ScheduledTask.id == task_id,
+        ScheduledTask.server_name == server_name
+    ).first()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    return _enrich_task_with_next_run(task, db)
+
+
+@server_schedules_router.put("/{task_id}", response_model=ScheduledTaskResponse)
+async def update_server_scheduled_task(
+    server_name: str,
+    task_id: int,
+    task_data: ScheduledTaskUpdate,
+    current_user: User = Depends(require_moderator),
+    db: Session = Depends(get_db)
+):
+    """Update a scheduled task for a server."""
+    task = db.query(ScheduledTask).filter(
+        ScheduledTask.id == task_id,
+        ScheduledTask.server_name == server_name
+    ).first()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    if task_data.name is not None:
+        task.name = task_data.name
+    
+    if task_data.command is not None:
+        task.command = task_data.command
+    
+    if task_data.is_active is not None:
+        task.is_active = task_data.is_active
+    
+    if task_data.cron_expression is not None:
+        scheduler = get_scheduler()
+        try:
+            next_run = scheduler.get_next_run_time(task_data.cron_expression)
+            if next_run is None:
+                raise ValueError("Invalid cron expression")
+            task.cron_expression = task_data.cron_expression
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid cron expression: {str(e)}"
+            )
+    
+    db.commit()
+    db.refresh(task)
+    
+    scheduler = get_scheduler()
+    if task.is_active:
+        scheduler.add_scheduled_task(task)
+        task.next_run = scheduler.get_next_run_time(task.cron_expression)
+    else:
+        scheduler.remove_scheduled_task(task.id)
+    
+    return task
+
+
+@server_schedules_router.delete("/{task_id}")
+async def delete_server_scheduled_task(
+    server_name: str,
+    task_id: int,
+    current_user: User = Depends(require_moderator),
+    db: Session = Depends(get_db)
+):
+    """Delete a scheduled task for a server."""
+    task = db.query(ScheduledTask).filter(
+        ScheduledTask.id == task_id,
+        ScheduledTask.server_name == server_name
+    ).first()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    scheduler = get_scheduler()
+    scheduler.remove_scheduled_task(task.id)
+    
+    db.delete(task)
+    db.commit()
+    
+    return {"message": "Task deleted successfully"}
+
+
+@server_schedules_router.post("/{task_id}/run")
+async def run_server_task_now(
+    server_name: str,
+    task_id: int,
+    current_user: User = Depends(require_moderator),
+    db: Session = Depends(get_db)
+):
+    """Manually execute a scheduled task now for a server."""
+    task = db.query(ScheduledTask).filter(
+        ScheduledTask.id == task_id,
+        ScheduledTask.server_name == server_name
+    ).first()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    scheduler = get_scheduler()
+    try:
+        if task.task_type == "backup":
+            await scheduler.execute_backup_task(task.id)
+        elif task.task_type == "restart":
+            await scheduler.execute_restart_task(task.id)
+        elif task.task_type == "command":
+            await scheduler.execute_command_task(task.id)
+        elif task.task_type == "cleanup":
+            await scheduler.execute_cleanup_task(task.id)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown task type: {task.task_type}"
+            )
+        
+        return {"message": f"Task '{task.name}' executed successfully"}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Task execution failed: {str(e)}"
+        )
+
 
 @router.get("/tasks/{task_id}", response_model=ScheduledTaskResponse)
 async def get_scheduled_task(

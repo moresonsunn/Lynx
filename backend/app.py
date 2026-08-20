@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from routers import (
     auth_router,
     scheduler_router,
+    server_schedules_router,
     player_router,
     world_router,
     plugin_router,
@@ -203,6 +204,7 @@ except Exception:
 # Include all routers
 app.include_router(auth_router)
 app.include_router(scheduler_router)
+app.include_router(server_schedules_router)
 app.include_router(player_router)
 app.include_router(world_router)
 app.include_router(plugin_router)
@@ -243,6 +245,7 @@ app.include_router(advanced_api_router)
 for _router in [
     auth_router,
     scheduler_router,
+    server_schedules_router,
     player_router,
     world_router,
     plugin_router,
@@ -1328,13 +1331,6 @@ def api_set_remote_config(request: Request, current_user: User = Depends(require
 @app.post("/api/backup-remote-config/test")
 def api_test_remote_config(current_user: User = Depends(require_admin)):
     return test_remote_connection()
-
-# Alias endpoints for frontend compatibility
-@app.get("/api/servers/{name}/schedules")
-@app.get("/servers/{name}/schedules")
-def api_server_schedules(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
-    """Get backup schedules for a specific server (alias for /api/backup-schedules/{name})."""
-    return {"schedules": get_schedule(name)}
 
 
 @app.get("/api/servers/{name}/worlds")
