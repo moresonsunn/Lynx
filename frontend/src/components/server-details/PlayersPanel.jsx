@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import { API, authHeaders } from '../../context/AppContext';
-import { PlayerAvatar } from '../ui/PlayerAvatar';
+import PlayerAvatar from '../ui/PlayerAvatar';
 /* eslint-disable */
 export default function PlayersPanel({ serverId, serverName, focusPlayer = '', onFocusConsumed }) {
   const { t } = useTranslation();
