@@ -549,7 +549,7 @@ export default function ServerDetailsPage() {
           const backups = Array.isArray(backupData) ? backupData : backupData?.backups || [];
           const worlds = Array.isArray(worldsData) ? worldsData : worldsData?.worlds || [];
           const tasks = Array.isArray(schedulesData) ? schedulesData : schedulesData?.tasks || [];
-          const onlinePlayers = playerData?.online || [];
+          const onlinePlayers = (playerData?.online || []).filter(name => name.toLowerCase() !== 'client' && name.trim() !== '');
           const onlineCount = playerData?.count || onlinePlayers.length;
           const maxPlayers = playerData?.max || 0;
           const connectPort = server.host_port || typeVersionData?.host_port;

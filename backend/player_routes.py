@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+import logging
 
 from database import get_db
 from models import PlayerAction, User
@@ -158,39 +159,108 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
     return hist
 
 
-@router.get("/{server_name}/roster")
+def _filter_client_players(players: list[str]) -> list[str]:
+    """Filter out 'Client' entries from player list."""
+    return [p for p in players if p.lower() not in ("client", "")]
+
+
+async def _get_players_via_rcon(server_name: str) -> dict:
+    """Get player list directly via RCON, filtering out 'Client' entries."""
+    try:
+        from config import SERVERS_ROOT
+        from runtime_adapter import get_runtime_manager_or_docker
+        
+        # Get container ID for the server
+        dm = get_runtime_manager_or_docker()
+        servers = dm.list_servers()
+        target = next((s for s in servers if s.get("name") == server_name), None)
+        if not target:
+            return {"online": 0, "max": 0, "names": [], "method": "rcon-error"}
+        
+        cid = target.get("id")
+        if not cid:
+            return {"online": 0, "max": 0, "names": [], "method": "rcon-error"}
+        
+        container = dm._get_container_any(cid)
+        env_vars = container.attrs.get("Config", {}).get("Env", [])
+        env_dict = dict(var.split("=", 1) for var in env_vars if "=" in var)
+        
+        # Get RCON config from environment
+        rcon_password = env_dict.get("RCON_PASSWORD") or env_dict.get("RCON_PASSWORD") or ""
+        rcon_port = env_dict.get("RCON_PORT") or "25575"
+        
+        if not rcon_password:
+            return {"online": 0, "max": 0, "names": [], "method": "rcon-no-password"}
+        
+        from mcrcon import MCRcon
+        import re
+        
+        with MCRcon("localhost", rcon_password, port=int(rcon_port), timeout=3) as mcr:
+            output = mcr.command("list") or ""
+            text = str(output)
+            online = 0
+            maxp = 0
+            names: list[str] = []
+            
+            # Parse "There are X of a max of Y players online: name1, name2, ..."
+            m = re.search(r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", text)
+            if m:
+                online = int(m.group(1))
+                maxp = int(m.group(2))
+                colon_idx = text.find(":")
+                if colon_idx != -1 and colon_idx + 1 < len(text):
+                    names_str = text[colon_idx + 1:].strip()
+                    if names_str:
+                        names = [n.strip() for n in names_str.split(",") if n.strip()]
+            
+            # Filter out "Client" entries
+            filtered_names = [n for n in names if n.lower() not in ("client", "")]
+            
+            return {"online": online, "max": maxp, "names": filtered_names, "method": "rcon"}
+            
+    except Exception as e:
+        logger.warning(f"RCON player list failed for {server_name}: {e}")
+        return {"online": 0, "max": 0, "names": [], "method": "rcon-failed"}
+
+
+def _filter_client_players(players: list[str]) -> list[str]:
+    """Filter out 'Client' entries from player list."""
+    return [p for p in players if p.lower() not in ("client", "")]
+
+
 async def get_player_roster(server_name: str, current_user: User = Depends(require_auth)):
     """Return online and offline players with last_seen.
     online: list of names (authoritative if available)
     offline: list of {name, last_seen} sorted by recency
     """
     
-    online_names: list[str] = []
-    online_count = 0
-    max_players = 0
-    method = None
-    try:
-        dm = get_docker_manager()
-        servers = dm.list_servers()
-        target = next((s for s in servers if s.get("name") == server_name), None)
-        if not target:
-            raise HTTPException(status_code=404, detail="Server not found")
-        cid = target.get("id")
-        if not cid:
-            raise HTTPException(status_code=400, detail="Server container not found")
-        info = dm.get_player_info(cid)
-        online_names = [n for n in (info.get("names") or []) if isinstance(n, str)]
-        online_count = info.get("online") or len(online_names)
-        max_players = info.get("max") or 0
-        method = info.get("method") or "unknown"
-    except HTTPException:
-        raise
-    except Exception:
-        online_names = []
-        online_count = 0
-        max_players = 0
-        method = "error"
+    # Try RCON first for accurate player list
+    rcon_result = await _get_players_via_rcon(server_name)
     
+    online_names = rcon_result.get("names", [])
+    online_count = rcon_result.get("online", len(online_names))
+    max_players = rcon_result.get("max", 0)
+    method = rcon_result.get("method", "rcon")
+    
+    # If RCON failed, fall back to docker manager
+    if not online_names and method in ("rcon-failed", "rcon-error", "rcon-no-password"):
+        try:
+            dm = get_docker_manager()
+            servers = dm.list_servers()
+            target = next((s for s in servers if s.get("name") == server_name), None)
+            if target:
+                cid = target.get("id")
+                if cid:
+                    info = dm.get_player_info(cid)
+                    online_names = _filter_client_players([n for n in (info.get("names") or []) if isinstance(n, str)])
+                    online_count = info.get("online") or len(online_names)
+                    max_players = info.get("max") or 0
+                    method = info.get("method") or "docker-fallback"
+        except Exception:
+            online_names = []
+            online_count = 0
+            max_players = 0
+            method = "error"
     
     hist = _collect_history(server_name)
     online_set = {n.lower() for n in online_names}
@@ -198,7 +268,9 @@ async def get_player_roster(server_name: str, current_user: User = Depends(requi
     for k, rec in hist.items():
         if k in online_set:
             continue
-        offline.append({"name": rec.get("name"), "last_seen": rec.get("last_seen")})
+        name = rec.get("name")
+        if name and name.lower() not in ("client", ""):
+            offline.append({"name": name, "last_seen": rec.get("last_seen")})
     
     offline.sort(key=lambda x: (x.get("last_seen") or 0), reverse=True)
     return {
@@ -665,8 +737,13 @@ async def get_online_players(
     current_user: User = Depends(require_auth)
 ):
     """Get list of currently online players."""
+@router.get("/{server_name}/online")
+async def get_online_players(
+    server_name: str,
+    current_user: User = Depends(require_auth)
+):
+    """Get list of currently online players."""
     try:
-        
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
         
@@ -689,34 +766,34 @@ async def get_online_players(
                 detail="Server container not found"
             )
         
-        
-        
         try:
             info = docker_manager.get_player_info(container_id)
-            names = info.get('names') or []
+            names = _filter_client_players([n for n in (info.get('names') or []) if isinstance(n, str)])
             online = info.get('online') or 0
             maxp = info.get('max') or info.get('max_players') or 0
             method = info.get('method') or 'none'
             return {"players": names, "count": online, "max": maxp, "method": method}
         except Exception:
-            
-            result = docker_manager.send_command(container_id, "list")
-            
-            try:
-                text = result if isinstance(result, str) else (result.get('output') if isinstance(result, dict) else '')
-                import re as _re
-                m = _re.search(r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", str(text))
-                if not m:
-                    m = _re.search(r"(\d+)\s*/\s*(\d+)\s*players? online", str(text))
-                names = []
-                online = int(m.group(1)) if m else 0
-                maxp = int(m.group(2)) if m else 0
-            except Exception:
-                names = []
-                online = 0
-                maxp = 0
-            return {"players": names, "count": online, "max": maxp}
+            pass
         
+        # Fallback: RCON list command
+        try:
+            result = docker_manager.send_command(container_id, "list")
+            text = result if isinstance(result, str) else (result.get('output') if isinstance(result, dict) else '')
+            import re as _re
+            m = _re.search(r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", str(text))
+            if not m:
+                m = _re.search(r"(\d+)\s*/\s*(\d+)\s+players? online", str(text))
+            names = []
+            online = int(m.group(1)) if m else 0
+            maxp = int(m.group(2)) if m else 0
+        except Exception:
+            names = []
+            online = 0
+            maxp = 0
+        
+        return {"players": _filter_client_players(names), "count": online, "max": maxp}
+    
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

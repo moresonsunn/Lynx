@@ -32,8 +32,9 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
       }
       const d = await r.json();
       if (d && typeof d === 'object') {
-        setOnline(Array.isArray(d.online) ? d.online : []);
-        setOffline(Array.isArray(d.offline) ? d.offline : []);
+        const filterClient = (arr) => arr.filter(name => name.toLowerCase() !== 'client' && name.trim() !== '');
+        setOnline(Array.isArray(d.online) ? filterClient(d.online) : []);
+        setOffline(Array.isArray(d.offline) ? filterClient(d.offline) : []);
         setMethod(d.method || 'unknown');
       }
     } catch (e) {

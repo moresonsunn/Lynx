@@ -88,6 +88,26 @@ def list_backups(name: str) -> List[dict]:
             "size": p.stat().st_size,
             "modified": int(p.stat().st_mtime),
         })
+    
+    # Also check server's own backups/ folder
+    server_backup_dir = server_dir / "backups"
+    if server_backup_dir.exists():
+        for p in sorted(server_backup_dir.glob("*.zip")):
+            # Check if already in list (avoid duplicates)
+            if not any(item["file"] == p.name for item in items):
+                items.append({
+                    "file": p.name,
+                    "size": p.stat().st_size,
+                    "modified": int(p.stat().st_mtime),
+                })
+        for p in sorted(server_backup_dir.glob("*.tar.gz")):
+            if not any(item["file"] == p.name for item in items):
+                items.append({
+                    "file": p.name,
+                    "size": p.stat().st_size,
+                    "modified": int(p.stat().st_mtime),
+                })
+    
     return sorted(items, key=lambda x: x["modified"], reverse=True)
 
 
@@ -103,6 +123,10 @@ def create_backup(name: str, compression: str = 'zip') -> dict:
     dest_dir = _get_backups_root() / name
     dest_dir.mkdir(parents=True, exist_ok=True)
 
+    # Also create in server's own backups/ folder
+    server_backup_dir = server_dir / "backups"
+    server_backup_dir.mkdir(parents=True, exist_ok=True)
+
     compress = backup_settings.get("compress", True)
     fmt = compression if compression in {"zip", "gztar", "bztar", "tar"} else ('zip' if compress else 'tar')
     excludes = _backup_excludes()
@@ -115,6 +139,10 @@ def create_backup(name: str, compression: str = 'zip') -> dict:
         mode = {'gztar': 'w:gz', 'bztar': 'w:bz2', 'tar': 'w'}[fmt]
         archive_path = dest_dir / f"{name}-{ts}{ext}"
         _archive_tar(server_dir, archive_path, excludes, mode)
+
+    # Also copy to server's own backups/ folder
+    server_archive_path = server_backup_dir / archive_path.name
+    shutil.copy2(archive_path, server_archive_path)
 
     return {"file": archive_path.name, "size": archive_path.stat().st_size}
 
