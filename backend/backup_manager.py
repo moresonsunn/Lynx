@@ -4,6 +4,7 @@ import shutil
 import tarfile
 import time
 import zipfile
+import asyncio
 from typing import List
 from fastapi import HTTPException
 from config import SERVERS_ROOT
@@ -112,8 +113,18 @@ def list_backups(name: str) -> List[dict]:
 
 
 def create_backup(name: str, compression: str = 'zip') -> dict:
-    """Create a backup of the server, excluding volatile dirs (logs, crash-reports,
-    caches) so archives don't balloon over time with rotated logs/crash dumps."""
+    """Create a backup of the server synchronously (blocking)."""
+    return _create_backup_sync(name, compression)
+
+
+async def create_backup_async(name: str, compression: str = 'zip') -> dict:
+    """Create a backup of the server asynchronously in a thread pool."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _create_backup_sync, name, compression)
+
+
+def _create_backup_sync(name: str, compression: str = 'zip') -> dict:
+    """Internal synchronous backup implementation."""
     from settings_routes import get_backup_settings
 
     server_dir = _server_path(name)

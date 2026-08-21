@@ -29,8 +29,8 @@ const CustomTooltip = ({ active, payload, label }) => {
       <p className="text-white/60 mb-1">{label}</p>
       {payload.map((p, i) => (
         <p key={i} style={{ color: p.color }} className="font-medium">
-          {p.name}: {typeof p.value === 'number' ? p.value.toFixed(1) : p.value}
-          {p.name.includes('CPU') ? '%' : p.name.includes('RAM') ? ' MB' : p.name.includes('Net') ? ' MB' : ''}
+          {p.name}: {typeof p.value === 'number' ? p.value.toFixed(2) : p.value}
+          {p.name.includes('CPU') ? '%' : p.name.includes('RAM') ? ' MB' : p.name.includes('Net') ? ' MB/s' : ''}
         </p>
       ))}
     </div>
@@ -52,9 +52,11 @@ export default function ResourceGraphs({ serverId }) {
       );
       if (res.ok) {
         const json = await res.json();
-        const rows = (json.data || []).map(r => ({
+        const rows = (json.data || []).map((r, i) => ({
           ...r,
           time: formatTime(r.ts),
+          // Ensure unique key for Recharts
+          __id: r.ts || i,
         }));
         setData(rows);
       }
@@ -129,7 +131,7 @@ export default function ResourceGraphs({ serverId }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="time" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+                <XAxis dataKey="ts" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={formatTime} />
                 <YAxis domain={[0, 100]} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="cpu" name="CPU" stroke="#3b82f6" fill="url(#cpuGrad)" strokeWidth={2} />
@@ -149,7 +151,7 @@ export default function ResourceGraphs({ serverId }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="time" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+                <XAxis dataKey="ts" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={formatTime} />
                 <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="ram_used" name="RAM Used" stroke="#a855f7" fill="url(#ramGrad)" strokeWidth={2} />
@@ -160,7 +162,7 @@ export default function ResourceGraphs({ serverId }) {
 
           {/* Network Chart */}
           <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-            <h4 className="text-sm font-medium text-white/70 mb-3">Network I/O (MB)</h4>
+            <h4 className="text-sm font-medium text-white/70 mb-3">Network I/O (MB/s)</h4>
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart {...chartCommon}>
                 <defs>
@@ -174,12 +176,12 @@ export default function ResourceGraphs({ serverId }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="time" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+                <XAxis dataKey="ts" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={formatTime} />
                 <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }} />
-                <Area type="monotone" dataKey="net_rx" name="Net RX" stroke="#22c55e" fill="url(#rxGrad)" strokeWidth={2} />
-                <Area type="monotone" dataKey="net_tx" name="Net TX" stroke="#f59e0b" fill="url(#txGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="net_rx_rate" name="Net RX" stroke="#22c55e" fill="url(#rxGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="net_tx_rate" name="Net TX" stroke="#f59e0b" fill="url(#txGrad)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -196,7 +198,7 @@ export default function ResourceGraphs({ serverId }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="time" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+                <XAxis dataKey="ts" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={formatTime} />
                 <YAxis allowDecimals={false} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="stepAfter" dataKey="players" name="Players" stroke="#06b6d4" fill="url(#playersGrad)" strokeWidth={2} />

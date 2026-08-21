@@ -25,9 +25,15 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
       if (!sName) { setOnline([]); setOffline([]); setMethod('missing'); return; }
       const r = await fetch(`${API}/players/${encodeURIComponent(sName)}/roster`, { headers: authHeaders() });
       if (!r.ok) {
+        let errorMessage = `HTTP ${r.status}`;
+        try {
+          const errorData = await r.json();
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch {}
         setOnline([]);
         setOffline([]);
         setMethod('error');
+        console.error('Failed to fetch players:', errorMessage);
         return;
       }
       const d = await r.json();
@@ -41,6 +47,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
       setOnline([]);
       setOffline([]);
       setMethod('error');
+      console.error('Error fetching players:', e);
     } finally {
       setLoading(false);
     }
@@ -151,6 +158,12 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
         <div className="text-sm text-white/70">{t('playerManagement.title')}</div>
         <div className="text-xs text-white/50">Updated every 3s</div>
       </div>
+
+      {method === 'error' && (
+        <div className="bg-red-500/20 border border-red-500/30 text-red-300 p-3 rounded-lg text-sm">
+          Failed to load players. Check server RCON configuration.
+        </div>
+      )}
 
       <div>
         <div className="text-xs text-white/60 mb-2">{t('playerManagement.onlinePlayers')} {online.length > 0 ? `(${online.length})` : ''} {method ? ` — ${method}` : ''}</div>

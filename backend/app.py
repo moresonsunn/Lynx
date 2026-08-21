@@ -23,7 +23,7 @@ from file_manager import (
     zip_path as fm_zip_path,
     unzip_path as fm_unzip_path,
 )
-from backup_manager import list_backups as bk_list, create_backup as bk_create, restore_backup as bk_restore
+from backup_manager import list_backups as bk_list, create_backup as bk_create, create_backup_async, restore_backup as bk_restore
 import requests
 from bs4 import BeautifulSoup
 import threading
@@ -1286,8 +1286,10 @@ def backups_list(name: str, current_user: User = Depends(require_server_permissi
 
 @app.post("/servers/{name}/backups")
 @app.post("/api/servers/{name}/backups")
-def backups_create(name: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
-    return bk_create(name)
+async def backups_create(name: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
+    # Start backup in background, return immediately
+    asyncio.create_task(create_backup_async(name))
+    return {"message": "Backup started in background", "status": "running"}
 
 @app.post("/servers/{name}/restore")
 @app.post("/api/servers/{name}/restore")

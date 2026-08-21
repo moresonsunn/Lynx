@@ -26,6 +26,8 @@ _conn: Optional[sqlite3.Connection] = None
 _collector_thread: Optional[threading.Thread] = None
 _running = False
 
+# Track last network counters per server to calculate rates
+_last_net_counters = {}
 
 def _get_conn() -> sqlite3.Connection:
     global _conn
@@ -46,6 +48,8 @@ def _get_conn() -> sqlite3.Connection:
                 memory_percent REAL DEFAULT 0,
                 network_rx_mb REAL DEFAULT 0,
                 network_tx_mb REAL DEFAULT 0,
+                network_rx_rate_mbps REAL DEFAULT 0,
+                network_tx_rate_mbps REAL DEFAULT 0,
                 player_count INTEGER DEFAULT 0
             )
         """)
@@ -55,14 +59,53 @@ def _get_conn() -> sqlite3.Connection:
     return _conn
 
 
+def _calculate_network_rates(server_id: str, rx_mb: float, tx_mb: float) -> tuple:
+    """Calculate network rates in MB/s based on previous counters."""
+    global _last_net_counters
+    now = time.time()
+    
+    if server_id not in _last_net_counters:
+        _last_net_counters[server_id] = {
+            'rx_mb': rx_mb,
+            'tx_mb': tx_mb,
+            'timestamp': now
+        }
+        return 0.0, 0.0  # First reading, no rate yet
+    
+    last = _last_net_counters[server_id]
+    time_diff = now - last['timestamp']
+    
+    if time_diff > 0:
+        rx_rate = max(0, (rx_mb - last['rx_mb']) / time_diff)
+        tx_rate = max(0, (tx_mb - last['tx_mb']) / time_diff)
+    else:
+        rx_rate = 0.0
+        tx_rate = 0.0
+    
+    _last_net_counters[server_id] = {
+        'rx_mb': rx_mb,
+        'tx_mb': tx_mb,
+        'timestamp': now
+    }
+    
+    return rx_rate, tx_rate
+
+
 def record_stats(server_id: str, server_name: str, stats: dict):
     """Insert one stats snapshot."""
     with _lock:
         conn = _get_conn()
+        
+        # Calculate network rates
+        rx_mb = stats.get("network_rx_mb", 0)
+        tx_mb = stats.get("network_tx_mb", 0)
+        rx_rate, tx_rate = _calculate_network_rates(server_id, rx_mb, tx_mb)
+        
         conn.execute(
             """INSERT INTO stats (ts, server_id, server_name, cpu_percent, memory_used_mb,
-               memory_limit_mb, memory_percent, network_rx_mb, network_tx_mb, player_count)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               memory_limit_mb, memory_percent, network_rx_mb, network_tx_mb,
+               network_rx_rate_mbps, network_tx_rate_mbps, player_count)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 datetime.utcnow().isoformat(),
                 server_id,
@@ -71,8 +114,10 @@ def record_stats(server_id: str, server_name: str, stats: dict):
                 stats.get("memory_usage_mb", 0),
                 stats.get("memory_limit_mb", 0),
                 stats.get("memory_percent", 0),
-                stats.get("network_rx_mb", 0),
-                stats.get("network_tx_mb", 0),
+                rx_mb,
+                tx_mb,
+                rx_rate,
+                tx_rate,
                 stats.get("player_count", 0),
             ),
         )
@@ -94,20 +139,20 @@ def get_stats_history(server_id: str, hours: int = 1, resolution: int = 0) -> li
                 """SELECT
                      strftime('%%Y-%%m-%%dT%%H:', ts) || 
                        printf('%%02d', (CAST(strftime('%%M', ts) AS INTEGER) / ?) * ?) || ':00' AS bucket,
-                     AVG(cpu_percent), AVG(memory_used_mb), AVG(memory_limit_mb),
-                     AVG(memory_percent), AVG(network_rx_mb), AVG(network_tx_mb),
-                     MAX(player_count)
-                   FROM stats
-                   WHERE server_id = ? AND ts >= ?
-                   GROUP BY bucket
-                   ORDER BY bucket""",
+                   AVG(cpu_percent), AVG(memory_used_mb), AVG(memory_limit_mb),
+                   AVG(memory_percent), AVG(network_rx_rate_mbps), AVG(network_tx_rate_mbps),
+                   MAX(player_count)
+                 FROM stats
+                 WHERE server_id = ? AND ts >= ?
+                 GROUP BY bucket
+                 ORDER BY bucket""",
                 (resolution, resolution, server_id, since),
             ).fetchall()
             return [
                 {
                     "ts": r[0], "cpu": round(r[1] or 0, 2), "ram_used": round(r[2] or 0, 1),
                     "ram_limit": round(r[3] or 0, 1), "ram_pct": round(r[4] or 0, 1),
-                    "net_rx": round(r[5] or 0, 2), "net_tx": round(r[6] or 0, 2),
+                    "net_rx_rate": round(r[5] or 0, 4), "net_tx_rate": round(r[6] or 0, 4),
                     "players": r[7] or 0,
                 }
                 for r in rows
@@ -115,7 +160,7 @@ def get_stats_history(server_id: str, hours: int = 1, resolution: int = 0) -> li
         else:
             rows = conn.execute(
                 """SELECT ts, cpu_percent, memory_used_mb, memory_limit_mb, memory_percent,
-                          network_rx_mb, network_tx_mb, player_count
+                          network_rx_rate_mbps, network_tx_rate_mbps, player_count
                      FROM stats
                      WHERE server_id = ? AND ts >= ?
                      ORDER BY ts""",
@@ -125,7 +170,7 @@ def get_stats_history(server_id: str, hours: int = 1, resolution: int = 0) -> li
                 {
                     "ts": r[0], "cpu": round(r[1] or 0, 2), "ram_used": round(r[2] or 0, 1),
                     "ram_limit": round(r[3] or 0, 1), "ram_pct": round(r[4] or 0, 1),
-                    "net_rx": round(r[5] or 0, 2), "net_tx": round(r[6] or 0, 2),
+                    "net_rx_rate": round(r[5] or 0, 4), "net_tx_rate": round(r[6] or 0, 4),
                     "players": r[7] or 0,
                 }
                 for r in rows
