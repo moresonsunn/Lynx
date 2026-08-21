@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import { API, authHeaders } from '../../context/AppContext';
+import { PlayerAvatar } from '../ui/PlayerAvatar';
 /* eslint-disable */
 export default function PlayersPanel({ serverId, serverName, focusPlayer = '', onFocusConsumed }) {
   const { t } = useTranslation();
   // Defensive: normalize serverName to avoid ReferenceError if caller omits prop
   const sName = serverName || '';
   const [online, setOnline] = useState([]);
+  const [onlineCount, setOnlineCount] = useState(0);
   const [offline, setOffline] = useState([]);
   const [method, setMethod] = useState('');
   const [loading, setLoading] = useState(true);
@@ -39,7 +41,19 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
       const d = await r.json();
       if (d && typeof d === 'object') {
         const filterClient = (arr) => arr.filter(name => name.toLowerCase() !== 'client' && name.trim() !== '');
-        setOnline(Array.isArray(d.online) ? filterClient(d.online) : []);
+        // Handle new response format with PlayerResponse objects (name + uuid)
+        if (Array.isArray(d.players)) {
+          const onlineWithUuid = d.players
+            .map(p => ({ name: p.name, uuid: p.uuid }))
+            .filter(p => p.name.toLowerCase() !== 'client' && p.name.trim() !== '');
+          setOnline(onlineWithUuid);
+          setOnlineCount(d.online || onlineWithUuid.length);
+        } else {
+          // Backward compatibility: d.online is array of names
+          const filterClient = (arr) => arr.filter(name => name.toLowerCase() !== 'client' && name.trim() !== '');
+          setOnline(Array.isArray(d.online) ? filterClient(d.online) : []);
+          setOnlineCount(d.count || online.length);
+        }
         setOffline(Array.isArray(d.offline) ? filterClient(d.offline) : []);
         setMethod(d.method || 'unknown');
       }
@@ -193,38 +207,33 @@ rcon.port=25575
       )}
 
       <div>
-        <div className="text-xs text-white/60 mb-2">{t('playerManagement.onlinePlayers')} {online.length > 0 ? `(${online.length})` : ''} {method ? ` — ${method}` : ''}</div>
+        <div className="text-xs text-white/60 mb-2">{t('playerManagement.onlinePlayers')} {onlineCount > 0 ? `(${onlineCount})` : ''} {method ? ` — ${method}` : ''}</div>
         {loading ? <div className="text-xs text-white/50">Loading…</div> : null}
 
         {online.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {online.map((p) => {
-              const key = p.toLowerCase();
+              const key = p.name.toLowerCase();
               const isHighlighted = highlightedPlayer && highlightedPlayer === key;
-              const avatar = avatarUrls[p];
               return (
                 <div
-                  key={p}
+                  key={p.uuid || p.name}
                   ref={(el) => { if (el) highlightRefs.current[key] = el; }}
                   className={`bg-white/5 border border-white/10 rounded-lg p-3 space-y-3 hover:shadow-lg transition ${isHighlighted ? 'ring-2 ring-brand-500/60 animate-pulse-glow' : ''}`}
                 >
                   <div className="flex items-center gap-3">
-                    {avatar ? (
-                      <img src={avatar} alt={p} className="w-10 h-10 rounded" />
-                    ) : (
-                      <div className="w-10 h-10 rounded bg-brand-600 flex items-center justify-center text-base font-semibold text-white flex-shrink-0">{p.slice(0, 1).toUpperCase()}</div>
-                    )}
+                    <PlayerAvatar uuid={p.uuid} name={p.name} size={40} />
                     <div className="min-w-0">
-                      <div className="text-sm text-white font-semibold truncate">{p}</div>
+                      <div className="text-sm text-white font-semibold truncate">{p.name}</div>
                       <div className="text-xs text-green-400">online</div>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <button title={t('playerManagement.message')} onClick={() => sendTell(p)} className="px-2 py-1 bg-sky-500/20 border border-sky-500/30 rounded text-xs text-sky-300 hover:bg-sky-500/30 transition">{t('playerManagement.message')}</button>
-                    <button title={t('playerManagement.op')} onClick={() => postAction('op', p)} className="px-2 py-1 bg-green-500/20 border border-green-500/30 rounded text-xs text-green-300 hover:bg-green-500/30 transition">OP</button>
-                    <button title={t('playerManagement.deop')} onClick={() => deop(p)} className="px-2 py-1 bg-orange-500/20 border border-orange-500/30 rounded text-xs text-orange-300 hover:bg-orange-500/30 transition">DEOP</button>
-                    <button title={t('playerManagement.kick')} onClick={() => postAction('kick', p)} className="px-2 py-1 bg-yellow-600 rounded text-xs text-white hover:bg-yellow-500 transition">{t('playerManagement.kick')}</button>
-                    <button title={t('playerManagement.ban')} onClick={() => postAction('ban', p)} className="px-2 py-1 bg-red-600 rounded text-xs text-white hover:bg-red-500 transition">{t('playerManagement.ban')}</button>
+                    <button title={t('playerManagement.message')} onClick={() => sendTell(p.name)} className="px-2 py-1 bg-sky-500/20 border border-sky-500/30 rounded text-xs text-sky-300 hover:bg-sky-500/30 transition">{t('playerManagement.message')}</button>
+                    <button title={t('playerManagement.op')} onClick={() => postAction('op', p.name)} className="px-2 py-1 bg-green-500/20 border border-green-500/30 rounded text-xs text-green-300 hover:bg-green-500/30 transition">OP</button>
+                    <button title={t('playerManagement.deop')} onClick={() => deop(p.name)} className="px-2 py-1 bg-orange-500/20 border border-orange-500/30 rounded text-xs text-orange-300 hover:bg-orange-500/30 transition">DEOP</button>
+                    <button title={t('playerManagement.kick')} onClick={() => postAction('kick', p.name)} className="px-2 py-1 bg-yellow-600 rounded text-xs text-white hover:bg-yellow-500 transition">{t('playerManagement.kick')}</button>
+                    <button title={t('playerManagement.ban')} onClick={() => postAction('ban', p.name)} className="px-2 py-1 bg-red-600 rounded text-xs text-white hover:bg-red-500 transition">{t('playerManagement.ban')}</button>
                   </div>
                 </div>
               );

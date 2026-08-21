@@ -13,6 +13,7 @@ from config import SERVERS_ROOT
 import os, json, re, gzip, datetime as _dt
 
 router = APIRouter(prefix="/players", tags=["player_management"])
+logger = logging.getLogger(__name__)
 
 
 class PlayerActionCreate(BaseModel):
@@ -32,6 +33,20 @@ class PlayerActionResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class PlayerResponse(BaseModel):
+    name: str
+    uuid: Optional[str] = None
+
+
+class RosterResponse(BaseModel):
+    players: List[PlayerResponse]
+    online: int
+    max: int
+    method: str
+    error: Optional[str] = None
+
 
 _manager_cache = None
 
@@ -164,23 +179,68 @@ def _filter_client_players(players: list[str]) -> list[str]:
     return [p for p in players if p.lower() not in ("client", "")]
 
 
-async def _get_players_via_rcon(server_name: str) -> dict:
-    """Get player list directly via RCON, filtering out 'Client' entries.
-    Falls back to mcstatus/JavaServer if RCON fails."""
+async def _get_players_via_mcstatus(server_name: str) -> dict:
+    """Get player list via mcstatus/JavaServer query (primary method - no RCON needed)."""
     try:
-        from config import SERVERS_ROOT
-        from runtime_adapter import get_runtime_manager_or_docker
-        
-        # Get container ID for the server
         dm = get_runtime_manager_or_docker()
         servers = dm.list_servers()
         target = next((s for s in servers if s.get("name") == server_name), None)
         if not target:
-            return {"online": 0, "max": 0, "names": [], "method": "rcon-error"}
+            return {"players": [], "online": 0, "max": 0, "error": "Server not found"}
         
         cid = target.get("id")
         if not cid:
-            return {"online": 0, "max": 0, "names": [], "method": "rcon-error"}
+            return {"players": [], "online": 0, "max": 0, "error": "Server container not found"}
+        
+        container = get_docker_manager()._get_container_any(cid)
+        env_vars = container.attrs.get("Config", {}).get("Env", [])
+        env_dict = dict(var.split("=", 1) for var in env_vars if "=" in var)
+        
+        # Get server port from environment
+        server_port = env_dict.get("SERVER_PORT") or env_dict.get("MINECRAFT_PORT") or "25565"
+        
+        from mcstatus import JavaServer
+        java_server = JavaServer.lookup(f"localhost:{server_port}")
+        status = java_server.status(timeout=3)
+        
+        players = []
+        if status.players and status.players.sample:
+            for player in status.players.sample:
+                players.append({
+                    "name": player.name,
+                    "uuid": str(player.id) if hasattr(player, 'id') and player.id else None
+                })
+        
+        online = status.players.online if status.players else 0
+        maxp = status.players.max if status.players else 0
+        
+        # Filter out "Client" entries
+        filtered_players = [p for p in players if p["name"].lower() not in ("client", "")]
+        
+        return {"players": filtered_players, "online": online, "max": maxp}
+        
+    except Exception as e:
+        logger.warning(f"mcstatus player list failed for {server_name}: {e}")
+        return {"players": [], "online": 0, "max": 0, "error": f"Failed to query server: {str(e)}"}
+
+
+def _filter_client_players(players: list[str]) -> list[str]:
+    """Filter out 'Client' entries from player list."""
+    return [p for p in players if p.lower() not in ("client", "")]
+
+
+async def _get_players_via_rcon(server_name: str) -> dict:
+    """Get player list directly via RCON (fallback method)."""
+    try:
+        dm = get_runtime_manager_or_docker()
+        servers = dm.list_servers()
+        target = next((s for s in servers if s.get("name") == server_name), None)
+        if not target:
+            return {"players": [], "online": 0, "max": 0, "error": "Server not found"}
+        
+        cid = target.get("id")
+        if not cid:
+            return {"players": [], "online": 0, "max": 0, "error": "Server container not found"}
         
         container = dm._get_container_any(cid)
         env_vars = container.attrs.get("Config", {}).get("Env", [])
@@ -191,8 +251,7 @@ async def _get_players_via_rcon(server_name: str) -> dict:
         rcon_port = env_dict.get("RCON_PORT") or "25575"
         
         if not rcon_password:
-            # No RCON password - try mcstatus fallback immediately
-            return await _get_players_via_mcstatus(server_name, container)
+            return {"players": [], "online": 0, "max": 0, "error": "RCON not configured"}
         
         from mcrcon import MCRcon
         import re
@@ -218,51 +277,11 @@ async def _get_players_via_rcon(server_name: str) -> dict:
             # Filter out "Client" entries
             filtered_names = [n for n in names if n.lower() not in ("client", "")]
             
-            return {"online": online, "max": maxp, "names": filtered_names, "method": "rcon"}
+            return {"players": filtered_names, "online": online, "max": maxp, "method": "rcon"}
             
     except Exception as e:
         logger.warning(f"RCON player list failed for {server_name}: {e}")
-        # Fallback to mcstatus
-        try:
-            from runtime_adapter import get_runtime_manager_or_docker
-            dm = get_runtime_manager_or_docker()
-            servers = dm.list_servers()
-            target = next((s for s in dm.list_servers() if s.get("name") == server_name), None)
-            if target:
-                cid = target.get("id")
-                if cid:
-                    container = dm._get_container_any(cid)
-                    return await _get_players_via_mcstatus(server_name, container)
-        except Exception:
-            pass
-        return {"online": 0, "max": 0, "names": [], "method": "rcon-failed"}
-
-
-async def _get_players_via_mcstatus(server_name: str, container) -> dict:
-    """Get player list via mcstatus/JavaServer query as fallback."""
-    try:
-        env_vars = container.attrs.get("Config", {}).get("Env", [])
-        env_dict = dict(var.split("=", 1) for var in env_vars if "=" in var)
-        
-        # Get server port from environment
-        server_port = env_dict.get("SERVER_PORT") or env_dict.get("MINECRAFT_PORT") or "25565"
-        
-        from mcstatus import JavaServer
-        java_server = JavaServer("localhost", port=int(server_port))
-        status = java_server.status(timeout=3)
-        
-        players = status.players.sample if status.players and status.players.sample else []
-        online = status.players.online if status.players else 0
-        maxp = status.players.max if status.players else 0
-        names = [p.name for p in players if hasattr(p, 'name')]
-        
-        # Filter out "Client" entries
-        filtered_names = [n for n in names if n.lower() not in ("client", "")]
-        
-        return {"online": online, "max": maxp, "names": filtered_names, "method": "mcstatus"}
-    except Exception as e:
-        logger.warning(f"mcstatus player list failed for {server_name}: {e}")
-        return {"online": 0, "max": 0, "names": [], "method": "mcstatus-failed"}
+        return {"players": [], "online": 0, "max": 0, "error": f"RCON failed: {str(e)}"}
 
 
 def _filter_client_players(players: list[str]) -> list[str]:
@@ -270,59 +289,59 @@ def _filter_client_players(players: list[str]) -> list[str]:
     return [p for p in players if p.lower() not in ("client", "")]
 
 
-async def get_player_roster(server_name: str, current_user: User = Depends(require_auth)):
-    """Return online and offline players with last_seen.
-    online: list of names (authoritative if available)
-    offline: list of {name, last_seen} sorted by recency
+@router.get("/{server_name}/roster", response_model=RosterResponse)
+async def get_roster(
+    server_name: str,
+    current_user: User = Depends(require_auth)
+):
     """
+    Get player roster for a Minecraft server.
+    Uses server status query (mcstatus) as primary method - NO RCON needed!
+    """
+    # Get server info
+    dm = get_runtime_manager_or_docker()
+    servers = dm.list_servers()
+    target = next((s for s in servers if s.get("name") == server_name), None)
+    if not target:
+        return RosterResponse(players=[], online=0, max=0, method="error", error="Server not found")
     
-    # Try RCON first for accurate player list
+    # Check if server is running
+    if target.get("status") != "running":
+        return RosterResponse(players=[], online=0, max=0, method="error", error="Server is not running")
+    
+    # Try mcstatus first (primary method - no RCON needed)
+    mcstatus_result = await _get_players_via_mcstatus(server_name)
+    
+    if mcstatus_result.get("players"):
+        # Success with mcstatus
+        players = [PlayerResponse(name=p["name"], uuid=p.get("uuid")) for p in mcstatus_result["players"]]
+        return RosterResponse(
+            players=players,
+            online=mcstatus_result.get("online", len(mcstatus_result["players"])),
+            max=mcstatus_result.get("max", 0),
+            method="mcstatus"
+        )
+    
+    # If mcstatus failed, try RCON as fallback
     rcon_result = await _get_players_via_rcon(server_name)
     
-    online_names = rcon_result.get("names", [])
-    online_count = rcon_result.get("online", len(online_names))
-    max_players = rcon_result.get("max", 0)
-    method = rcon_result.get("method", "rcon")
+    if rcon_result.get("players"):
+        players = [PlayerResponse(name=p) for p in rcon_result["players"]]
+        return RosterResponse(
+            players=players,
+            online=rcon_result.get("online", len(rcon_result["players"])),
+            max=rcon_result.get("max", 0),
+            method=rcon_result.get("method", "rcon")
+        )
     
-    # If RCON failed, fall back to docker manager
-    if not online_names and method in ("rcon-failed", "rcon-error", "rcon-no-password"):
-        try:
-            dm = get_docker_manager()
-            servers = dm.list_servers()
-            target = next((s for s in servers if s.get("name") == server_name), None)
-            if target:
-                cid = target.get("id")
-                if cid:
-                    info = dm.get_player_info(cid)
-                    online_names = _filter_client_players([n for n in (info.get("names") or []) if isinstance(n, str)])
-                    online_count = info.get("online") or len(online_names)
-                    max_players = info.get("max") or 0
-                    method = info.get("method") or "docker-fallback"
-        except Exception:
-            online_names = []
-            online_count = 0
-            max_players = 0
-            method = "error"
-    
-    hist = _collect_history(server_name)
-    online_set = {n.lower() for n in online_names}
-    offline: list[dict] = []
-    for k, rec in hist.items():
-        if k in online_set:
-            continue
-        name = rec.get("name")
-        if name and name.lower() not in ("client", ""):
-            offline.append({"name": name, "last_seen": rec.get("last_seen")})
-    
-    offline.sort(key=lambda x: (x.get("last_seen") or 0), reverse=True)
-    return {
-        "online": online_names,
-        "offline": offline,
-        "method": method,
-        "count": online_count,
-        "max": max_players,
-    }
+    # Both failed
+    error = mcstatus_result.get("error") or rcon_result.get("error") or "Failed to get player list"
+    return RosterResponse(players=[], online=0, max=0, method="error", error=error)
 
+
+def _filter_client_players(players: list[str]) -> list[str]:
+    """Filter out 'Client' entries from player list."""
+    return [p for p in players if p.lower() not in ("client", "")]
 
 @router.get("/{server_name}/actions", response_model=List[PlayerActionResponse])
 async def list_player_actions(
