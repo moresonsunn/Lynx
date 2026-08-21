@@ -165,7 +165,8 @@ def _filter_client_players(players: list[str]) -> list[str]:
 
 
 async def _get_players_via_rcon(server_name: str) -> dict:
-    """Get player list directly via RCON, filtering out 'Client' entries."""
+    """Get player list directly via RCON, filtering out 'Client' entries.
+    Falls back to mcstatus/JavaServer if RCON fails."""
     try:
         from config import SERVERS_ROOT
         from runtime_adapter import get_runtime_manager_or_docker
@@ -190,7 +191,8 @@ async def _get_players_via_rcon(server_name: str) -> dict:
         rcon_port = env_dict.get("RCON_PORT") or "25575"
         
         if not rcon_password:
-            return {"online": 0, "max": 0, "names": [], "method": "rcon-no-password"}
+            # No RCON password - try mcstatus fallback immediately
+            return await _get_players_via_mcstatus(server_name, container)
         
         from mcrcon import MCRcon
         import re
@@ -220,7 +222,47 @@ async def _get_players_via_rcon(server_name: str) -> dict:
             
     except Exception as e:
         logger.warning(f"RCON player list failed for {server_name}: {e}")
+        # Fallback to mcstatus
+        try:
+            from runtime_adapter import get_runtime_manager_or_docker
+            dm = get_runtime_manager_or_docker()
+            servers = dm.list_servers()
+            target = next((s for s in dm.list_servers() if s.get("name") == server_name), None)
+            if target:
+                cid = target.get("id")
+                if cid:
+                    container = dm._get_container_any(cid)
+                    return await _get_players_via_mcstatus(server_name, container)
+        except Exception:
+            pass
         return {"online": 0, "max": 0, "names": [], "method": "rcon-failed"}
+
+
+async def _get_players_via_mcstatus(server_name: str, container) -> dict:
+    """Get player list via mcstatus/JavaServer query as fallback."""
+    try:
+        env_vars = container.attrs.get("Config", {}).get("Env", [])
+        env_dict = dict(var.split("=", 1) for var in env_vars if "=" in var)
+        
+        # Get server port from environment
+        server_port = env_dict.get("SERVER_PORT") or env_dict.get("MINECRAFT_PORT") or "25565"
+        
+        from mcstatus import JavaServer
+        java_server = JavaServer("localhost", port=int(server_port))
+        status = java_server.status(timeout=3)
+        
+        players = status.players.sample if status.players and status.players.sample else []
+        online = status.players.online if status.players else 0
+        maxp = status.players.max if status.players else 0
+        names = [p.name for p in players if hasattr(p, 'name')]
+        
+        # Filter out "Client" entries
+        filtered_names = [n for n in names if n.lower() not in ("client", "")]
+        
+        return {"online": online, "max": maxp, "names": filtered_names, "method": "mcstatus"}
+    except Exception as e:
+        logger.warning(f"mcstatus player list failed for {server_name}: {e}")
+        return {"online": 0, "max": 0, "names": [], "method": "mcstatus-failed"}
 
 
 def _filter_client_players(players: list[str]) -> list[str]:

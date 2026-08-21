@@ -150,18 +150,45 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
       clearTimeout(focusTick);
       clearTimeout(clearTick);
     };
-  }, [focusPlayer, online, offline, onFocusConsumed]);
-
+}, [focusPlayer, online, offline, onFocusConsumed]);
+ 
   return (
     <div className="p-4 bg-black/20 rounded-lg space-y-4" style={{ minHeight: 300 }}>
       <div className="flex items-center justify-between">
         <div className="text-sm text-white/70">{t('playerManagement.title')}</div>
         <div className="text-xs text-white/50">Updated every 3s</div>
       </div>
-
+ 
       {method === 'error' && (
         <div className="bg-red-500/20 border border-red-500/30 text-red-300 p-3 rounded-lg text-sm">
           Failed to load players. Check server RCON configuration.
+        </div>
+      )}
+
+      {method === 'rcon-no-password' && (
+        <div className="bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 p-4 rounded-lg">
+          <p className="font-medium">⚠️ RCON is disabled for this server.</p>
+          <p className="text-sm mt-1">To enable player list, enable RCON in server.properties:</p>
+          <pre className="text-xs bg-gray-900 p-2 rounded mt-2 whitespace-pre-wrap">
+enable-rcon=true
+rcon.password=your_password
+rcon.port=25575
+          </pre>
+          <p className="text-xs text-yellow-400 mt-2">
+            Or restart the server after enabling RCON to use the mcstatus fallback.
+          </p>
+        </div>
+      )}
+
+      {method === 'mcstatus' && (
+        <div className="bg-green-500/20 border border-green-500/30 text-green-300 p-3 rounded-lg text-sm">
+          Showing players via server status query (mcstatus fallback).
+        </div>
+      )}
+
+      {method === 'mcstatus-failed' && (
+        <div className="bg-red-500/20 border border-red-500/30 text-red-300 p-3 rounded-lg text-sm">
+          Both RCON and server status query failed. Check if server is running and port 25565 is accessible.
         </div>
       )}
 
