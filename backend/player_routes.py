@@ -312,17 +312,17 @@ async def get_roster(
     # Try mcstatus first (primary method - no RCON needed)
     mcstatus_result = await _get_players_via_mcstatus(server_name)
     
-    if mcstatus_result.get("players"):
-        # Success with mcstatus
-        players = [PlayerResponse(name=p["name"], uuid=p.get("uuid")) for p in mcstatus_result["players"]]
+    if mcstatus_result.get("players") or not mcstatus_result.get("error"):
+        # Success with mcstatus (even if no players online)
+        players = [PlayerResponse(name=p["name"], uuid=p.get("uuid")) for p in mcstatus_result.get("players", [])]
         return RosterResponse(
             players=players,
-            online=mcstatus_result.get("online", len(mcstatus_result["players"])),
+            online=mcstatus_result.get("online", len(mcstatus_result.get("players", []))),
             max=mcstatus_result.get("max", 0),
             method="mcstatus"
         )
     
-    # If mcstatus failed, try RCON as fallback
+    # If mcstatus failed, try RCON as fallback only if configured
     rcon_result = await _get_players_via_rcon(server_name)
     
     if rcon_result.get("players"):
@@ -334,7 +334,7 @@ async def get_roster(
             method=rcon_result.get("method", "rcon")
         )
     
-    # Both failed
+    # Both failed or RCON not configured - return empty players gracefully
     error = mcstatus_result.get("error") or rcon_result.get("error") or "Failed to get player list"
     return RosterResponse(players=[], online=0, max=0, method="error", error=error)
 
@@ -792,12 +792,6 @@ async def deop_player(
         )
 
 
-@router.get("/{server_name}/online")
-async def get_online_players(
-    server_name: str,
-    current_user: User = Depends(require_auth)
-):
-    """Get list of currently online players."""
 @router.get("/{server_name}/online")
 async def get_online_players(
     server_name: str,
