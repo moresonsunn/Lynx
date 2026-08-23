@@ -222,11 +222,11 @@ def _collector_loop():
                         s = manager.get_server_stats(str(cid))
                         if s and not s.get("error"):
                             record_stats(str(cid), name, s)
-                            logger.debug(f"Stats collector: Recorded stats for {name} ({cid}) - CPU: {s.get('cpu_percent', 0)}%")
+                            logger.debug(f"Recorded stats for {name} ({cid}): cpu={s.get('cpu_percent', 0)}% mem={s.get('memory_usage_mb', 0)}MB players={s.get('player_count', 0)}")
                         else:
-                            logger.debug(f"Stats collector: No stats for {cid} - {s.get('error') if s else 'None'}")
+                            logger.debug(f"No stats for {cid}: {s.get('error') if s else 'None'}")
                     except Exception as e:
-                        logger.warning(f"Stats collector: Failed to get stats for {cid}: {e}")
+                        logger.warning(f"Stats collection failed for {cid}: {e}")
         except Exception as e:
             logger.error(f"Stats collector error: {e}")
 

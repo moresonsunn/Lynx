@@ -16,12 +16,30 @@ import secrets
 
 logger = logging.getLogger(__name__)
 
+# Placeholder values that must never be used as a real signing key.
+_INSECURE_SECRET_PLACEHOLDERS = {
+    "",
+    "change-me",
+    "change-me-single-container-secret",
+    "changeme",
+    "dev",
+    "secret",
+    "secret-key",
+    "test",
+    "your-secret-key",
+    "your-secret-key-change-this-in-production",
+}
 
-_raw_secret = os.getenv("SECRET_KEY")
-if not _raw_secret or _raw_secret == "your-secret-key-change-this-in-production":
-    
+_raw_secret = (os.getenv("SECRET_KEY") or "").strip()
+if not _raw_secret or _raw_secret.lower() in _INSECURE_SECRET_PLACEHOLDERS:
+    # Ephemeral key: sessions survive until restart, then invalidate. This is the
+    # safe failure mode — a publicly-known key would let anyone forge tokens.
     _raw_secret = secrets.token_urlsafe(64)
-    logging.warning("SECRET_KEY was not set; generated a temporary secret. Configure SECRET_KEY for stable auth tokens.")
+    logging.warning(
+        "SECRET_KEY is unset or a known placeholder; generated an EPHEMERAL secret. "
+        "All sessions will be invalidated on every restart. Set a strong SECRET_KEY "
+        "(python -c \"import secrets; print(secrets.token_urlsafe(64))\") for stable auth."
+    )
 
 SECRET_KEY = _raw_secret
 ALGORITHM = "HS256"

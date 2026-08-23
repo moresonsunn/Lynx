@@ -130,8 +130,8 @@ class TaskScheduler:
                         if f.is_file() and f.stat().st_mtime < cutoff:
                             f.unlink()
                             removed += 1
-                    except Exception:
-                        pass
+                    except OSError as e:
+                        logger.debug(f"Could not remove {f}: {e}")
         if removed:
             logger.info(f"Maintenance: removed {removed} rotated log/crash files older than {days}d")
 
@@ -288,8 +288,8 @@ class TaskScheduler:
                         f"Automatic backup for **{server_name}** completed ({size_mb} MB).",
                         color=3447003  # Blue
                     )
-                except Exception:
-                    pass
+                except Exception as notify_e:
+                    logger.debug(f"Backup notification not sent for {server_name}: {notify_e}")
                 
             except Exception as e:
                 logger.error(f"Backup task failed for {server_name or 'unknown'}: {e}")
@@ -306,8 +306,8 @@ class TaskScheduler:
             task = self._get_task(db, task_id)
             if not task or not bool(getattr(task, "is_active", False)):
                 return
-            
-                logger.info(f"Executing restart task: {self._task_label(task, task_id)}")
+
+            logger.info(f"Executing restart task: {self._task_label(task, task_id)}")
             
             
             setattr(task, "last_run", datetime.utcnow())

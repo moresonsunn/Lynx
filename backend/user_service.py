@@ -380,8 +380,8 @@ class UserService:
         if not user:
             raise ValueError(f"User with ID {user_id} not found")
         
-        if user.role == "admin" and self.count_active_admins() <= 1:
-            raise ValueError("Cannot delete the last active admin user")
+        if user.role in ("admin", "owner") and self.count_active_admins() <= 1:
+            raise ValueError("Cannot delete the last active admin/owner user")
         
         
         user.is_active = False
@@ -421,9 +421,9 @@ class UserService:
         }
     
     def count_active_admins(self) -> int:
-        """Count active admin users."""
+        """Count active privileged users (owner or admin)."""
         return self.db.query(User).filter(
-            and_(User.role == "admin", User.is_active == True)
+            and_(User.role.in_(("admin", "owner")), User.is_active == True)  # noqa: E712
         ).count()
     
     def authenticate_user(self, username: str, password: str, ip_address: Optional[str] = None) -> Optional[User]:

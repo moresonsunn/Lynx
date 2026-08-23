@@ -107,17 +107,6 @@ def list_loader_versions(
 
 
 
-@router.get("/api/server-types")
-def list_server_types_api():
-    return list_server_types()
-
-@router.get("/api/server-types/{server_type}/versions")
-def list_server_type_versions_api(server_type: str):
-    return list_server_type_versions(server_type)
-
-@router.get("/api/server-types/{server_type}/loader-versions")
-def list_loader_versions_api(
-    server_type: str,
-    version: str = Query(..., description="Minecraft version to get loader versions for")
-):
-    return list_loader_versions(server_type, version)
+# NOTE: paths are relative (/server-types/...). app.py registers this router
+# bare AND with an /api prefix, so both /server-types and /api/server-types work.
+# Do NOT add extra "/api/..." copies here — that creates duplicate routes.

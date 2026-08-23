@@ -532,6 +532,21 @@ async def create_user(
     
     return user
 
+PRIVILEGED_ROLES = ("admin", "owner")
+
+
+def _count_active_privileged(db: Session, exclude_user_id: int | None = None) -> int:
+    """Count active users holding a privileged role (owner/admin)."""
+    from sqlalchemy import and_
+    q = db.query(User).filter(
+        User.role.in_(PRIVILEGED_ROLES),
+        User.is_active == True,  # noqa: E712
+    )
+    if exclude_user_id is not None:
+        q = q.filter(User.id != exclude_user_id)
+    return q.count()
+
+
 @router.put("/{user_id}", response_model=UserResponse)
 async def update_user(
     user_id: int,
@@ -542,7 +557,7 @@ async def update_user(
 ):
     """Update a user's information."""
     user_service = UserService(db)
-    
+
     # Check if updating role and if user has permission
     if user_data.role is not None and user_data.role != current_user.role:
         # Verify that the current user has permission to assign roles
@@ -551,6 +566,26 @@ async def update_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Permission denied: cannot change user roles"
             )
+
+        target = db.query(User).filter(User.id == user_id).first()
+        if not target:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+        # Block demoting/deactivating the LAST active privileged (owner/admin)
+        # account — including self-demotion — so the panel can never be locked
+        # out of user management.
+        losing_privilege = (
+            target.role in PRIVILEGED_ROLES and user_data.role not in PRIVILEGED_ROLES
+        ) or (user_data.is_active is False and target.role in PRIVILEGED_ROLES)
+        if losing_privilege:
+            if _count_active_privileged(db) <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Cannot demote or deactivate the last active admin/owner. "
+                        "Promote another user first."
+                    ),
+                )
     
     try:
         updates = user_data.dict(exclude_unset=True, exclude_none=True)

@@ -23,11 +23,19 @@ services:
       - BLOCKPANEL_RUNTIME_TAG=latest
       - DOCKER_HOST=unix:///var/run/docker.sock
       - ENVIRONMENT=production
-      - SECRET_KEY=${SECRET_KEY:-change-me-single-container-secret}
+      # SECURITY: Set a strong SECRET_KEY in .env — sessions invalidate on restart otherwise.
+      # Generate one with: python -c "import secrets; print(secrets.token_urlsafe(64))"
+      - SECRET_KEY=${SECRET_KEY:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - ADMIN_PASSWORD=admin123
-      - ALLOWED_ORIGIN_REGEX=.*
-      - ENABLE_DEBUG_ENDPOINTS=1
+      # SECURITY: Only set ADMIN_PASSWORD for the initial bootstrap or a deliberate
+      # reset; remove it afterwards. Weak values are rejected by the backend (<8 chars).
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Lock CORS down to your origin(s). Comma-separated list, or set
+      # ALLOWED_ORIGIN_REGEX for advanced matching. Wildcard .* is NOT safe in production.
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8000}
+      - ALLOWED_ORIGIN_REGEX=${ALLOWED_ORIGIN_REGEX:-}
+      # Debug endpoints echo request headers — keep off unless troubleshooting.
+      - ENABLE_DEBUG_ENDPOINTS=0
       - CASAOS_APP_ID=lynx
       # CasaOS v2 compose apps (Steam servers)
       - CASAOS_API_BASE=${CASAOS_API_BASE:-}

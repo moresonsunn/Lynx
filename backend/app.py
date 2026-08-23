@@ -12,17 +12,7 @@ from fastapi.responses import RedirectResponse, JSONResponse, StreamingResponse
 import os
 import docker
 from docker.errors import NotFound as DockerNotFound
-from file_manager import (
-    list_dir as fm_list_dir,
-    read_file as fm_read_file,
-    write_file as fm_write_file,
-    delete_path as fm_delete_path,
-    upload_file as fm_upload_file,
-    upload_files as fm_upload_files,
-    rename_path as fm_rename_path,
-    zip_path as fm_zip_path,
-    unzip_path as fm_unzip_path,
-)
+from file_manager import list_dir as fm_list_dir, read_file as fm_read_file
 from backup_manager import list_backups as bk_list, create_backup as bk_create, create_backup_async, restore_backup as bk_restore
 import requests
 from bs4 import BeautifulSoup
@@ -188,9 +178,16 @@ async def validation_exception_handler(request, exc):
     logger.error(f"Validation error: {exc}")
     logger.error(f"Request path: {request.url.path}")
     logger.error(f"Request query: {request.query_params}")
+    # Pydantic v2 error entries can carry non-JSON-serializable ctx (exception
+    # instances); strip ctx so JSONResponse never blows up and turns a clean
+    # 422 into an opaque 500.
+    safe_errors = [
+        {k: v for k, v in err.items() if k != "ctx"}
+        for err in exc.errors()
+    ]
     return JSONResponse(
         status_code=422,
-        content={"detail": "Invalid request parameters", "errors": exc.errors()}
+        content={"detail": "Invalid request parameters", "errors": safe_errors},
     )
 
 # Enable gzip compression for API responses and static assets
@@ -204,7 +201,6 @@ except Exception:
 # Include all routers
 app.include_router(auth_router)
 app.include_router(scheduler_router)
-app.include_router(server_schedules_router)
 app.include_router(player_router)
 app.include_router(world_router)
 app.include_router(plugin_router)
@@ -222,6 +218,10 @@ app.include_router(steam_router)
 app.include_router(steam_mods_router)
 app.include_router(settings_router)
 app.include_router(mods_router)
+# Server file-management routes (files/file/download/upload/rename/zip/mkdir).
+# Registered bare AND under /api below to mirror the historical dual paths.
+from server_files_routes import router as server_files_router
+app.include_router(server_files_router)
 # High-Impact Features
 app.include_router(analytics_router)
 app.include_router(multi_server_router)
@@ -279,7 +279,7 @@ for _router in [
     plugins_router,
     realtime_router,
     advanced_api_router,
-    user_router,
+    server_files_router,
 ]:
     try:
         app.include_router(_router, prefix="/api")
@@ -338,9 +338,13 @@ async def startup_event():
         scheduler.start()
         logging.info("Task scheduler started")
 
-        # Start stats history collector
-        start_stats_collector()
-        logging.info("Stats history collector started")
+        # Start stats history collector (disable with STATS_COLLECTOR_ENABLED=0,
+        # e.g. in unit-test environments without Docker).
+        if os.getenv("STATS_COLLECTOR_ENABLED", "1") != "0":
+            start_stats_collector()
+            logging.info("Stats history collector started")
+        else:
+            logging.info("Stats history collector disabled via STATS_COLLECTOR_ENABLED=0")
 
         # Start backup scheduler
         start_backup_scheduler()
@@ -758,9 +762,6 @@ from pydantic import BaseModel
 class PowerSignal(BaseModel):
     signal: str  # start | stop | restart | kill
 
-class MkdirRequest(BaseModel):
-    path: str
-
 @app.post("/servers/{container_id}/power")
 @app.post("/api/servers/{container_id}/power")
 def power_server(container_id: str, payload: PowerSignal, current_user: User = Depends(require_server_permission("operate"))):
@@ -904,21 +905,8 @@ def delete_server(container_id: str, current_user: User = Depends(require_server
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 
-# Simple directory creation endpoint for Files panel
-@app.post("/servers/{name}/mkdir")
-@app.post("/api/servers/{name}/mkdir")
-def mkdir_path(name: str, req: MkdirRequest, current_user: User = Depends(require_server_permission("manage"))):
-    try:
-        base = SERVERS_ROOT.resolve() / name
-        target = (base / req.path).resolve()
-        if not str(target).startswith(str(base)):
-            raise HTTPException(status_code=400, detail="Invalid path")
-        target.mkdir(parents=True, exist_ok=True)
-        return {"ok": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# Server file-management routes (mkdir/files/file/download/upload/rename/zip)
+# live in server_files_routes.py and are registered via include_router below.
 
 """(Removed earlier duplicate /servers/{container_id}/logs endpoint in favor of authenticated variant defined later)"""
 
@@ -1077,207 +1065,8 @@ def get_server_console(container_id: str, tail: int = 100, current_user: User = 
         raise HTTPException(status_code=404, detail=f"Console unavailable: {e}")
 
 #
-
-@app.get("/servers/{name}/files")
-@app.get("/api/servers/{name}/files")
-def files_list(name: str, request: Request, path: str = ".", current_user: User = Depends(require_server_permission("view", param_name="name"))):
-    # Compute a simple ETag based on directory mtime to enable client caching
-    try:
-        from config import get_server_dir
-        server_dir = get_server_dir(name)
-        base = (server_dir / path).resolve()
-        # Prevent path traversal
-        if not str(base).startswith(str(server_dir)):
-            raise HTTPException(status_code=400, detail="Invalid path")
-        if base.exists() and base.is_dir():
-            # Combine mtime with entry count for better change detection
-            try:
-                with os.scandir(base) as it:
-                    count = sum(1 for _ in it)
-            except Exception:
-                count = 0
-            st = base.stat()
-            etag = f'W/"dir-{count}-{int(st.st_mtime)}"'
-        elif base.exists():
-            st = base.stat()
-            etag = f'W/"dirfile-{st.st_size}-{int(st.st_mtime)}"'
-        else:
-            etag = 'W/"dir-0"'
-    except Exception:
-        etag = None
-
-    inm = request.headers.get("if-none-match") if request else None
-    if etag and inm == etag:
-        from starlette.responses import Response
-        return Response(status_code=304, headers={"ETag": etag})
-
-    items = fm_list_dir(name, path)
-    headers = {"ETag": etag} if etag else {}
-    return JSONResponse(content={"items": items}, headers=headers)
-
-@app.get("/servers/{name}/file")
-@app.get("/api/servers/{name}/file")
-def file_read(name: str, request: Request, path: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
-    # ETag based on file size and mtime
-    try:
-        from config import get_server_dir
-        from pathlib import Path
-        server_dir = get_server_dir(name)
-        p = (server_dir / path).resolve()
-        if not str(p).startswith(str(server_dir)):
-            raise HTTPException(status_code=400, detail="Invalid path")
-        if p.exists() and p.is_file():
-            st = p.stat()
-            etag = f'W/"file-{st.st_size}-{int(st.st_mtime)}"'
-        else:
-            etag = 'W/"file-0-0"'
-    except Exception:
-        etag = None
-
-    inm = request.headers.get("if-none-match") if request else None
-    if etag and inm == etag:
-        from starlette.responses import Response
-        return Response(status_code=304, headers={"ETag": etag})
-
-    content = fm_read_file(name, path)
-    headers = {"ETag": etag} if etag else {}
-    return JSONResponse(content={"content": content}, headers=headers)
-
-@app.post("/servers/{name}/file")
-@app.post("/api/servers/{name}/file")
-def file_write(name: str, path: str, content: str = Form(""), current_user: User = Depends(require_server_permission("manage", param_name="name"))):
-    fm_write_file(name, path, content)
-    return {"ok": True}
-
-@app.delete("/servers/{name}/file")
-@app.delete("/api/servers/{name}/file")
-def file_delete(name: str, path: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
-    fm_delete_path(name, path)
-    return {"ok": True}
-
-@app.get("/servers/{name}/download")
-@app.get("/api/servers/{name}/download")
-def file_or_folder_download(name: str, path: str = Query("."), current_user: User = Depends(require_server_permission("view", param_name="name"))):
-    """
-    Download a single file directly, or if a directory is requested, return a zipped archive on the fly.
-    """
-    from config import get_server_dir
-    from pathlib import Path
-    server_dir = get_server_dir(name)
-    base = server_dir
-    target = (base / path).resolve()
-    if not str(target).startswith(str(base)):
-        raise HTTPException(status_code=400, detail="Invalid path")
-    if not target.exists():
-        raise HTTPException(status_code=404, detail="Path not found")
-
-    if target.is_file():
-        return FileResponse(str(target), filename=target.name)
-    # It's a directory: create a temporary zip and send it
-    import tempfile, shutil
-    tmpdir = Path(tempfile.mkdtemp(prefix="dl_zip_"))
-    archive_base = tmpdir / (Path(path).name or "folder")
-    # shutil.make_archive adds extension automatically
-    archive_path = shutil.make_archive(str(archive_base), 'zip', root_dir=str(target))
-    fname = f"{(Path(path).name or 'folder')}.zip"
-    return FileResponse(archive_path, filename=fname)
-
-@app.post("/servers/{name}/upload")
-@app.post("/api/servers/{name}/upload")
-async def file_upload(
-    name: str,
-    path: str = Query("."),
-    file: UploadFile = File(...),
-    current_user: User = Depends(require_server_permission("manage", param_name="name")),
-):
-    if not file:
-        raise HTTPException(status_code=400, detail="No file provided")
-    # Stream upload to disk asynchronously to improve throughput and reduce memory
-    from file_manager import get_upload_dest, sanitize_filename
-    from pathlib import Path
-    dest = get_upload_dest(name, path, file.filename or "uploaded")
-    try:
-        with dest.open("wb") as f:
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                f.write(chunk)
-    finally:
-        try:
-            await file.close()
-        except Exception:
-            pass
-    # Post-process potential server icon uploads
-    try:
-        from file_manager import maybe_process_server_icon
-        maybe_process_server_icon(name, dest, file.filename or dest.name)
-    except Exception:
-        pass
-    # Invalidate caches for this server after upload
-    try:
-        from file_manager import _invalidate_cache
-        _invalidate_cache(name)
-    except Exception:
-        pass
-    return {"ok": True}
-
-class FileRenameRequest(BaseModel):
-    src: str
-    dest: str
-
-class ServerRenameRequest(BaseModel):
-    new_name: str
-
-@app.post("/servers/{name}/rename")
-@app.post("/api/servers/{name}/rename")
-def file_rename(name: str, req: FileRenameRequest, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
-    fm_rename_path(name, req.src, req.dest)
-    return {"ok": True}
-
-@app.post("/servers/{name}/rename-server")
-@app.post("/api/servers/{name}/rename-server")
-def rename_server(name: str, req: ServerRenameRequest, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
-    """Rename an existing server (directory + container)."""
-    dm = get_docker_manager()
-    try:
-        result = dm.rename_server(old_name=name, new_name=req.new_name)
-        return {"ok": True, **result}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/servers/{name}/upload-multiple")
-@app.post("/api/servers/{name}/upload-multiple")
-async def files_upload(
-    name: str,
-    path: str = Form("."),
-    files: list[UploadFile] = File(...),
-    current_user: User = Depends(require_server_permission("manage", param_name="name")),
-):
-    if not files:
-        raise HTTPException(status_code=400, detail="No files provided")
-    count = fm_upload_files(name, path, files)
-    return {"ok": True, "count": count}
-
-class ZipRequest(BaseModel):
-    path: str
-    dest: str | None = None
-
-class UnzipRequest(BaseModel):
-    path: str
-    dest: str | None = None
-
-@app.post("/servers/{name}/zip")
-@app.post("/api/servers/{name}/zip")
-def make_zip(name: str, req: ZipRequest, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
-    archive_rel = fm_zip_path(name, req.path, req.dest)
-    return {"ok": True, "archive": archive_rel}
-
-@app.post("/servers/{name}/unzip")
-@app.post("/api/servers/{name}/unzip")
-def do_unzip(name: str, req: UnzipRequest, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
-    dest_rel = fm_unzip_path(name, req.path, req.dest)
-    return {"ok": True, "dest": dest_rel}
+# File-management endpoints for the Files panel were moved to server_files_routes.py
+# (registered via include_router above). See server_files_routes.py.
 
 @app.get("/servers/{name}/backups")
 @app.get("/api/servers/{name}/backups")
@@ -1360,7 +1149,6 @@ def api_server_worlds(name: str, current_user: User = Depends(require_server_per
     return {"worlds": items}
 
 
-@app.get("/api/backup-remote-config")
 @app.get("/api/api/backup-remote-config")  # Handle double /api prefix from frontend
 def api_get_remote_config_alias(current_user: User = Depends(require_admin)):
     return {"remote": get_remote_config()}
