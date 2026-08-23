@@ -298,7 +298,14 @@ class TestSpaRouting:
 
     SPA_PATHS = [
         "/", "/login", "/servers", "/servers/some-id",
-        "/servers/some-id/overview", "/users", "/settings", "/templates",
+        "/servers/some-id/overview",
+        # Server-detail tabs (3-segment) — these were shadowed by bare API
+        # routes like /servers/{name}/players, causing 401 JSON on refresh.
+        "/servers/some-id/players", "/servers/some-id/worlds",
+        "/servers/some-id/files", "/servers/some-id/console",
+        "/servers/some-id/config", "/servers/some-id/backup",
+        "/servers/some-id/schedule", "/servers/some-id/mods",
+        "/users", "/settings", "/templates",
         "/steam", "/monitoring", "/security", "/multi-server", "/status",
         "/change-password", "/hytale",
     ]
@@ -332,3 +339,50 @@ class TestSpaRouting:
         r = client.get("/health/quick")
         assert r.status_code < 500
 
+
+
+# ── Players roster contract ────────────────────────────────────────────────
+
+class TestRoster:
+    def test_roster_contract_matches_frontend(self, client, monkeypatch):
+        """online must be a LIST of names (not an int) and offline must exist —
+        the earlier pydantic response_model coerced online:int and broke the panel."""
+        import player_routes as pr
+
+        class FakeDM:
+            def list_servers(self):
+                return [{"name": "DAWG", "id": "abc123", "status": "running"}]
+
+            def get_player_info(self, cid):
+                return {"online": 1, "max": 20, "names": ["Steve"], "method": "rcon"}
+
+        monkeypatch.setattr(pr, "get_runtime_manager_or_docker", lambda: FakeDM())
+
+        headers = _login(client, "admin", "AdminPass123")
+        r = client.get("/api/players/DAWG/roster", headers=headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+
+        assert isinstance(body["online"], list), f"online must be a list, got {type(body['online'])}"
+        assert body["online"] == ["Steve"]
+        assert isinstance(body["offline"], list)
+        assert body["count"] == 1
+        assert body["max"] == 20
+        assert body["method"] == "rcon"
+
+    def test_roster_survives_manager_failure(self, client, monkeypatch):
+        """If the runtime manager explodes, still return 200 with empty online
+        so the panel degrades to logs-only instead of showing an error banner."""
+        import player_routes as pr
+
+        def _boom():
+            raise RuntimeError("docker down")
+
+        monkeypatch.setattr(pr, "get_runtime_manager_or_docker", _boom)
+
+        headers = _login(client, "admin", "AdminPass123")
+        r = client.get("/api/players/NOPE/roster", headers=headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["online"] == []
+        assert isinstance(body["offline"], list)

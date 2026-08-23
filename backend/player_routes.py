@@ -35,18 +35,10 @@ class PlayerActionResponse(BaseModel):
         from_attributes = True
 
 
-class PlayerResponse(BaseModel):
-    name: str
-    uuid: Optional[str] = None
-
-
-class RosterResponse(BaseModel):
-    players: List[PlayerResponse]
-    online: int
-    max: int
-    method: str
-    error: Optional[str] = None
-
+# NOTE: the roster endpoint returns a plain dict (see get_roster below) whose
+# shape matches PlayersPanel.jsx: online=[names], offline=[{name,last_seen}],
+# count, max, players (legacy alias), method. Do not re-add a pydantic
+# response_model here — it silently coerced `online` to int and broke the UI.
 
 _manager_cache = None
 
@@ -175,173 +167,71 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
 
 
 def _filter_client_players(players: list[str]) -> list[str]:
-    """Filter out 'Client' entries from player list."""
-    return [p for p in players if p.lower() not in ("client", "")]
+    """Filter out 'Client' entries from the player list."""
+    return [p for p in players if isinstance(p, str) and p.lower() not in ("client", "")]
 
 
-async def _get_players_via_mcstatus(server_name: str) -> dict:
-    """Get player list via mcstatus/JavaServer query (primary method - no RCON needed)."""
-    try:
-        dm = get_runtime_manager_or_docker()
-        servers = dm.list_servers()
-        target = next((s for s in servers if s.get("name") == server_name), None)
-        if not target:
-            return {"players": [], "online": 0, "max": 0, "error": "Server not found"}
-        
-        cid = target.get("id")
-        if not cid:
-            return {"players": [], "online": 0, "max": 0, "error": "Server container not found"}
-        
-        container = get_docker_manager()._get_container_any(cid)
-        env_vars = container.attrs.get("Config", {}).get("Env", [])
-        env_dict = dict(var.split("=", 1) for var in env_vars if "=" in var)
-        
-        # Get server port from environment
-        server_port = env_dict.get("SERVER_PORT") or env_dict.get("MINECRAFT_PORT") or "25565"
-        
-        from mcstatus import JavaServer
-        java_server = JavaServer.lookup(f"localhost:{server_port}")
-        status = java_server.status(timeout=3)
-        
-        players = []
-        if status.players and status.players.sample:
-            for player in status.players.sample:
-                players.append({
-                    "name": player.name,
-                    "uuid": str(player.id) if hasattr(player, 'id') and player.id else None
-                })
-        
-        online = status.players.online if status.players else 0
-        maxp = status.players.max if status.players else 0
-        
-        # Filter out "Client" entries
-        filtered_players = [p for p in players if p["name"].lower() not in ("client", "")]
-        
-        return {"players": filtered_players, "online": online, "max": maxp}
-        
-    except Exception as e:
-        logger.warning(f"mcstatus player list failed for {server_name}: {e}")
-        return {"players": [], "online": 0, "max": 0, "error": f"Failed to query server: {str(e)}"}
+@router.get("/{server_name}/roster")
+async def get_roster(server_name: str, current_user: User = Depends(require_auth)):
+    """Player roster for the Players panel.
 
-
-def _filter_client_players(players: list[str]) -> list[str]:
-    """Filter out 'Client' entries from player list."""
-    return [p for p in players if p.lower() not in ("client", "")]
-
-
-async def _get_players_via_rcon(server_name: str) -> dict:
-    """Get player list directly via RCON (fallback method)."""
-    try:
-        dm = get_runtime_manager_or_docker()
-        servers = dm.list_servers()
-        target = next((s for s in servers if s.get("name") == server_name), None)
-        if not target:
-            return {"players": [], "online": 0, "max": 0, "error": "Server not found"}
-        
-        cid = target.get("id")
-        if not cid:
-            return {"players": [], "online": 0, "max": 0, "error": "Server container not found"}
-        
-        container = dm._get_container_any(cid)
-        env_vars = container.attrs.get("Config", {}).get("Env", [])
-        env_dict = dict(var.split("=", 1) for var in env_vars if "=" in var)
-        
-        # Get RCON config from environment
-        rcon_password = env_dict.get("RCON_PASSWORD") or env_dict.get("RCON_PASSWORD") or ""
-        rcon_port = env_dict.get("RCON_PORT") or "25575"
-        
-        if not rcon_password:
-            return {"players": [], "online": 0, "max": 0, "error": "RCON not configured"}
-        
-        from mcrcon import MCRcon
-        import re
-        
-        with MCRcon("localhost", rcon_password, port=int(rcon_port), timeout=3) as mcr:
-            output = mcr.command("list") or ""
-            text = str(output)
-            online = 0
-            maxp = 0
-            names: list[str] = []
-            
-            # Parse "There are X of a max of Y players online: name1, name2, ..."
-            m = re.search(r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", text)
-            if m:
-                online = int(m.group(1))
-                maxp = int(m.group(2))
-                colon_idx = text.find(":")
-                if colon_idx != -1 and colon_idx + 1 < len(text):
-                    names_str = text[colon_idx + 1:].strip()
-                    if names_str:
-                        names = [n.strip() for n in names_str.split(",") if n.strip()]
-            
-            # Filter out "Client" entries
-            filtered_names = [n for n in names if n.lower() not in ("client", "")]
-            
-            return {"players": filtered_names, "online": online, "max": maxp, "method": "rcon"}
-            
-    except Exception as e:
-        logger.warning(f"RCON player list failed for {server_name}: {e}")
-        return {"players": [], "online": 0, "max": 0, "error": f"RCON failed: {str(e)}"}
-
-
-def _filter_client_players(players: list[str]) -> list[str]:
-    """Filter out 'Client' entries from player list."""
-    return [p for p in players if p.lower() not in ("client", "")]
-
-
-@router.get("/{server_name}/roster", response_model=RosterResponse)
-async def get_roster(
-    server_name: str,
-    current_user: User = Depends(require_auth)
-):
+    Contract (frontend/src/components/server-details/PlayersPanel.jsx):
+      online  — list of currently-connected player names
+      offline — [{name, last_seen}] sorted most-recent first
+      count / max / method
+    Never raises for lookup failures; degrades to logs-only history so the
+    panel still renders. `method` mirrors dm.get_player_info's probe chain
+    (mcstatus → rcon → log_parse) or one of:
+      server-stopped | server-not-found | error
     """
-    Get player roster for a Minecraft server.
-    Uses server status query (mcstatus) as primary method - NO RCON needed!
-    """
-    # Get server info
-    dm = get_runtime_manager_or_docker()
-    servers = dm.list_servers()
-    target = next((s for s in servers if s.get("name") == server_name), None)
-    if not target:
-        return RosterResponse(players=[], online=0, max=0, method="error", error="Server not found")
-    
-    # Check if server is running
-    if target.get("status") != "running":
-        return RosterResponse(players=[], online=0, max=0, method="error", error="Server is not running")
-    
-    # Try mcstatus first (primary method - no RCON needed)
-    mcstatus_result = await _get_players_via_mcstatus(server_name)
-    
-    if mcstatus_result.get("players") or not mcstatus_result.get("error"):
-        # Success with mcstatus (even if no players online)
-        players = [PlayerResponse(name=p["name"], uuid=p.get("uuid")) for p in mcstatus_result.get("players", [])]
-        return RosterResponse(
-            players=players,
-            online=mcstatus_result.get("online", len(mcstatus_result.get("players", []))),
-            max=mcstatus_result.get("max", 0),
-            method="mcstatus"
-        )
-    
-    # If mcstatus failed, try RCON as fallback only if configured
-    rcon_result = await _get_players_via_rcon(server_name)
-    
-    if rcon_result.get("players"):
-        players = [PlayerResponse(name=p) for p in rcon_result["players"]]
-        return RosterResponse(
-            players=players,
-            online=rcon_result.get("online", len(rcon_result["players"])),
-            max=rcon_result.get("max", 0),
-            method=rcon_result.get("method", "rcon")
-        )
-    
-    # Both failed or RCON not configured - return empty players gracefully
-    error = mcstatus_result.get("error") or rcon_result.get("error") or "Failed to get player list"
-    return RosterResponse(players=[], online=0, max=0, method="error", error=error)
+    online_names: list[str] = []
+    count = 0
+    max_players = 0
+    method = "unknown"
 
+    try:
+        dm = get_docker_manager()
+        servers = dm.list_servers()
+        target = next(
+            (s for s in servers
+             if s.get("name") == server_name or s.get("id") == server_name),
+            None,
+        )
+        if target is None:
+            method = "server-not-found"
+        elif target.get("status") != "running":
+            method = "server-stopped"
+        else:
+            cid = target.get("id") or server_name
+            info = dm.get_player_info(cid) or {}
+            online_names = _filter_client_players(info.get("names") or [])
+            count = int(info.get("online") or len(online_names))
+            max_players = int(info.get("max") or 0)
+            method = info.get("method") or "unknown"
+    except Exception as e:  # never 500 the panel over a stats nicety
+        logger.warning(f"roster live lookup failed for {server_name}: {e}")
+        method = "error"
 
-def _filter_client_players(players: list[str]) -> list[str]:
-    """Filter out 'Client' entries from player list."""
-    return [p for p in players if p.lower() not in ("client", "")]
+    # Offline history from usercache.json + rotated logs (works even when the
+    # live query fails, e.g. RCON disabled and mcstatus unreachable).
+    hist = _collect_history(server_name)
+    online_set = {n.lower() for n in online_names}
+    offline = [
+        {"name": rec.get("name"), "last_seen": rec.get("last_seen")}
+        for k, rec in hist.items()
+        if k not in online_set
+    ]
+    offline.sort(key=lambda x: (x.get("last_seen") or 0), reverse=True)
+
+    return {
+        "online": online_names,
+        "offline": offline,
+        "count": count,
+        "max": max_players,
+        "players": online_names,  # legacy alias for older consumers
+        "method": method,
+    }
+
 
 @router.get("/{server_name}/actions", response_model=List[PlayerActionResponse])
 async def list_player_actions(

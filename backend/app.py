@@ -217,7 +217,8 @@ except Exception:
 app.include_router(health_router)  # bare: required by container healthcheck
 
 from server_files_routes import router as server_files_router  # noqa: E402
-app.include_router(server_files_router)  # bare legacy aliases (≥3 segments, no SPA collision)
+# Registered ONLY under /api (see loop below). A bare include would shadow the
+# SPA tabs /servers/:id/files and /servers/:id/download on page refresh.
 
 # /api aliases for everything else (also avoids ad-block filters blocking
 # paths like /servers/stats or /auth/login)
@@ -258,6 +259,7 @@ for _router in [
     plugins_router,
     realtime_router,
     advanced_api_router,
+    server_files_router,
 ]:
     try:
         app.include_router(_router, prefix="/api")
@@ -527,7 +529,6 @@ class ServerImportRequest(BaseModel):
     max_ram: int | str = 2048
     java_version: str | None = None  # optional preferred Java version (8/11/17/21)
 
-@app.post("/servers/import")
 @app.post("/api/servers/import")
 def import_server(req: ServerImportRequest, current_user: User = Depends(require_auth)):
     """Adopt an existing server directory into Lynx without re-downloading jars.
@@ -660,7 +661,6 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to import server: {e}")
 
-@app.post("/servers")
 @app.post("/api/servers")
 def create_server(req: ServerCreateRequest, current_user: User = Depends(require_auth)):
     try:
@@ -710,7 +710,6 @@ def create_server(req: ServerCreateRequest, current_user: User = Depends(require
 
 from server_permissions import require_server_permission
 
-@app.post("/servers/{container_id}/start")
 @app.post("/api/servers/{container_id}/start")
 def start_server(container_id: str, current_user: User = Depends(require_server_permission("operate"))):
     try:
@@ -718,7 +717,6 @@ def start_server(container_id: str, current_user: User = Depends(require_server_
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 
-@app.post("/servers/{container_id}/stop")
 @app.post("/api/servers/{container_id}/stop")
 def stop_server(container_id: str, current_user: User = Depends(require_server_permission("operate"))):
     try:
@@ -726,7 +724,6 @@ def stop_server(container_id: str, current_user: User = Depends(require_server_p
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 
-@app.post("/servers/{container_id}/restart")
 @app.post("/api/servers/{container_id}/restart")
 def restart_server(container_id: str, current_user: User = Depends(require_server_permission("operate"))):
     try:
@@ -739,7 +736,6 @@ from pydantic import BaseModel
 class PowerSignal(BaseModel):
     signal: str  # start | stop | restart | kill
 
-@app.post("/servers/{container_id}/power")
 @app.post("/api/servers/{container_id}/power")
 def power_server(container_id: str, payload: PowerSignal, current_user: User = Depends(require_server_permission("operate"))):
     try:
@@ -760,7 +756,6 @@ def power_server(container_id: str, payload: PowerSignal, current_user: User = D
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 
-@app.get("/servers/{container_id}/state")
 @app.get("/api/servers/{container_id}/state")
 def get_server_state(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     """Lightweight container state with phase + uptime heuristic.
@@ -828,7 +823,6 @@ def get_server_state(container_id: str, current_user: User = Depends(require_ser
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 
-@app.get("/servers/{container_id}/resources")
 @app.get("/api/servers/{container_id}/resources")
 def get_server_resources(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     try:
@@ -867,7 +861,6 @@ def get_server_resources(container_id: str, current_user: User = Depends(require
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 
-@app.delete("/servers/{container_id}")
 @app.delete("/api/servers/{container_id}")
 def delete_server(container_id: str, current_user: User = Depends(require_server_permission("manage"))):
     try:
@@ -887,7 +880,6 @@ def delete_server(container_id: str, current_user: User = Depends(require_server
 
 """(Removed earlier duplicate /servers/{container_id}/logs endpoint in favor of authenticated variant defined later)"""
 
-@app.post("/servers/{container_id}/command")
 @app.post("/api/servers/{container_id}/command")
 def send_command(container_id: str, command: str = Body(..., embed=True), current_user: User = Depends(require_server_permission("operate"))):
     try:
@@ -899,7 +891,6 @@ def send_command(container_id: str, command: str = Body(..., embed=True), curren
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
 
-@app.get("/servers/{container_id}/stats")
 @app.get("/api/servers/{container_id}/stats")
 def get_server_stats(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     try:
@@ -907,7 +898,6 @@ def get_server_stats(container_id: str, current_user: User = Depends(require_ser
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Stats unavailable: {e}")
 
-@app.get("/servers/{container_id}/stats/history")
 @app.get("/api/servers/{container_id}/stats/history")
 def get_server_stats_history(
     container_id: str,
@@ -922,7 +912,6 @@ def get_server_stats_history(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stats history unavailable: {e}")
 
-@app.get("/servers/stats")
 @app.get("/api/servers/stats")
 def get_bulk_stats(ttl: int = Query(3, ge=0, le=60), current_user: User = Depends(require_auth)):
     """Return stats for all servers in one response (cached briefly)."""
@@ -932,7 +921,6 @@ def get_bulk_stats(ttl: int = Query(3, ge=0, le=60), current_user: User = Depend
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Stats unavailable: {e}")
 
-@app.get("/servers/{container_id}/info")
 @app.get("/api/servers/{container_id}/info")
 def get_server_info(container_id: str, request: Request, current_user: User = Depends(require_server_permission("view"))):
     try:
@@ -979,7 +967,6 @@ def get_server_info(container_id: str, request: Request, current_user: User = De
         raise HTTPException(status_code=404, detail=f"Server info unavailable: {e}")
 
 
-@app.get("/servers/stream")
 @app.get("/api/servers/stream")
 async def stream_servers(request: Request, token: str | None = Query(None)):
     """Server-sent events stream of the server list. Emits only when the list changes.
@@ -1033,7 +1020,6 @@ async def stream_servers(request: Request, token: str | None = Query(None)):
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-@app.get("/servers/{container_id}/console")
 @app.get("/api/servers/{container_id}/console")
 def get_server_console(container_id: str, tail: int = 100, current_user: User = Depends(require_server_permission("view"))):
     try:
@@ -1045,19 +1031,16 @@ def get_server_console(container_id: str, tail: int = 100, current_user: User = 
 # File-management endpoints for the Files panel were moved to server_files_routes.py
 # (registered via include_router above). See server_files_routes.py.
 
-@app.get("/servers/{name}/backups")
 @app.get("/api/servers/{name}/backups")
 def backups_list(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     return {"items": bk_list(name)}
 
-@app.post("/servers/{name}/backups")
 @app.post("/api/servers/{name}/backups")
 async def backups_create(name: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     # Start backup in background, return immediately
     asyncio.create_task(create_backup_async(name))
     return {"message": "Backup started in background", "status": "running"}
 
-@app.post("/servers/{name}/restore")
 @app.post("/api/servers/{name}/restore")
 def backups_restore(name: str, file: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     bk_restore(name, file)
@@ -1102,7 +1085,6 @@ def api_test_remote_config(current_user: User = Depends(require_admin)):
 
 
 @app.get("/api/servers/{name}/worlds")
-@app.get("/servers/{name}/worlds")
 def api_server_worlds(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """Get worlds for a specific server (alias for /worlds/{name})."""
     from world_routes import _detect_world_dirs
@@ -1131,7 +1113,6 @@ def api_get_remote_config_alias(current_user: User = Depends(require_admin)):
     return {"remote": get_remote_config()}
 
 
-@app.get("/servers/{name}/players")
 @app.get("/api/servers/{name}/players")
 def players_list(name: str, container_id: str | None = Query(None), current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """Return online players by querying the server via RCON 'list' command."""
@@ -1179,7 +1160,6 @@ _CONFIG_PATTERNS = [
     "serverconfig.xml", "lgsm.cfg",
 ]
 
-@app.get("/servers/{name}/configs")
 @app.get("/api/servers/{name}/configs")
 def configs_list(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """Dynamically discover config files that actually exist in the server directory."""
@@ -1204,7 +1184,6 @@ def configs_list(name: str, current_user: User = Depends(require_server_permissi
         # Fallback to the basic Minecraft set
         found = ["server.properties", "bukkit.yml", "spigot.yml"]
     return {"configs": sorted(set(found))}
-@app.get("/servers/{name}/config-bundle")
 @app.get("/api/servers/{name}/config-bundle")
 def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
     """Return a bundle of server.properties (parsed) and EULA state.
@@ -1264,7 +1243,6 @@ def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
 
 """(Removed duplicate get_server_java_version in favor of consolidated get_available_java_versions endpoint)"""
 
-@app.post("/servers/{container_id}/java-version")
 @app.post("/api/servers/{container_id}/java-version")
 def set_server_java_version(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage", param_name="container_id"))):
     """Set the Java version for a server."""
@@ -1294,7 +1272,6 @@ def set_server_java_version(container_id: str, request: dict = Body(...), curren
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update Java version: {e}")
 
-@app.get("/servers/{container_id}/java-args")
 @app.get("/api/servers/{container_id}/java-args")
 def get_server_java_args(container_id: str, current_user: User = Depends(require_server_permission("view", param_name="container_id"))):
     try:
@@ -1304,7 +1281,6 @@ def get_server_java_args(container_id: str, current_user: User = Depends(require
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Java arguments info unavailable: {e}")
 
-@app.post("/servers/{container_id}/java-args")
 @app.post("/api/servers/{container_id}/java-args")
 def set_server_java_args(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage", param_name="container_id"))):
     raw_args = request.get("java_args") if isinstance(request, dict) else ""
@@ -1336,7 +1312,6 @@ def set_server_java_args(container_id: str, request: dict = Body(...), current_u
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update Java arguments: {e}")
 
-@app.get("/servers/{container_id}/java-versions")
 @app.get("/api/servers/{container_id}/java-versions")
 def get_available_java_versions(container_id: str, current_user: User = Depends(require_server_permission("view", param_name="container_id"))):
     """Get available Java versions and current selection."""
@@ -1390,7 +1365,6 @@ def get_server_details(container_id: str, current_user: User = Depends(require_s
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get server info: {e}")
 
-@app.get("/servers/{container_id}/logs")
 @app.get("/api/servers/{container_id}/logs")
 def get_server_logs_endpoint(container_id: str, tail: int = Query(200, ge=1, le=2000), current_user: User = Depends(require_server_permission("view"))):
     """Return the last N lines of console output for the server container."""
