@@ -198,50 +198,29 @@ except Exception:
     # If starlette version lacks middleware or import fails, continue without compression
     pass
 
-# Include all routers
-app.include_router(auth_router)
-app.include_router(scheduler_router)
-app.include_router(player_router)
-app.include_router(world_router)
-app.include_router(plugin_router)
-app.include_router(monitoring_router)
-app.include_router(health_router)
-app.include_router(modpack_router)
-app.include_router(catalog_router)
-app.include_router(integrations_router)
-app.include_router(search_router)
-app.include_router(server_types_router)
-app.include_router(repair_router)
-app.include_router(probe_router)
-app.include_router(maintenance_router)
-app.include_router(steam_router)
-app.include_router(steam_mods_router)
-app.include_router(settings_router)
-app.include_router(mods_router)
-# Server file-management routes (files/file/download/upload/rename/zip/mkdir).
-# Registered bare AND under /api below to mirror the historical dual paths.
-from server_files_routes import router as server_files_router
-app.include_router(server_files_router)
-# High-Impact Features
-app.include_router(analytics_router)
-app.include_router(multi_server_router)
-app.include_router(mods_enhanced_router)
-app.include_router(client_mod_router)
-app.include_router(backup_advanced_router)
-app.include_router(player_enhanced_router)
-# Quality of Life Features
-app.include_router(ui_enhancements_router)
-app.include_router(config_management_router)
-app.include_router(security_enhanced_router)
-# Platform Features
-app.include_router(organizations_router)
-app.include_router(api_management_router)
-app.include_router(permissions_router)
-app.include_router(plugins_router)
-app.include_router(realtime_router)
-app.include_router(advanced_api_router)
+# ── Router registration ────────────────────────────────────────────────────
+# IMPORTANT: routers are registered ONLY under /api. Earlier versions also
+# registered every router at the root (bare), which made protected API routes
+# shadow SPA pages: an unauthenticated browser refresh of /users, /servers,
+# /settings, ... matched the bare API route first and returned raw
+# {"detail": "Not authenticated"} JSON instead of the React app. The SPA
+# fallback at the bottom of this file must therefore be the FIRST match for
+# all non-/api GET navigations.
+#
+# Exceptions registered bare:
+#   * health_router — Docker healthcheck curls http://localhost:8000/health/quick
+#   * server_files_router — legacy bare /servers/{name}/... file paths; its
+#     routes are ≥3 segments so they never collide with SPA pages.
+#
+# The frontend always calls ${API}/... where API = "/api".
 
-# /api aliases to avoid ad-block filters blocking paths like /servers/stats or /auth/login
+app.include_router(health_router)  # bare: required by container healthcheck
+
+from server_files_routes import router as server_files_router  # noqa: E402
+app.include_router(server_files_router)  # bare legacy aliases (≥3 segments, no SPA collision)
+
+# /api aliases for everything else (also avoids ad-block filters blocking
+# paths like /servers/stats or /auth/login)
 for _router in [
     auth_router,
     scheduler_router,
@@ -279,7 +258,6 @@ for _router in [
     plugins_router,
     realtime_router,
     advanced_api_router,
-    server_files_router,
 ]:
     try:
         app.include_router(_router, prefix="/api")
@@ -447,7 +425,6 @@ def get_docker_manager() -> Any:
     return _docker_manager
 
 
-@app.get("/servers")
 @app.get("/api/servers")
 def list_servers(current_user: User = Depends(require_auth), db: Session = Depends(get_db)):
     try:
@@ -1397,7 +1374,8 @@ def version_info():
     return {"name": APP_NAME, "version": APP_VERSION, "git_commit": git_sha}
 
 # --- Added convenience endpoints for server detail & logs ---
-@app.get("/servers/{container_id}")
+# NOTE: only the /api variant exists. A bare GET /servers/{container_id} would
+# shadow the SPA route /servers/:serverId and return 401 JSON on page refresh.
 @app.get("/api/servers/{container_id}")
 def get_server_details(container_id: str, current_user: User = Depends(require_server_permission("view"))):
     """Return detailed info (including port mappings, java version, stats) for a server container."""
@@ -1462,6 +1440,7 @@ def public_status():
 SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/change-password",
               "/steam", "/hytale", "/monitoring", "/security", "/multi-server", "/status"]
 
+@app.get("/")
 @app.get("/login")
 @app.get("/servers")
 @app.get("/servers/{path:path}")

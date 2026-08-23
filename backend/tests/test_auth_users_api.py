@@ -1,4 +1,4 @@
-"""Integration tests for auth, permissions, and user management.
+﻿"""Integration tests for auth, permissions, and user management.
 
 Runs against the real FastAPI app with dependency-overridden DB session and
 temp SQLite storage, so it needs no Docker or running services.
@@ -108,7 +108,7 @@ def client(db_session, monkeypatch):
 
 def _login(client: TestClient, username: str, password: str) -> dict:
     r = client.post(
-        "/auth/login",
+        "/api/auth/login",
         data={"username": username, "password": password},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
@@ -139,7 +139,7 @@ def _make_user(client: TestClient, name: str, role: str = "user") -> dict:
     return r.json()
 
 
-# ── Auth ───────────────────────────────────────────────────────────────────
+# â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestAuth:
     def test_login_success_returns_session_token(self, client):
@@ -148,7 +148,7 @@ class TestAuth:
 
     def test_login_wrong_password_401(self, client):
         r = client.post(
-            "/auth/login",
+            "/api/auth/login",
             data={"username": "admin", "password": "wrong"},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
@@ -156,38 +156,38 @@ class TestAuth:
 
     def test_login_unknown_user_401(self, client):
         r = client.post(
-            "/auth/login",
+            "/api/auth/login",
             data={"username": "ghost", "password": "whatever1A"},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         assert r.status_code == 401
 
     def test_me_requires_auth(self, client):
-        assert client.get("/auth/me").status_code == 401
+        assert client.get("/api/auth/me").status_code == 401
 
     def test_me_returns_profile_and_admin_flag(self, client):
         headers = _login(client, "admin", "AdminPass123")
-        me = client.get("/auth/me", headers=headers).json()
+        me = client.get("/api/auth/me", headers=headers).json()
         assert me["username"] == "admin"
         assert me["is_admin"] is True
 
     def test_logout_invalidates_token(self, client):
         headers = _login(client, "admin", "AdminPass123")
-        assert client.get("/auth/me", headers=headers).status_code == 200
-        assert client.post("/auth/logout", headers=headers).status_code == 200
-        assert client.get("/auth/me", headers=headers).status_code == 401
+        assert client.get("/api/auth/me", headers=headers).status_code == 200
+        assert client.post("/api/auth/logout", headers=headers).status_code == 200
+        assert client.get("/api/auth/me", headers=headers).status_code == 401
 
     def test_weak_password_change_rejected(self, client):
         headers = _login(client, "admin", "AdminPass123")
         r = client.put(
-            "/auth/me/password",
+            "/api/auth/me/password",
             json={"current_password": "AdminPass123", "new_password": "weak"},
             headers=headers,
         )
         assert r.status_code in (400, 422)
 
 
-# ── User CRUD (/api/users — permission-gated) ──────────────────────────────
+# â”€â”€ User CRUD (/api/users â€” permission-gated) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestUserManagementPermissions:
     def test_regular_user_cannot_list_users(self, client):
@@ -240,13 +240,13 @@ class TestUserManagementPermissions:
         assert r.json()["role"] == "moderator"
 
     def test_admin_deactivates_user(self, client):
-        """Deactivate a throw-away user — must not poison other tests' fixtures."""
+        """Deactivate a throw-away user â€” must not poison other tests' fixtures."""
         target = _make_user(client, "deleteme")
         r = client.delete(f"/api/users/{target['id']}", headers=_admin(client))
         assert r.status_code in (200, 204)
         # Deactivated user can no longer log in.
         r = client.post(
-            "/auth/login",
+            "/api/auth/login",
             data={"username": "deleteme", "password": "DeletemePass1"},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
@@ -255,12 +255,12 @@ class TestUserManagementPermissions:
     def test_last_active_admin_demotion_blocked(self, client):
         """Demoting/deactivating the only active owner/admin must fail."""
         headers = _login(client, "admin", "AdminPass123")
-        me = client.get("/auth/me", headers=headers).json()
+        me = client.get("/api/auth/me", headers=headers).json()
         r = client.put(f"/api/users/{me['id']}", headers=headers, json={"role": "user"})
         assert r.status_code == 400
 
 
-# ── Roles ──────────────────────────────────────────────────────────────────
+# â”€â”€ Roles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestRoles:
     def test_roles_require_permission(self, client):
@@ -287,3 +287,48 @@ class TestRoles:
         headers = _login(client, "admin", "AdminPass123")
         r = client.delete("/api/users/roles/admin", headers=headers)
         assert r.status_code == 400
+
+
+# â”€â”€ SPA reload routing (regression: raw 401 JSON on F5) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+class TestSpaRouting:
+    """Browser refresh (unauthenticated GET) on any client-side route must
+    serve the React shell â€” never a shadowing protected API route returning
+    {"detail": "Not authenticated"}."""
+
+    SPA_PATHS = [
+        "/", "/login", "/servers", "/servers/some-id",
+        "/servers/some-id/overview", "/users", "/settings", "/templates",
+        "/steam", "/monitoring", "/security", "/multi-server", "/status",
+        "/change-password", "/hytale",
+    ]
+
+    def test_spa_paths_serve_html_not_401_json(self, client):
+        for path in self.SPA_PATHS:
+            r = client.get(path)
+            body = r.text
+            is_html = r.status_code == 200 and (
+                "text/html" in r.headers.get("content-type", "")
+                or "<!doctype html" in body.lower()
+                or "<html" in body.lower()
+            )
+            # Dev checkouts without static/index.html may 404 from spa_fallback,
+            # which is still correct routing â€” the failure mode we guard against
+            # is an API route answering with auth JSON.
+            is_spa_fallback_404 = r.status_code == 404 and "Frontend not found" in body
+            assert is_html or is_spa_fallback_404, (
+                f"GET {path} -> {r.status_code} {body[:120]!r}"
+            )
+            if r.status_code == 401:
+                pytest.fail(f"SPA route {path} was shadowed by an auth-protected API route")
+
+    def test_api_stays_protected_under_api_prefix(self, client):
+        r = client.get("/api/users")
+        assert r.status_code in (401, 403)
+        assert "text/html" not in r.headers.get("content-type", "")
+
+    def test_healthcheck_bare_path_alive(self, client):
+        # docker-compose healthcheck curls http://localhost:8000/health/quick
+        r = client.get("/health/quick")
+        assert r.status_code < 500
+
