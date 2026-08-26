@@ -1409,8 +1409,10 @@ def public_status():
         })
     return {"servers": result, "panel": APP_NAME, "panel_version": APP_VERSION}
 
-# SPA fallback route - must be added BEFORE static files mount
-# This catches all client-side routes and serves index.html
+# SPA fallback routes — must be added BEFORE static files mount.
+# This catches all client-side routes and serves index.html so a browser
+# refresh (Ctrl+R) never returns JSON or 404. The explicit list is kept for
+# OpenAPI docs, but a generic catch-all guarantees any future route also works.
 SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/change-password",
               "/steam", "/hytale", "/monitoring", "/security", "/multi-server", "/status"]
 
@@ -1432,7 +1434,33 @@ SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/chang
 @app.get("/multi-server")
 @app.get("/status")
 async def spa_fallback():
-    """Serve React SPA for client-side routing."""
+    """Serve React SPA for client-side routing (explicit routes)."""
+    index_path = os.path.join("static", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path, media_type="text/html")
+    raise HTTPException(status_code=404, detail="Frontend not found")
+
+
+@app.get("/{full_path:path}")
+async def spa_fallback_catch_all(full_path: str):
+    """Generic SPA catch-all — ensures Ctrl+R on any deep link serves the app.
+
+    Never hijacks API, docs, or real static assets. Static assets are served
+    directly if they exist; otherwise the React index.html is returned.
+    """
+    # Let real API / health / docs pass through to their 404
+    if full_path.startswith("api/") or full_path.startswith("health") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+        raise HTTPException(status_code=404, detail="Not found")
+    # If a real file exists under ./static (js/css/img after `COPY --from=ui`), serve it
+    candidate = os.path.join("static", full_path)
+    if full_path and os.path.isfile(candidate):
+        # Guess media type from extension; FileResponse will set it
+        return FileResponse(candidate)
+    # Also allow the StaticFiles mount to handle `static/` prefix requests
+    if full_path.startswith("static/"):
+        raise HTTPException(status_code=404, detail="Not found")
+    # SPA routes have no file extension — serve index.html
+    # Keep API-like 404 for unexpected dots only when not an SPA route
     index_path = os.path.join("static", "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path, media_type="text/html")

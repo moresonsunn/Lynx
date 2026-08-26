@@ -11,6 +11,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
   const [onlineCount, setOnlineCount] = useState(0);
   const [offline, setOffline] = useState([]);
   const [method, setMethod] = useState('');
+  const [errorDetail, setErrorDetail] = useState('');
   const [loading, setLoading] = useState(true);
   const [playerName, setPlayerName] = useState('');
   const [reason, setReason] = useState('');
@@ -24,7 +25,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
 
   async function fetchRoster() {
     try {
-      if (!sName) { setOnline([]); setOffline([]); setMethod('missing'); return; }
+      if (!sName) { setOnline([]); setOffline([]); setMethod('missing'); setErrorDetail(''); return; }
       const r = await fetch(`${API}/players/${encodeURIComponent(sName)}/roster`, { headers: authHeaders() });
       if (!r.ok) {
         let errorMessage = `HTTP ${r.status}`;
@@ -32,9 +33,12 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
           const errorData = await r.json();
           errorMessage = errorData.detail || errorData.message || errorMessage;
         } catch {}
+        // Include URL for easier debugging (helps when API prefix is wrong)
+        errorMessage = `${errorMessage} — ${API}/players/${encodeURIComponent(sName)}/roster`;
         setOnline([]);
         setOffline([]);
         setMethod('error');
+        setErrorDetail(errorMessage);
         console.error('Failed to fetch players:', errorMessage);
         return;
       }
@@ -51,14 +55,18 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
         const normalizedOnline = rawPlayers.map(toPlayer).filter(p => !isBad(p.name));
         const normalizedOffline = (Array.isArray(d.offline) ? d.offline : []).map(toOffline).filter(o => !isBad(o.name));
         setOnline(normalizedOnline);
-        setOnlineCount(d.count || normalizedOnline.length);
+        setOnlineCount(typeof d.count === 'number' ? d.count : normalizedOnline.length);
         setOffline(normalizedOffline);
         setMethod(d.method || 'unknown');
+        setErrorDetail('');
+        // Debug: log the effective method so operators can tell if fallback worked
+        if (d.method) console.debug(`roster method=${d.method} online=${normalizedOnline.length} offline=${normalizedOffline.length}`);
       }
     } catch (e) {
       setOnline([]);
       setOffline([]);
       setMethod('error');
+      setErrorDetail(e && e.message ? e.message : String(e));
       console.error('Error fetching players:', e);
     } finally {
       setLoading(false);
@@ -171,9 +179,31 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
         <div className="text-xs text-white/50">Updated every 3s</div>
       </div>
  
-      {method === 'error' && (
+      {method === 'missing' && (
+        <div className="bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 p-3 rounded-lg text-sm">
+          No server selected. Open a server first.
+        </div>
+      )}
+
+      {method === 'server-not-found' && (
         <div className="bg-red-500/20 border border-red-500/30 text-red-300 p-3 rounded-lg text-sm">
-          Failed to load players. Check server RCON configuration.
+          Server “{sName}” not found. Check the server name / ID — it must match the container or directory name exactly.
+          <button onClick={fetchRoster} className="ml-2 underline hover:text-white">Retry</button>
+        </div>
+      )}
+
+      {method === 'server-stopped' && (
+        <div className="bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 p-3 rounded-lg text-sm">
+          Server is stopped. Start the server to see live players; offline history is shown below when available.
+        </div>
+      )}
+
+      {method === 'error' && (
+        <div className="bg-red-500/20 border border-red-500/30 text-red-300 p-3 rounded-lg text-sm space-y-2">
+          <div>Failed to load players. {errorDetail ? errorDetail : 'Check server RCON configuration.'}</div>
+          {errorDetail && <div className="text-xs opacity-80 break-all">Detail: {errorDetail}</div>}
+          <div className="text-xs opacity-70">Server: “{sName}” · Try enabling RCON (enable-rcon=true + rcon.password) or wait for the log fallback.</div>
+          <button onClick={() => { setLoading(true); fetchRoster(); }} className="mt-2 px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white text-xs">Retry</button>
         </div>
       )}
 
@@ -189,6 +219,7 @@ rcon.port=25575
           <p className="text-xs text-yellow-400 mt-2">
             Or restart the server after enabling RCON to use the mcstatus fallback.
           </p>
+          <button onClick={() => { setLoading(true); fetchRoster(); }} className="mt-2 px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-xs">Retry</button>
         </div>
       )}
 
@@ -198,9 +229,35 @@ rcon.port=25575
         </div>
       )}
 
+      {method === 'docker_logs' && (
+        <div className="bg-blue-500/20 border border-blue-500/30 text-blue-300 p-3 rounded-lg text-sm">
+          Showing players from Docker container logs (RCON/mcstatus unavailable).
+        </div>
+      )}
+
+      {method === 'log_parse' && (
+        <div className="bg-blue-500/20 border border-blue-500/30 text-blue-300 p-3 rounded-lg text-sm">
+          Showing players from server logs (filesystem).
+        </div>
+      )}
+
+      {method === 'rcon-props' && (
+        <div className="bg-green-500/20 border border-green-500/30 text-green-300 p-3 rounded-lg text-sm">
+          Showing players via RCON (server.properties).
+        </div>
+      )}
+
       {method === 'mcstatus-failed' && (
-        <div className="bg-red-500/20 border border-red-500/30 text-red-300 p-3 rounded-lg text-sm">
-          Both RCON and server status query failed. Check if server is running and port 25565 is accessible.
+        <div className="bg-red-500/20 border border-red-500/30 text-red-300 p-3 rounded-lg text-sm space-y-2">
+          <div>Both RCON and server status query failed. Check if server is running and port 25565 is accessible.</div>
+          <div className="text-xs opacity-70">No Docker log data either. The next player join/leave will populate the list.</div>
+          <button onClick={() => { setLoading(true); fetchRoster(); }} className="mt-2 px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-xs">Retry</button>
+        </div>
+      )}
+
+      {method === 'unknown' && !loading && (
+        <div className="bg-white/5 border border-white/10 text-white/60 p-3 rounded-lg text-sm">
+          Player source unknown — showing best available data.
         </div>
       )}
 

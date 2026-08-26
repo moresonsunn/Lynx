@@ -549,8 +549,11 @@ export default function ServerDetailsPage() {
           const backups = Array.isArray(backupData) ? backupData : backupData?.backups || [];
           const worlds = Array.isArray(worldsData) ? worldsData : worldsData?.worlds || [];
           const tasks = Array.isArray(schedulesData) ? schedulesData : schedulesData?.tasks || [];
-          const onlinePlayers = (playerData?.online || []).filter(name => name.toLowerCase() !== 'client' && name.trim() !== '');
-          const onlineCount = playerData?.count || onlinePlayers.length;
+          // playerData.online is the string[] from roster; tolerate future object shapes
+          const toName = (p) => (typeof p === 'string' ? p : (p && p.name) || '');
+          const rawOnline = Array.isArray(playerData?.online) ? playerData.online : (Array.isArray(playerData?.players) ? playerData.players : []);
+          const onlinePlayers = rawOnline.map(toName).filter(name => name && name.toLowerCase() !== 'client' && name.trim() !== '');
+          const onlineCount = typeof playerData?.count === 'number' ? playerData.count : onlinePlayers.length;
           const maxPlayers = playerData?.max || 0;
           const connectPort = server.host_port || typeVersionData?.host_port;
           const steamPorts = typeVersionData?.steam_ports || server?.steam_ports || [];

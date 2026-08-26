@@ -52,6 +52,35 @@ def get_docker_manager():
 
 
 def _server_dir(server_name: str):
+    """Resolve server directory with case-insensitive fallback.
+
+    The UI passes the Docker container name (exact case). Users sometimes create
+    names with mixed case; the filesystem on Linux is case-sensitive. We first
+    try the exact path, then scan SERVERS_ROOT for a lower-case match.
+    """
+    try:
+        p = (SERVERS_ROOT / server_name).resolve()
+        if str(p).startswith(str(SERVERS_ROOT.resolve())) and p.exists():
+            return p
+    except Exception:
+        pass
+    # Case-insensitive scan fallback
+    try:
+        if SERVERS_ROOT.exists():
+            needle = server_name.lower()
+            for child in SERVERS_ROOT.iterdir():
+                try:
+                    if child.is_dir() and child.name.lower() == needle:
+                        # Return resolved child, still must be under SERVERS_ROOT
+                        cp = child.resolve()
+                        if str(cp).startswith(str(SERVERS_ROOT.resolve())):
+                            return cp
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    # Last resort: return the exact path even if not exists so callers can
+    # still attempt disk reads (they will just miss). Preserve original behavior.
     try:
         p = (SERVERS_ROOT / server_name).resolve()
         if str(p).startswith(str(SERVERS_ROOT.resolve())):
@@ -59,6 +88,107 @@ def _server_dir(server_name: str):
     except Exception:
         pass
     return None
+
+
+def _docker_logs_online_fallback(server_name: str) -> tuple[list[str], str]:
+    """Try to derive online players directly from Docker container logs.
+
+    This works even when SERVERS_ROOT is empty or server.properties RCON is
+    disabled and mcstatus can't reach the server (localhost vs host port
+    mismatch in Docker). Returns (names, source) or ([], "").
+    """
+    try:
+        dm = get_docker_manager()
+        servers = dm.list_servers() or []
+        target = next(
+            (s for s in servers if (s.get("name") or "").lower() == server_name.lower()
+             or (s.get("id") or "") == server_name),
+            None,
+        )
+        if not target:
+            # Try loose match: any server whose name contains the hint
+            # (covers e.g. truncated IDs)
+            for s in servers:
+                n = (s.get("name") or "")
+                if n and (n.lower() in server_name.lower() or server_name.lower() in n.lower()):
+                    target = s
+                    break
+        if not target:
+            return [], ""
+        cid = target.get("id") or target.get("name") or server_name
+        # Use DockerManager's own get_player_info docker_logs branch by
+        # calling it directly; it already handles join/leave parsing.
+        # But to avoid recursion, call the low-level log scan here.
+        try:
+            c = dm._get_container_any(cid)  # type: ignore[attr-defined]
+            log_output = c.logs(tail=400, timestamps=False).decode(errors="ignore")
+            lines = log_output.splitlines()
+            online_set: dict[str, bool] = {}
+            joined_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
+            left_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out|lost connection)", re.IGNORECASE)
+            stop_re = re.compile(r"(Stopping the server|Stopping server|Server closed|Closing Server)", re.IGNORECASE)
+            for line in lines:
+                if stop_re.search(line):
+                    online_set.clear()
+                    continue
+                jm = joined_re.search(line)
+                if jm:
+                    online_set[jm.group(1)] = True
+                    continue
+                lm = left_re.search(line)
+                if lm:
+                    online_set.pop(lm.group(1), None)
+            names = _filter_client_players([n for n, v in online_set.items() if v])
+            if names:
+                return names, "docker_logs"
+        except Exception as e:
+            logger.debug(f"docker logs online fallback failed for {server_name}: {e}")
+    except Exception as e:
+        logger.debug(f"docker logs lookup failed for {server_name}: {e}")
+    return [], ""
+
+
+def _docker_logs_history_fallback(server_name: str, existing: dict[str, dict]) -> dict[str, dict]:
+    """Populate history from Docker logs when filesystem history is empty."""
+    if existing:
+        return existing
+    try:
+        dm = get_docker_manager()
+        servers = dm.list_servers() or []
+        target = next(
+            (s for s in servers if (s.get("name") or "").lower() == server_name.lower()
+             or (s.get("id") or "") == server_name),
+            None,
+        )
+        if not target:
+            return existing
+        cid = target.get("id") or server_name
+        try:
+            c = dm._get_container_any(cid)  # type: ignore[attr-defined]
+            log_output = c.logs(tail=600, timestamps=False).decode(errors="ignore")
+            lines = log_output.splitlines()
+            hist = dict(existing)
+            joined_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
+            left_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out)", re.IGNORECASE)
+            for line in reversed(lines[-8000:]):
+                m = joined_re.search(line) or left_re.search(line)
+                if not m:
+                    continue
+                name = m.group(1)
+                k = name.lower()
+                if k in hist:
+                    continue
+                rec = hist.setdefault(k, {"name": name, "last_seen": None, "sources": set()})
+                rec["sources"].add("docker_logs")
+            for v in hist.values():
+                if isinstance(v.get("sources"), set):
+                    v["sources"] = sorted(list(v["sources"]))
+            return hist
+        except Exception as e:
+            logger.debug(f"docker logs history fallback failed for {server_name}: {e}")
+    except Exception:
+        pass
+    return existing
 
 
 def _parse_log_timestamp(line: str, fallback_date: _dt.date | None) -> int | None:
@@ -163,6 +293,13 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
     for v in hist.values():
         if isinstance(v.get("sources"), set):
             v["sources"] = sorted(list(v["sources"]))
+    # Docker logs fallback when filesystem yielded nothing (common on fresh
+    # Docker volumes or when logs are buffered inside the container).
+    try:
+        if not hist:
+            hist = _docker_logs_history_fallback(server_name, hist)
+    except Exception:
+        pass
     return hist
 
 
@@ -275,7 +412,16 @@ def _roster_online_from_disk(server_name: str) -> tuple[list[str], str]:
         logger.debug(f"log scan failed for {server_name}: {e}")
 
     names = _filter_client_players([n for n, ok in online.items() if ok])
-    return names, ("log_parse" if names else "")
+    if names:
+        return names, "log_parse"
+    # Filesystem logs empty -> try Docker container logs directly
+    try:
+        d_names, d_src = _docker_logs_online_fallback(server_name)
+        if d_names:
+            return d_names, d_src
+    except Exception:
+        pass
+    return [], ""
 
 
 @router.get("/{server_name}/roster")
@@ -295,16 +441,32 @@ async def get_roster(server_name: str, current_user: User = Depends(require_auth
     count = 0
     max_players = 0
     method = "unknown"
+    target = None
 
     try:
         dm = get_docker_manager()
-        servers = dm.list_servers()
+        servers = dm.list_servers() or []
+        # exact match first, then case-insensitive, then id prefix
         target = next(
             (s for s in servers
              if s.get("name") == server_name or s.get("id") == server_name),
             None,
         )
         if target is None:
+            lower = server_name.lower()
+            target = next(
+                (s for s in servers if (s.get("name") or "").lower() == lower),
+                None,
+            )
+        if target is None and servers:
+            # last chance: id prefix (Docker short id) or name contains
+            for s in servers:
+                sid = s.get("id") or ""
+                if sid and (sid.startswith(server_name) or server_name.startswith(sid[:12])):
+                    target = s
+                    break
+        if target is None:
+            logger.info(f"roster: server-not-found for '{server_name}' among {[s.get('name') for s in servers]}")
             method = "server-not-found"
         elif target.get("status") != "running":
             method = "server-stopped"
@@ -325,7 +487,14 @@ async def get_roster(server_name: str, current_user: User = Depends(require_auth
     # container-to-container, RCON env vars missing, docker sock hiccup...).
     probe_failed = method in ("error", "unknown", "server-not-found")
     names_without_count = bool(count > 0 and not online_names)
-    if probe_failed or names_without_count:
+    # Also try disk/docker fallback whenever live probe returned no names - the
+    # Docker network's localhost often can't reach the Minecraft port from the
+    # controller container, but container logs on the host do contain joins.
+    should_try_disk = probe_failed or names_without_count or not online_names
+    # Don't override a definitive server-stopped state with stale log data.
+    if method == "server-stopped":
+        should_try_disk = False
+    if should_try_disk:
         try:
             disk_names, disk_src = _roster_online_from_disk(server_name)
             if disk_names:
