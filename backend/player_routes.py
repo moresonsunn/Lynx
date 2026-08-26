@@ -171,6 +171,113 @@ def _filter_client_players(players: list[str]) -> list[str]:
     return [p for p in players if isinstance(p, str) and p.lower() not in ("client", "")]
 
 
+def _roster_online_from_disk(server_name: str) -> tuple[list[str], str]:
+    """Best-effort online-player extraction straight from the server directory.
+
+    Works for BOTH runtimes because SERVERS_ROOT is a shared volume:
+      1. server.properties RCON (enable-rcon/rcon.password/rcon.port) → `list`
+      2. logs/latest.log (+ rotated .log) join/leave tracking
+
+    Returns (names, source) where source is 'rcon-props' | 'log_parse' | ''.
+    """
+    try:
+        base = _server_dir(server_name)
+    except HTTPException:
+        return [], ""
+    if not base:
+        return [], ""
+
+    # 1) RCON via server.properties (independent of container env vars)
+    props = base / "server.properties"
+    if props.exists():
+        rcon_enabled = rcon_pass = ""
+        rcon_port = 25575
+        try:
+            for line in props.read_text(encoding="utf-8", errors="ignore").splitlines():
+                s = line.strip()
+                if s.startswith("enable-rcon="):
+                    rcon_enabled = s.split("=", 1)[1].strip().lower()
+                elif s.startswith("rcon.password="):
+                    rcon_pass = s.split("=", 1)[1].strip()
+                elif s.startswith("rcon.port="):
+                    try:
+                        rcon_port = int(s.split("=", 1)[1].strip())
+                    except ValueError:
+                        pass
+            if rcon_enabled == "true" and rcon_pass:
+                try:
+                    from mcrcon import MCRcon
+                    with MCRcon("localhost", rcon_pass, port=rcon_port, timeout=2) as mcr:
+                        text = str(mcr.command("list") or "")
+                        m = re.search(
+                            r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", text
+                        ) or re.search(r"(\d+)\s*/\s*(\d+)\s*players? online", text)
+                        names: list[str] = []
+                        if m:
+                            colon = text.find(":")
+                            if colon != -1:
+                                names = [n.strip() for n in text[colon + 1:].split(",") if n.strip()]
+                        names = _filter_client_players(names)
+                        if names:
+                            return names, "rcon-props"
+                except Exception as e:
+                    logger.debug(f"disk RCON list failed for {server_name}: {e}")
+        except Exception as e:
+            logger.debug(f"server.properties parse failed for {server_name}: {e}")
+
+    # 2) Join/leave tracking across recent logs (newest first)
+    joined_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
+    left_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out|lost connection)", re.IGNORECASE)
+    stop_re = re.compile(r"Stopping the server|Stopping server|Server closed|Closing Server", re.IGNORECASE)
+
+    candidates = []
+    latest = base / "logs" / "latest.log"
+    if latest.exists():
+        candidates.append(latest)
+    logs_dir = base / "logs"
+    if logs_dir.is_dir():
+        try:
+            candidates.extend(
+                p for p in logs_dir.iterdir()
+                if p != latest and p.suffix in (".log", ".gz")
+            )
+        except OSError:
+            pass
+    candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+
+    online: dict[str, bool] = {}
+    try:
+        for p in candidates[:6]:
+            try:
+                if p.suffix == ".gz":
+                    import gzip
+                    with gzip.open(p, "rt", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+                else:
+                    with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+            except OSError:
+                continue
+            for line in reversed(lines):
+                if stop_re.search(line):
+                    online.clear()
+                    continue
+                jm = joined_re.search(line)
+                if jm:
+                    online[jm.group(1)] = True
+                    continue
+                lm = left_re.search(line)
+                if lm:
+                    online.pop(lm.group(1), None)
+            if online:
+                break  # newest log with activity wins
+    except Exception as e:
+        logger.debug(f"log scan failed for {server_name}: {e}")
+
+    names = _filter_client_players([n for n, ok in online.items() if ok])
+    return names, ("log_parse" if names else "")
+
+
 @router.get("/{server_name}/roster")
 async def get_roster(server_name: str, current_user: User = Depends(require_auth)):
     """Player roster for the Players panel.
@@ -211,6 +318,26 @@ async def get_roster(server_name: str, current_user: User = Depends(require_auth
     except Exception as e:  # never 500 the panel over a stats nicety
         logger.warning(f"roster live lookup failed for {server_name}: {e}")
         method = "error"
+
+    # Disk fallback: the server directory is on the shared volume in both
+    # runtimes, so server.properties RCON + join/leave logs work even when the
+    # live probe chain can't reach the server (mcstatus localhost fails
+    # container-to-container, RCON env vars missing, docker sock hiccup...).
+    probe_failed = method in ("error", "unknown", "server-not-found")
+    names_without_count = bool(count > 0 and not online_names)
+    if probe_failed or names_without_count:
+        try:
+            disk_names, disk_src = _roster_online_from_disk(server_name)
+            if disk_names:
+                online_names = disk_names
+                count = max(count, len(disk_names))
+                method = disk_src
+            elif probe_failed:
+                method = "mcstatus-failed"  # frontend shows a clear, honest banner
+        except Exception as e:
+            logger.warning(f"roster disk fallback failed for {server_name}: {e}")
+            if probe_failed:
+                method = "mcstatus-failed"
 
     # Offline history from usercache.json + rotated logs (works even when the
     # live query fails, e.g. RCON disabled and mcstatus unreachable).

@@ -41,13 +41,14 @@ const PlayersWidget = ({ serverName, serverId }) => {
 
       const data = await response.json();
 
-      // Filter out "Client" (internal marker)
-      const filtered = (data.players || []).filter(
-        p => p.name !== 'Client' && p.name !== 'client' && p.name !== ''
-      );
+      // Roster sends plain name strings; tolerate {name, uuid} objects too.
+      const toPlayer = (p) => (typeof p === 'string' ? { name: p } : { name: p && p.name, uuid: p && p.uuid });
+      const filtered = (Array.isArray(data.players) ? data.players : [])
+        .map(toPlayer)
+        .filter(p => p.name && p.name.toLowerCase() !== 'client');
 
       setPlayers(filtered);
-      setOnline(data.online || filtered.length);
+      setOnline(typeof data.count === 'number' && data.count > 0 ? Math.max(data.count, filtered.length) : filtered.length);
       setMax(data.max || 0);
       setError(null);
     } catch (err) {

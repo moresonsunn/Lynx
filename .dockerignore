@@ -17,3 +17,5 @@ frontend/build
 # Virtual environments
 .venv
 venv
+# Never bake dev static stubs into images (real UI build is copied in by the Dockerfile)
+backend/static

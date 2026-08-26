@@ -77,3 +77,6 @@ Thumbs.db
 # Local overrides
 docker-compose.override.yml
 local_settings.py
+
+# Backend-served frontend build (dev stubs must never linger here)
+backend/static/

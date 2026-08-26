@@ -40,21 +40,19 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
       }
       const d = await r.json();
       if (d && typeof d === 'object') {
-        const filterClient = (arr) => arr.filter(name => name.toLowerCase() !== 'client' && name.trim() !== '');
-        // Handle new response format with PlayerResponse objects (name + uuid)
-        if (Array.isArray(d.players)) {
-          const onlineWithUuid = d.players
-            .map(p => ({ name: p.name, uuid: p.uuid }))
-            .filter(p => p.name.toLowerCase() !== 'client' && p.name.trim() !== '');
-          setOnline(onlineWithUuid);
-          setOnlineCount(d.online || onlineWithUuid.length);
-        } else {
-          // Backward compatibility: d.online is array of names
-          const filterClient = (arr) => arr.filter(name => name.toLowerCase() !== 'client' && name.trim() !== '');
-          setOnline(Array.isArray(d.online) ? filterClient(d.online) : []);
-          setOnlineCount(d.count || online.length);
-        }
-        setOffline(Array.isArray(d.offline) ? filterClient(d.offline) : []);
+        // Backend roster sends players/offline entries as plain name strings;
+        // tolerate object shapes ({name, uuid}) from older builds too.
+        const toPlayer = (p) => (typeof p === 'string' ? { name: p } : { name: p && p.name, uuid: p && p.uuid });
+        const toOffline = (o) => (typeof o === 'string' ? { name: o } : { name: o && o.name, last_seen: o && o.last_seen });
+        const isBad = (name) => !name || String(name).toLowerCase() === 'client' || String(name).trim() === '';
+        const rawPlayers = Array.isArray(d.players)
+          ? d.players
+          : (Array.isArray(d.online) ? d.online : []);
+        const normalizedOnline = rawPlayers.map(toPlayer).filter(p => !isBad(p.name));
+        const normalizedOffline = (Array.isArray(d.offline) ? d.offline : []).map(toOffline).filter(o => !isBad(o.name));
+        setOnline(normalizedOnline);
+        setOnlineCount(d.count || normalizedOnline.length);
+        setOffline(normalizedOffline);
         setMethod(d.method || 'unknown');
       }
     } catch (e) {
@@ -91,7 +89,7 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
   useEffect(() => {
     let canceled = false;
     (async () => {
-      const all = [...online, ...offline.map(o => o.name)];
+      const all = [...online.map(p => p.name), ...offline.map(o => o.name)].filter(Boolean);
       for (const p of all) {
         if (canceled) return;
         if (!avatarCache.current[p]) {
