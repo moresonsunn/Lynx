@@ -58,11 +58,17 @@ services:
       - lynx_servers:/data/servers
       - lynx_sqlite:/data/sqlite
       - /var/run/docker.sock:/var/run/docker.sock
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/quick"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 5
+      start_period: 40s
     restart: unless-stopped
     labels:
       io.casaos.app: "lynx"

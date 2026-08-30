@@ -284,8 +284,13 @@ async def get_database_pool_status(current_user: User = Depends(require_auth)):
     }
 
 @router.get("/quick")
-async def get_quick_health():
-    """Get a quick health check (no authentication required)."""
+def get_quick_health():
+    """Get a quick health check (no authentication required).
+
+    Runs as sync def so FastAPI executes it in the threadpool — the old
+    async def blocked the single uvicorn loop for up to 60s (DB pool /
+    Docker ping) and made the 5s healthcheck timeout after a day.
+    """
     try:
         
         from database import DATABASE_URL, init_db

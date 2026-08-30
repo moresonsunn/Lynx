@@ -425,7 +425,7 @@ def _roster_online_from_disk(server_name: str) -> tuple[list[str], str]:
 
 
 @router.get("/{server_name}/roster")
-async def get_roster(server_name: str, current_user: User = Depends(require_auth)):
+def get_roster(server_name: str, current_user: User = Depends(require_auth)):
     """Player roster for the Players panel.
 
     Contract (frontend/src/components/server-details/PlayersPanel.jsx):
@@ -979,7 +979,7 @@ async def deop_player(
 
 
 @router.get("/{server_name}/online")
-async def get_online_players(
+def get_online_players(
     server_name: str,
     current_user: User = Depends(require_auth)
 ):

@@ -33,9 +33,10 @@ def _get_conn() -> sqlite3.Connection:
     global _conn
     if _conn is None:
         Path(_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-        _conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
+        _conn = sqlite3.connect(_DB_PATH, check_same_thread=False, timeout=15.0)
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.execute("PRAGMA synchronous=NORMAL")
+        _conn.execute("PRAGMA busy_timeout=15000")
         _conn.execute("""
             CREATE TABLE IF NOT EXISTS stats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -198,9 +199,11 @@ def _collector_loop():
         return
 
     logger.info(f"Stats collector started (interval={_COLLECT_INTERVAL}s, retention={_RETENTION_HOURS}h)")
+    _cycle_count = 0
 
     while _running:
         cycle_start = time.time()
+        _cycle_count += 1
         try:
             # Try to get the runtime manager (handles both Docker and local)
             manager = get_runtime_manager_or_docker()
@@ -209,6 +212,11 @@ def _collector_loop():
             else:
                 servers = manager.list_servers()
                 logger.debug(f"Stats collector: Found {len(servers)} servers")
+                # prune vanished servers from net-counter map to avoid unbounded growth
+                alive_ids = {str(s.get("id") or s.get("container_id") or s.get("name")) for s in servers}
+                for dead in list(_last_net_counters.keys()):
+                    if dead not in alive_ids:
+                        _last_net_counters.pop(dead, None)
                 for srv in servers:
                     if not _running:
                         break
@@ -231,10 +239,17 @@ def _collector_loop():
             logger.error(f"Stats collector error: {e}")
 
         # Prune old stats every 100 cycles (~50 min at 30s interval)
-        try:
-            prune_old_stats()
-        except Exception:
-            pass
+        if _cycle_count % 100 == 0:
+            try:
+                prune_old_stats()
+                # reclaim WAL pages; without VACUUM the file never shrinks
+                try:
+                    with _lock:
+                        _get_conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
         # Sleep in small intervals so we can stop quickly
         elapsed = time.time() - cycle_start
@@ -245,8 +260,11 @@ def _collector_loop():
             time.sleep(1)
 
 
+_manager_singleton = None  # cached DockerManager to avoid 2880 clients/day leak
+
 def get_runtime_manager_or_docker():
-    """Get runtime manager (local) or fall back to Docker manager."""
+    """Get runtime manager (local) or fall back to Docker manager (cached)."""
+    global _manager_singleton
     try:
         from runtime_adapter import get_runtime_manager
         adapter = get_runtime_manager()
@@ -254,9 +272,23 @@ def get_runtime_manager_or_docker():
             return adapter
     except Exception:
         pass
+    # Reuse singleton; recreate only if health check fails
+    if _manager_singleton is not None:
+        try:
+            # cheap liveness check — does not open new socket if already connected
+            _manager_singleton._ensure_client()  # type: ignore[attr-defined]
+            _manager_singleton.client.ping()
+            return _manager_singleton
+        except Exception:
+            try:
+                _manager_singleton.client.close()
+            except Exception:
+                pass
+            _manager_singleton = None
     try:
         from docker_manager import DockerManager
-        return DockerManager()
+        _manager_singleton = DockerManager()
+        return _manager_singleton
     except Exception as e:
         logger.error(f"Failed to get Docker manager: {e}")
         return None

@@ -361,25 +361,32 @@ class LocalAdapter:
                         total_mem += pr.memory_info().rss
                     except Exception:
                         pass
-                    net_func = getattr(pr, "net_io_counters", None)
-                    if callable(net_func):
-                        try:
-                            counters = net_func()  
-                            if counters:
-                                total_rx += getattr(counters, "bytes_recv", 0)
-                                total_tx += getattr(counters, "bytes_sent", 0)
-                        except Exception:
-                            pass
+                    # per-process net counters don't exist on psutil.Process; use host counters as approximation
+                    pass
+                # Fallback to host net counters for local runtime (better than 0)
+                try:
+                    hc = psutil.net_io_counters()
+                    total_rx = hc.bytes_recv
+                    total_tx = hc.bytes_sent
+                    # delta vs previous poll stored on instance
+                    if not hasattr(self, "_host_net_prev"):
+                        self._host_net_prev = (total_rx, total_tx)
+                        total_rx = total_tx = 0
+                    else:
+                        prx, ptx = self._host_net_prev
+                        total_rx = max(0, total_rx - prx)
+                        total_tx = max(0, total_tx - ptx)
+                        self._host_net_prev = (hc.bytes_recv, hc.bytes_sent)
+                except Exception:
+                    total_rx = total_tx = 0
                 mem_usage_mb = float(total_mem) / (1024 * 1024)
                 # Normalize CPU percentage by number of logical CPU cores
                 cpu_percent = (total_cpu / _CPU_CORES) if _CPU_CORES > 0 else 0.0
                 # Cap at 100% to avoid anomalies
                 cpu_percent = min(cpu_percent, 100.0)
                 # Network I/O - convert cumulative counters to MB (these are cumulative since process start)
-                if total_rx:
-                    net_rx_mb = round(total_rx / (1024 * 1024), 2)
-                if total_tx:
-                    net_tx_mb = round(total_tx / (1024 * 1024), 2)
+                net_rx_mb = round(total_rx / (1024 * 1024), 2) if total_rx else net_rx_mb
+                net_tx_mb = round(total_tx / (1024 * 1024), 2) if total_tx else net_tx_mb
                 if mem_limit_mb:
                     mem_percent = (mem_usage_mb / mem_limit_mb) * 100.0
             except Exception:
@@ -704,6 +711,13 @@ class LocalAdapter:
                 "restarted": True,
                 "result": result,
             }
+        except Exception as e:
+            return {"success": False, "error": str(e), "id": container_id}
+
+    def update_server_ram(self, container_id: str, min_ram: str | None = None, max_ram: str | None = None) -> Dict:
+        """Update RAM allocation for local runtime via restart."""
+        try:
+            return self.local.update_server_ram(container_id, min_ram, max_ram)
         except Exception as e:
             return {"success": False, "error": str(e), "id": container_id}
 

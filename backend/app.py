@@ -1005,14 +1005,15 @@ async def stream_servers(request: Request, token: str | None = Query(None)):
                 if await request.is_disconnected():
                     break
                 try:
-                    servers = dm.list_servers()
+                    # Offload blocking docker call so the single uvicorn loop isn't stalled for 500ms
+                    servers = await asyncio.to_thread(dm.list_servers)
                     sig = hashlib.md5(json.dumps(servers, default=str, sort_keys=True).encode()).hexdigest()
                     if sig != last_sig:
                         last_sig = sig
                         yield f"data: {json.dumps({'type': 'servers', 'servers': servers, 'sig': sig}, default=str)}\n\n"
                 except Exception as e:
                     yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)  # was 1s -> 2s to halve load (still near-realtime)
         except asyncio.CancelledError:
             return
         except Exception:
@@ -1311,6 +1312,72 @@ def set_server_java_args(container_id: str, request: dict = Body(...), current_u
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update Java arguments: {e}")
+
+@app.get("/api/servers/{container_id}/ram")
+def get_server_ram(container_id: str, current_user: User = Depends(require_server_permission("view", param_name="container_id"))):
+    """Get current RAM allocation (min/max)."""
+    try:
+        # Read from server_meta.json first
+        from pathlib import Path
+        from config import SERVERS_ROOT
+        import json
+        meta_path = SERVERS_ROOT / container_id / "server_meta.json"
+        meta = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}")
+            except Exception:
+                meta = {}
+        min_ram = meta.get("min_ram") or meta.get("min_ram_mb") and f"{meta.get('min_ram_mb')}M" or "1G"
+        max_ram = meta.get("max_ram") or meta.get("max_ram_mb") and f"{meta.get('max_ram_mb')}M" or "2G"
+        # Fallback to container env if meta missing
+        if not meta:
+            try:
+                rm = get_runtime_manager_or_docker()
+                info = rm.get_server_info(container_id)
+                env_ram_min = info.get("env", {}).get("MIN_RAM") if isinstance(info.get("env"), dict) else None
+                env_ram_max = info.get("env", {}).get("MAX_RAM") if isinstance(info.get("env"), dict) else None
+                if env_ram_max:
+                    max_ram = env_ram_max
+                if env_ram_min:
+                    min_ram = env_ram_min
+            except Exception:
+                pass
+        return {"min_ram": min_ram, "max_ram": max_ram, "server_id": container_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get RAM: {e}")
+
+
+@app.post("/api/servers/{container_id}/ram")
+def set_server_ram(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage", param_name="container_id"))):
+    """Update RAM allocation and restart the server."""
+    min_ram = request.get("min_ram") if isinstance(request, dict) else None
+    max_ram = request.get("max_ram") if isinstance(request, dict) else None
+    # also accept single ram value
+    if not min_ram and not max_ram and isinstance(request, dict) and request.get("ram"):
+        max_ram = request.get("ram")
+        min_ram = request.get("ram")
+    if not min_ram and not max_ram:
+        raise HTTPException(status_code=400, detail="min_ram or max_ram required (e.g. 2G, 4096M)")
+    try:
+        rm = get_runtime_manager_or_docker()
+        # Prefer dedicated method if available
+        updater = getattr(rm, "update_server_ram", None)
+        if callable(updater):
+            result = updater(container_id, min_ram, max_ram)
+        else:
+            # Fallback: try docker_manager directly
+            from docker_manager import DockerManager
+            dm = DockerManager()
+            result = dm.update_server_ram(container_id, min_ram, max_ram)
+        if isinstance(result, dict) and result.get("success") is False:
+            raise HTTPException(status_code=500, detail=result.get("error") or "Failed to update RAM")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update RAM: {e}")
+
 
 @app.get("/api/servers/{container_id}/java-versions")
 def get_available_java_versions(container_id: str, current_user: User = Depends(require_server_permission("view", param_name="container_id"))):

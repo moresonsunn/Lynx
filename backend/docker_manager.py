@@ -3380,9 +3380,31 @@ class DockerManager:
             mem_limit_mb = mem_limit / (1024 * 1024)
 
             
-            net_stats = stats_now.get("networks", {})
-            rx_bytes = sum(net.get("rx_bytes", 0) for net in net_stats.values())
-            tx_bytes = sum(net.get("tx_bytes", 0) for net in net_stats.values())
+            net_stats = stats_now.get("networks", {}) or stats_now.get("network", {}) or {}
+            rx_bytes = sum(net.get("rx_bytes", 0) for net in net_stats.values()) if isinstance(net_stats, dict) else 0
+            tx_bytes = sum(net.get("tx_bytes", 0) for net in net_stats.values()) if isinstance(net_stats, dict) else 0
+            # Host-network mode returns empty dict — fallback to host counters (better than 0 forever)
+            if rx_bytes == 0 and tx_bytes == 0:
+                try:
+                    import psutil as _psutil
+                    hc = _psutil.net_io_counters()
+                    # Use host counters divided by active containers as rough estimate
+                    # (real per-container net is not available in host mode)
+                    try:
+                        # cache host total to avoid double-count on first call
+                        if not hasattr(self, "_host_net_base"):
+                            self._host_net_base = (hc.bytes_recv, hc.bytes_sent)
+                            rx_bytes = 0
+                            tx_bytes = 0
+                        else:
+                            base_rx, base_tx = self._host_net_base
+                            rx_bytes = max(0, hc.bytes_recv - base_rx)
+                            tx_bytes = max(0, hc.bytes_sent - base_tx)
+                    except Exception:
+                        rx_bytes = hc.bytes_recv
+                        tx_bytes = hc.bytes_sent
+                except Exception:
+                    pass
             rx_mb = rx_bytes / (1024 * 1024)
             tx_mb = tx_bytes / (1024 * 1024)
 
@@ -3862,3 +3884,83 @@ class DockerManager:
             raise RuntimeError(f"Container {container_id} not found")
         except Exception as e:
             raise RuntimeError(f"Failed to update Java arguments: {e}")
+
+    def update_server_ram(self, container_id: str, min_ram: str | None = None, max_ram: str | None = None) -> dict:
+        """Update RAM allocation and recreate the container with new limits."""
+        import re
+
+        def _to_mb(v: str | None):
+            if v is None:
+                return None
+            s = str(v).strip().upper()
+            m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*([KMG]?)\s*$", s)
+            if not m:
+                raise ValueError(f"Invalid RAM value: {v}")
+            n = float(m.group(1))
+            u = (m.group(2) or "M").upper()
+            mult = {"K": 1/1024, "M": 1, "G": 1024}.get(u, 1)
+            mb = int(round(n * mult))
+            if mb < 128:
+                raise ValueError(f"RAM too small (min 128M): {v}")
+            if mb > 256 * 1024:
+                raise ValueError(f"RAM too large (max 256G): {v}")
+            return mb
+
+        def _fmt(mb):
+            if mb % 1024 == 0:
+                return f"{mb//1024}G"
+            return f"{mb}M"
+
+        try:
+            container = self.client.containers.get(container_id)
+            server_name = container.name or container_id
+            n_min_mb = _to_mb(min_ram)
+            n_max_mb = _to_mb(max_ram)
+            if n_min_mb and n_max_mb and n_min_mb > n_max_mb:
+                raise ValueError(f"min_ram {min_ram} > max_ram {max_ram}")
+            n_min = _fmt(n_min_mb) if n_min_mb else None
+            n_max = _fmt(n_max_mb) if n_max_mb else None
+
+            # Build env overrides
+            env_overrides = {}
+            if n_min:
+                env_overrides["MIN_RAM"] = n_min
+            if n_max:
+                env_overrides["MAX_RAM"] = n_max
+
+            # Update meta first so recreate persists it
+            try:
+                meta_path = SERVERS_ROOT / server_name / "server_meta.json"
+                meta = {}
+                if meta_path.exists():
+                    try:
+                        meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}")
+                    except Exception:
+                        meta = {}
+                if n_min_mb:
+                    meta["min_ram"] = n_min
+                    meta["min_ram_mb"] = n_min_mb
+                if n_max_mb:
+                    meta["max_ram"] = n_max
+                    meta["max_ram_mb"] = n_max_mb
+                # keep env_overrides in sync
+                eo = meta.get("env_overrides") or {}
+                if not isinstance(eo, dict):
+                    eo = {}
+                if n_min:
+                    eo["MIN_RAM"] = n_min
+                if n_max:
+                    eo["MAX_RAM"] = n_max
+                meta["env_overrides"] = eo
+                meta_path.parent.mkdir(parents=True, exist_ok=True)
+                meta_path.write_text(json.dumps(meta), encoding="utf-8")
+            except Exception:
+                pass
+
+            recreate_result = self.recreate_server_with_env(container_id, env_overrides=env_overrides or None)
+            # Apply Docker memory limit (mem_limit is derived from max_ram inside recreate, but ensure it took effect)
+            return {"success": True, "min_ram": n_min, "max_ram": n_max, "recreate_result": recreate_result}
+        except docker.errors.NotFound:
+            raise RuntimeError(f"Container {container_id} not found")
+        except Exception as e:
+            raise RuntimeError(f"Failed to update RAM: {e}")

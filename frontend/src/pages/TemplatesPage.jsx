@@ -3,6 +3,7 @@ import { FaLayerGroup, FaPlusCircle, FaDice, FaSearch, FaFileArchive, FaCube, Fa
 import { normalizeRamInput } from '../utils/ram';
 import { useTranslation } from '../i18n/I18nContext';
 import ModpackImporter from '../components/ModpackImporter';
+import RamSlider from '../components/RamSlider';
 
 const SERVER_TYPES_WITH_LOADER = ['fabric', 'forge', 'neoforge'];
 const SERVER_TYPES = ['paper', 'purpur', 'vanilla', 'snapshot', 'fabric', 'forge', 'neoforge', 'mohist', 'magma', 'banner', 'catserver', 'spongeforge', 'bungeecord', 'velocity'];
@@ -337,20 +338,20 @@ export default function TemplatesPage({
                 placeholder="25565"
               />
             </div>
-            <div>
-              <label className="block text-xs text-white/50 mb-1">{t('templatesPage.minRam')}</label>
-              <input
-                value={createMinRam}
-                onChange={(e) => setCreateMinRam(e.target.value)}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-white/50 mb-1">{t('templatesPage.maxRam')}</label>
-              <input
+            <div className="md:col-span-2">
+              <label className="block text-xs text-white/50 mb-1">Memory (Max RAM)</label>
+              <RamSlider
                 value={createMaxRam}
-                onChange={(e) => setCreateMaxRam(e.target.value)}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+                onChange={(v) => {
+                  setCreateMaxRam(v);
+                  // keep min at 1G or half of max, whichever is larger
+                  try {
+                    const gb = parseInt(String(v).replace(/[^0-9]/g, ''), 10) || 4;
+                    const minGb = Math.max(1, Math.floor(gb / 2));
+                    setCreateMinRam(`${minGb}G`);
+                  } catch {}
+                }}
+                showCategories={true}
               />
             </div>
           </div>
@@ -424,20 +425,18 @@ export default function TemplatesPage({
               onChange={e => setHostPort(e.target.value)}
             />
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-white/50 mb-1">MIN RAM</label>
-            <input
-              className="w-full rounded-lg bg-black/20 border border-white/10 px-3 py-2 text-white"
-              value={minRam}
-              onChange={e => setMinRam(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-white/50 mb-1">MAX RAM</label>
-            <input
-              className="w-full rounded-lg bg-black/20 border border-white/10 px-3 py-2 text-white"
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold text-white/50 mb-1">MEMORY (MAX RAM)</label>
+            <RamSlider
               value={maxRam}
-              onChange={e => setMaxRam(e.target.value)}
+              onChange={(v) => {
+                setMaxRam(v);
+                try {
+                  const gb = parseInt(String(v).replace(/[^0-9]/g, ''), 10) || 4;
+                  setMinRam(`${Math.max(1, Math.floor(gb / 2))}G`);
+                } catch {}
+              }}
+              showCategories={true}
             />
           </div>
         </div>
@@ -632,23 +631,19 @@ export default function TemplatesPage({
                     onChange={e => setHostPort(e.target.value)}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-white/50 mb-1">MIN RAM</label>
-                    <input
-                      className="w-full rounded-lg bg-black/20 border border-white/10 px-3 py-2 text-white"
-                      value={minRam}
-                      onChange={e => setMinRam(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-white/50 mb-1">MAX RAM</label>
-                    <input
-                      className="w-full rounded-lg bg-black/20 border border-white/10 px-3 py-2 text-white"
-                      value={maxRam}
-                      onChange={e => setMaxRam(e.target.value)}
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-1">MEMORY (MAX RAM)</label>
+                  <RamSlider
+                    value={maxRam}
+                    onChange={(v) => {
+                      setMaxRam(v);
+                      try {
+                        const gb = parseInt(String(v).replace(/[^0-9]/g, ''), 10) || 4;
+                        setMinRam(`${Math.max(1, Math.floor(gb / 2))}G`);
+                      } catch {}
+                    }}
+                    showCategories={true}
+                  />
                 </div>
               </div>
 

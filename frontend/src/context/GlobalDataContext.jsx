@@ -123,7 +123,7 @@ export function GlobalDataProvider({ children }) {
       if (typeof window !== 'undefined' && window.HEAVY_PANEL_ACTIVE) return;
       if (typeof document !== 'undefined' && document.hidden) return;
       if (!getStoredToken()) return;
-      const r = await fetch(`${API}/servers/stats?ttl=0`, { headers: authHeaders() });
+      const r = await fetch(`${API}/servers/stats?ttl=3`, { headers: authHeaders() });
       if (!r.ok) return;
       const data = await r.json();
       store.setState((current) => {

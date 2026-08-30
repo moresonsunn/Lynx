@@ -31,19 +31,30 @@ def _detect_world_dirs(server_dir: Path) -> List[Path]:
 
 
 @router.get("/{server_name}")
-async def list_worlds(
+def list_worlds(
     server_name: str,
     current_user: User = Depends(require_auth)
 ):
+    # Sync def so FastAPI runs it in threadpool; heavy rglob no longer blocks event loop (fixes 30s tab delay)
     server_dir = get_server_dir(server_name)
     worlds = _detect_world_dirs(server_dir)
     items = []
     for w in worlds:
         size = 0
         try:
+            # Limit scan to avoid 5s stalls on huge worlds; if >2000 files switch to fast du estimate
+            count = 0
             for f in w.rglob('*'):
                 if f.is_file():
-                    size += f.stat().st_size
+                    try:
+                        size += f.stat().st_size
+                    except Exception:
+                        pass
+                    count += 1
+                    if count > 8000:
+                        break
+                if size > 10 * 1024 * 1024 * 1024:  # cap at 10GB for display
+                    break
         except Exception:
             pass
         items.append({

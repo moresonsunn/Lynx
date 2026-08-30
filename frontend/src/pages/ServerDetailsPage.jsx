@@ -51,6 +51,7 @@ import ClientModFilterPanel from '../components/server-details/ClientModFilterPa
 import ResourceGraphs from '../components/ResourceGraphs';
 import ServerPermissionsPanel from '../components/server-details/ServerPermissionsPanel';
 import ConfirmModal from '../components/ConfirmModal';
+import RamSlider from '../components/RamSlider';
 
 
 function formatUptime(seconds) {
@@ -97,8 +98,92 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTa
   const isPluginServer = ['paper', 'purpur', 'spigot', 'bukkit'].includes(serverType);
   const isHybridServer = ['mohist', 'magma', 'banner', 'catserver', 'spongeforge'].includes(serverType);
 
+  const [ramMax, setRamMax] = useState('4G');
+  const [ramMin, setRamMin] = useState('2G');
+  const [ramLoading, setRamLoading] = useState(true);
+  const [ramSaving, setRamSaving] = useState(false);
+  const [ramMsg, setRamMsg] = useState('');
+
+  useEffect(() => {
+    if (isSteam || !serverId) return;
+    let cancelled = false;
+    async function loadRam() {
+      try {
+        const r = await fetch(`${API}/servers/${serverId}/ram`, { headers: authHeaders() });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (!cancelled) {
+          if (d.max_ram) setRamMax(d.max_ram);
+          if (d.min_ram) setRamMin(d.min_ram);
+        }
+      } catch {
+        // keep defaults
+      } finally {
+        if (!cancelled) setRamLoading(false);
+      }
+    }
+    loadRam();
+    return () => { cancelled = true; };
+  }, [serverId, isSteam]);
+
+  const handleRamSave = async () => {
+    setRamSaving(true);
+    setRamMsg('');
+    try {
+      const r = await fetch(`${API}/servers/${serverId}/ram`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ min_ram: ramMin, max_ram: ramMax }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+      setRamMsg('RAM updated — server is restarting...');
+      setTimeout(() => setRamMsg(''), 4000);
+    } catch (e) {
+      setRamMsg(`Failed: ${e.message}`);
+    } finally {
+      setRamSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+      {!isSteam && (
+        <div className="glassmorphism rounded-xl p-4">
+          <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <FaMicrochip className="text-purple-400" />
+            Memory Allocation
+          </h4>
+          {ramLoading ? (
+            <div className="text-sm text-white/50">Loading current RAM...</div>
+          ) : (
+            <>
+              <RamSlider
+                value={ramMax}
+                onChange={(v) => {
+                  setRamMax(v);
+                  try {
+                    const gb = parseInt(String(v).replace(/[^0-9]/g, ''), 10) || 4;
+                    setRamMin(`${Math.max(1, Math.floor(gb / 2))}G`);
+                  } catch {}
+                }}
+                showCategories={false}
+                label="Max RAM — min is auto-set to half. Restart required."
+              />
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-xs text-white/50">Current: {ramMin} → {ramMax} {ramMsg && <span className="ml-2 text-purple-300">{ramMsg}</span>}</span>
+                <button
+                  onClick={handleRamSave}
+                  disabled={ramSaving}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold"
+                >
+                  {ramSaving ? 'Saving...' : 'Save & Restart'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Server Info */}
         <div className="glassmorphism rounded-xl p-4">
@@ -277,22 +362,23 @@ export default function ServerDetailsPage() {
   const runtimeKind = (typeVersionData?.server_kind || server?.server_kind || '').toLowerCase();
   const isSteam = runtimeKind === 'steam';
 
-  // Additional data for overview
+  // Additional data for overview — lazy / cached to avoid 4× parallel blocking on mount
+  const overviewActive = activeTab === 'overview';
   const { data: playerData } = useFetch(
-    server?.name ? `${API}/players/${server.name}/roster` : null,
-    [server?.name, server?.status]
+    overviewActive && server?.name ? `${API}/players/${server.name}/roster` : null,
+    [server?.name, overviewActive]
   );
   const { data: backupData } = useFetch(
-    server?.name ? `${API}/servers/${server.name}/backups` : null,
-    [server?.name]
+    overviewActive && server?.name ? `${API}/servers/${server.name}/backups` : null,
+    [server?.name, overviewActive]
   );
   const { data: worldsData } = useFetch(
-    server?.name ? `${API}/servers/${server.name}/worlds` : null,
-    [server?.name]
+    overviewActive && server?.name ? `${API}/servers/${server.name}/worlds` : null,
+    [server?.name, overviewActive]
   );
   const { data: schedulesData } = useFetch(
-    server?.name ? `${API}/servers/${server.name}/schedules` : null,
-    [server?.name]
+    overviewActive && server?.name ? `${API}/servers/${server.name}/schedules` : null,
+    [server?.name, overviewActive]
   );
 
 

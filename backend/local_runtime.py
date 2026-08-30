@@ -139,6 +139,13 @@ class LocalRuntimeManager:
         except Exception:
             pass
 
+        # Rotate server.stdout.log if it grows beyond 50 MB to avoid filling disk after a day
+        try:
+            lf = self._log_file(name)
+            if lf.exists() and lf.stat().st_size > 50 * 1024 * 1024:
+                lf.rename(lf.with_suffix(".log.1"))
+        except Exception:
+            pass
         logf = open(self._log_file(name), "ab", buffering=0)
         cmd = ["/usr/local/bin/runtime-entrypoint.sh"]
         run_env = os.environ.copy()
@@ -154,8 +161,16 @@ class LocalRuntimeManager:
                 start_new_session=True,
             )
         except Exception as e:
-            logf.close()
+            try:
+                logf.close()
+            except Exception:
+                pass
             raise RuntimeError(f"Failed to launch server process: {e}")
+        # Parent no longer needs the FD — child has its own dup; close to avoid FD leak (was leaking 1 FD per restart)
+        try:
+            logf.close()
+        except Exception:
+            pass
         try:
             self._pid_file(name).write_text(str(proc.pid), encoding="utf-8")
         except Exception:
@@ -309,6 +324,35 @@ class LocalRuntimeManager:
         except Exception:
             pass
         return {"id": name, "status": "stopped", "method": "signal"}
+
+    def update_server_ram(self, server_id: str, min_ram: str | None, max_ram: str | None) -> Dict:
+        """Update RAM allocation for a local server and restart it."""
+        name = server_id
+        srv_dir = self._server_dir(name)
+        if not srv_dir.exists():
+            raise RuntimeError(f"Server directory {srv_dir} not found")
+        # Validate and normalize
+        def norm(v):
+            if v is None:
+                return None
+            mb = _ram_to_mb(v, default_mb=0)
+            if mb < 128:
+                raise ValueError(f"RAM too small: {v} (min 128M)")
+            if mb > 256 * 1024:
+                raise ValueError(f"RAM too large: {v} (max 256G)")
+            return _format_ram(mb)
+        n_min = norm(min_ram) if min_ram else None
+        n_max = norm(max_ram) if max_ram else None
+        if n_min and n_max:
+            if _ram_to_mb(n_min, 0) > _ram_to_mb(n_max, 0):
+                raise ValueError(f"min_ram {n_min} > max_ram {n_max}")
+        # Stop if running
+        try:
+            self.stop_server(name)
+        except Exception:
+            pass
+        # Recreate with new RAM (meta will be updated inside create_server_from_existing)
+        return self.create_server_from_existing(name, min_ram=n_min, max_ram=n_max)
 
     def list_servers(self) -> List[Dict]:
         items: List[Dict] = []
