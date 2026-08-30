@@ -164,14 +164,24 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
         paper_build = None
         purpur_build = None
         if server_type.lower() == 'paper':
-            
-            base = "https://api.papermc.io/v2/projects/paper"
+            # Use Fill v3 (api.papermc.io/v2 sunset 2026-07-01)
+            base = "https://fill.papermc.io/v3/projects/paper"
+            headers = {"User-Agent": "Lynx/1.0 (+https://github.com/moresonsun/Lynx)", "Accept": "application/json"}
             try:
-                v_resp = requests.get(f"{base}/versions/{version}", timeout=15)
-                v_resp.raise_for_status()
-                builds = v_resp.json().get('builds') or []
-                if builds:
-                    paper_build = builds[-1]
+                b_resp = requests.get(f"{base}/versions/{version}/builds", headers=headers, timeout=15)
+                b_resp.raise_for_status()
+                builds = b_resp.json()
+                if isinstance(builds, list) and builds:
+                    # Prefer STABLE channel id
+                    stable = [b for b in builds if b.get("channel") == "STABLE" and isinstance(b.get("id"), int)]
+                    if stable:
+                        paper_build = stable[0].get("id")
+                    else:
+                        # fallback to first entry's id
+                        first = builds[0]
+                        paper_build = first.get("id") if isinstance(first, dict) else None
+                        if paper_build is None and builds and isinstance(builds[0], int):
+                            paper_build = builds[0]
             except Exception as e:
                 logger.warning(f"Failed to fetch Paper builds for {version}: {e}")
         elif server_type.lower() == 'purpur':
