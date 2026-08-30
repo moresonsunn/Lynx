@@ -131,6 +131,29 @@ def cleanup_expired_sessions():
         print(f"Error during connection cleanup: {e}")
 
 
+def _ensure_column(conn, table: str, column: str, ddl: str):
+    """Add a column if it doesn't exist (SQLite / Postgres compatible)."""
+    try:
+        # Use PRAGMA table_info for SQLite, information_schema for Postgres
+        if "sqlite" in DATABASE_URL:
+            rows = list(conn.execute(text(f"PRAGMA table_info({table})")))
+            # PRAGMA returns (cid, name, type, notnull, dflt, pk)
+            exists = any(r[1] == column for r in rows)
+            if not exists:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
+                print(f"Migrated: {table}.{column}")
+        else:
+            # Postgres
+            res = conn.execute(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name=:t AND column_name=:c"
+            ), {"t": table, "c": column})
+            if res.fetchone() is None:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
+                print(f"Migrated: {table}.{column}")
+    except Exception as e:
+        # Non-fatal: column may already exist or DB locked
+        print(f"Migration note {table}.{column}: {e}")
+
 def init_db():
     """Initialize the database and create tables."""
     
@@ -140,6 +163,25 @@ def init_db():
     
     Base.metadata.create_all(bind=engine)
     print("Database tables created successfully")
+
+    # --- Crafty-inspired schema upgrades (add columns to existing DBs) ---
+    try:
+        with engine.begin() as conn:
+            # users
+            _ensure_column(conn, "users", "is_superuser", "is_superuser BOOLEAN DEFAULT 0")
+            _ensure_column(conn, "users", "manager_id", "manager_id INTEGER REFERENCES users(id)")
+            _ensure_column(conn, "users", "max_servers", "max_servers INTEGER DEFAULT -1")
+            _ensure_column(conn, "users", "max_users", "max_users INTEGER DEFAULT -1")
+            _ensure_column(conn, "users", "max_roles", "max_roles INTEGER DEFAULT -1")
+            _ensure_column(conn, "users", "created_by", "created_by INTEGER REFERENCES users(id)")
+            # roles
+            _ensure_column(conn, "roles", "manager_id", "manager_id INTEGER REFERENCES users(id)")
+            _ensure_column(conn, "roles", "max_servers", "max_servers INTEGER DEFAULT -1")
+            _ensure_column(conn, "roles", "max_users", "max_users INTEGER DEFAULT -1")
+            _ensure_column(conn, "roles", "max_roles", "max_roles INTEGER DEFAULT -1")
+            _ensure_column(conn, "roles", "servers_config", "servers_config JSON DEFAULT '{}'")
+    except Exception as e:
+        print(f"Warning: schema upgrade failed (non-fatal): {e}")
 
     
     try:

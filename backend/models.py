@@ -28,7 +28,8 @@ class Role(Base):
     max_roles = Column(Integer, default=-1)
     servers_config = Column(JSON, default=dict)  # {server_name: {COMMANDS:true, TERMINAL:true, LOGS:true, SCHEDULE:true, BACKUP:true, FILES:true, CONFIG:true, PLAYERS:true}}
 
-// Association for multi-role support (Crafty allows many roles per user)
+
+# Association for multi-role support (Crafty allows many roles per user)
 class UserRole(Base):
     __tablename__ = "user_roles"
     id = Column(Integer, primary_key=True, index=True)
