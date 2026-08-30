@@ -380,19 +380,17 @@ class LocalAdapter:
                     # per-process net counters don't exist on psutil.Process; use host counters as approximation
                     pass
                 # Fallback to host net counters for local runtime (better than 0)
+                # Return cumulative values so stats_history can compute correct rates
                 try:
                     hc = psutil.net_io_counters()
-                    total_rx = hc.bytes_recv
-                    total_tx = hc.bytes_sent
-                    # delta vs previous poll stored on instance
-                    if not hasattr(self, "_host_net_prev"):
-                        self._host_net_prev = (total_rx, total_tx)
-                        total_rx = total_tx = 0
-                    else:
-                        prx, ptx = self._host_net_prev
-                        total_rx = max(0, total_rx - prx)
-                        total_tx = max(0, total_tx - ptx)
-                        self._host_net_prev = (hc.bytes_recv, hc.bytes_sent)
+                    raw_rx = hc.bytes_recv
+                    raw_tx = hc.bytes_sent
+                    # Store base on first call; return cumulative delta from that base
+                    if not hasattr(self, "_host_net_base"):
+                        self._host_net_base = (raw_rx, raw_tx)
+                    base_rx, base_tx = self._host_net_base
+                    total_rx = max(0, raw_rx - base_rx)
+                    total_tx = max(0, raw_tx - base_tx)
                 except Exception:
                     total_rx = total_tx = 0
                 mem_usage_mb = float(total_mem) / (1024 * 1024)
@@ -401,7 +399,7 @@ class LocalAdapter:
                 cpu_percent = (total_cpu / live_cores) if live_cores > 0 else 0.0
                 # Cap at 100% to avoid anomalies
                 cpu_percent = min(cpu_percent, 100.0)
-                # Network I/O - convert cumulative counters to MB (these are cumulative since process start)
+                # Network I/O - cumulative counters in MB (since adapter start)
                 net_rx_mb = round(total_rx / (1024 * 1024), 2) if total_rx else net_rx_mb
                 net_tx_mb = round(total_tx / (1024 * 1024), 2) if total_tx else net_tx_mb
                 if mem_limit_mb:
