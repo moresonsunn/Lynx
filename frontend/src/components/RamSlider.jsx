@@ -69,13 +69,14 @@ export default function RamSlider({ value, onChange, showCategories = true, labe
     if (onChange) onChange(gbToRamString(gb));
   };
 
-  // Category markers - positions as % of track, matching picture roughly
+  // Category markers — evenly spaced so ticks are visually balanced
+  // (accurate to the *picture*, not to absolute GB). Host max still drives the slider range.
   const categories = [
-    { label: 'Vanilla Servers', gb: 2 },
-    { label: 'Plugin Servers', gb: 4 },
-    { label: 'Modpacks', gb: 6 },
-    { label: 'Large Modpacks', gb: 10 },
-    { label: 'Communities', gb: maxGb },
+    { label: 'Vanilla Servers', pos: 0 },
+    { label: 'Plugin Servers', pos: 25 },
+    { label: 'Modpacks', pos: 50 },
+    { label: 'Large Modpacks', pos: 75 },
+    { label: 'Communities', pos: 100 },
   ];
 
   // For edit mode without categories, max is just hostMax
@@ -84,27 +85,25 @@ export default function RamSlider({ value, onChange, showCategories = true, labe
   return (
     <div className="w-full py-2">
       {showCategories && (
-        <div className="relative mb-2 h-6">
-          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between px-1 text-[10px] leading-none">
-            {categories.map((c) => {
-              // compute left % for marker
-              const left = ((Math.min(c.gb, maxGb) - minGb) / Math.max(1, maxGb - minGb)) * 100;
-              const isFirst = c.label === 'Vanilla Servers';
-              const isLast = c.label === 'Communities';
-              return (
-                <div
-                  key={c.label}
-                  className="absolute -translate-x-1/2 flex flex-col items-center"
-                  style={{ left: `${left}%` }}
-                >
-                  <span className="bg-[#1e2440] text-white/80 px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap">
-                    {c.label}
-                  </span>
-                  <span className="mt-1 w-px h-2 bg-white/20" />
-                </div>
-              );
-            })}
-          </div>
+        <div className="relative mb-6 h-10">
+          {/* labels + ticks evenly spaced */}
+          {categories.map((c) => (
+            <div
+              key={c.label}
+              className="absolute flex flex-col items-center"
+              style={{
+                left: `${c.pos}%`,
+                transform: c.pos === 0 ? 'translateX(0)' : c.pos === 100 ? 'translateX(-100%)' : 'translateX(-50%)',
+              }}
+            >
+              <span className="bg-[#1e2440] text-white/80 px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap">
+                {c.label}
+              </span>
+              <span className="mt-1 w-px h-3 bg-white/25" />
+            </div>
+          ))}
+          {/* subtle baseline for ticks */}
+          <div className="absolute left-0 right-0 top-[34px] h-px bg-white/10" />
         </div>
       )}
       <div className="relative">
