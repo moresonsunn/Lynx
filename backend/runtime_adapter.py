@@ -12,8 +12,24 @@ from config import SERVERS_ROOT
 
 _RAM_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMGTP]?)(?:I?B)?\s*$", re.IGNORECASE)
 
-# Cache CPU core count for performance
-_CPU_CORES = psutil.cpu_count(logical=True) or 1
+def _live_cpu_count() -> int:
+    """Live CPU count — never cache, so a host CPU swap is reflected after container restart."""
+    try:
+        c = psutil.cpu_count(logical=True)
+        if c and c > 0:
+            return int(c)
+    except Exception:
+        pass
+    try:
+        c = os.cpu_count()
+        if c and c > 0:
+            return int(c)
+    except Exception:
+        pass
+    return 1
+
+# kept for compat, but recomputed live per call
+_CPU_CORES = _live_cpu_count()
 
 
 def _parse_ram_to_mb(value: object, default_mb: float) -> float:
@@ -380,8 +396,9 @@ class LocalAdapter:
                 except Exception:
                     total_rx = total_tx = 0
                 mem_usage_mb = float(total_mem) / (1024 * 1024)
-                # Normalize CPU percentage by number of logical CPU cores
-                cpu_percent = (total_cpu / _CPU_CORES) if _CPU_CORES > 0 else 0.0
+                # Normalize CPU percentage by number of logical CPU cores (live, not cached)
+                live_cores = _live_cpu_count()
+                cpu_percent = (total_cpu / live_cores) if live_cores > 0 else 0.0
                 # Cap at 100% to avoid anomalies
                 cpu_percent = min(cpu_percent, 100.0)
                 # Network I/O - convert cumulative counters to MB (these are cumulative since process start)

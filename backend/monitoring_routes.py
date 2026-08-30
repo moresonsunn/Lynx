@@ -157,25 +157,67 @@ async def get_system_health(
         
         avg_cpu_usage = cpu_usage_total / server_count_with_stats if server_count_with_stats > 0 else 0.0
         
-        # Detect host CPU topology (physical cores vs logical threads)
+        # Detect host CPU topology live (never cache — supports hot-swapped CPU)
         cpu_cores = None
         cpu_threads = None
         try:
-            cpu_threads = os.cpu_count()  # logical CPUs (threads)
+            # logical threads — try psutil first, then os, then lscpu /proc
             try:
-                import psutil
-                cpu_cores = psutil.cpu_count(logical=False)  # physical cores
-            except ImportError:
-                # fallback: try to read from /proc/cpuinfo on Linux
+                import psutil as _psutil
+                cpu_threads = _psutil.cpu_count(logical=True)
+            except Exception:
+                cpu_threads = None
+            if not cpu_threads:
+                cpu_threads = os.cpu_count()
+            if not cpu_threads:
+                # fallback: count processors in /proc/cpuinfo
                 try:
                     with open("/proc/cpuinfo") as f:
-                        core_ids = set()
-                        for line in f:
-                            if line.strip().startswith("core id"):
-                                core_ids.add(line.strip())
-                        cpu_cores = len(core_ids) if core_ids else cpu_threads
+                        cpu_threads = sum(1 for line in f if line.startswith("processor"))
                 except Exception:
-                    cpu_cores = cpu_threads
+                    pass
+            # physical cores
+            try:
+                import psutil as _psutil2
+                cpu_cores = _psutil2.cpu_count(logical=False)
+            except Exception:
+                cpu_cores = None
+            if not cpu_cores:
+                # fallback: count unique physical ids + cores
+                try:
+                    with open("/proc/cpuinfo") as f:
+                        text = f.read()
+                        # count unique "core id" + "physical id" combos
+                        phys = set()
+                        core = None
+                        phy = None
+                        for line in text.splitlines():
+                            if line.startswith("physical id"):
+                                phy = line.split(":")[-1].strip()
+                            elif line.startswith("core id"):
+                                core = line.split(":")[-1].strip()
+                                if phy is not None and core is not None:
+                                    phys.add(f"{phy}:{core}")
+                        cpu_cores = len(phys) if phys else None
+                except Exception:
+                    pass
+            if not cpu_cores:
+                cpu_cores = cpu_threads
+            # last resort: try lscpu
+            if not cpu_cores or not cpu_threads:
+                try:
+                    import subprocess as _sp
+                    out = _sp.check_output(["lscpu"], text=True, timeout=1)
+                    for line in out.splitlines():
+                        if "CPU(s):" in line and not cpu_threads:
+                            try:
+                                cpu_threads = int(line.split(":")[-1].strip().split()[0])
+                            except Exception:
+                                pass
+                        if "Core(s) per socket" in line and "Socket(s)" in out:
+                            pass
+                except Exception:
+                    pass
         except Exception:
             pass
         
