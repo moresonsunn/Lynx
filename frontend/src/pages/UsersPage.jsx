@@ -101,6 +101,8 @@ export default function UsersPage() {
   const [editingRole, setEditingRole] = useState(null);
   const [editRoleForm, setEditRoleForm] = useState({ description: '', permissions: [] });
   const [editingRolePerms, setEditingRolePerms] = useState(false);
+  const [createPermSearch, setCreatePermSearch] = useState('');
+  const [editPermSearch, setEditPermSearch] = useState('');
 
   // Delete confirmations
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { type: 'user'|'role', item }
@@ -663,14 +665,51 @@ export default function UsersPage() {
       {showCreateRoleModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowCreateRoleModal(false)} />
-          <form onSubmit={submitCreateRole} className="relative bg-card border border-white/10 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-4">
+          <form onSubmit={submitCreateRole} className="relative bg-card border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <div className="flex items-center justify-between mb-2 sticky top-0 bg-card/95 backdrop-blur pb-4 border-b border-white/10 z-10">
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><FaPlus className="text-brand-400" /> Create Custom Role</h2>
               <button type="button" onClick={() => setShowCreateRoleModal(false)} className="text-white/60 hover:text-white"><FaTimes /></button>
             </div>
             <div><label className="block text-sm text-white/70 mb-1">Role Name <span className="text-red-400">*</span></label><input type="text" required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40" placeholder="custom_role" value={newRole.name} onChange={e => setNewRole(p => ({ ...p, name: e.target.value }))} /><p className="text-xs text-white/50 mt-1">Lowercase, numbers, underscores only</p></div>
             <div><label className="block text-sm text-white/70 mb-1">Description</label><textarea className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40" rows={2} value={newRole.description} onChange={e => setNewRole(p => ({ ...p, description: e.target.value }))} /></div>
-            <div><label className="block text-sm text-white/70 mb-1">Permissions</label><div className="max-h-64 overflow-y-auto space-y-3">{Object.entries(permissionCategories).map(([cat, perms]) => (<div key={cat}><h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-2">{cat.replace('_', ' ')}</h4><div className="grid grid-cols-2 gap-2">{perms.map(p => (<label key={p} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={newRole.permissions.includes(p)} onChange={e => setNewRole(prev => ({ ...prev, permissions: e.target.checked ? [...prev.permissions, p] : prev.permissions.filter(x => x !== p) }))} className="accent-brand-500" /><span className="text-xs text-white/70">{p}</span></label>))}</div></div>))}</div></div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm text-white/70">Permissions <span className="text-white/40">({newRole.permissions.length} selected)</span></label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { const visible = Object.values(permissionCategories).flat().filter(p => !createPermSearch || p.toLowerCase().includes(createPermSearch.toLowerCase())); setNewRole(prev => ({ ...prev, permissions: [...new Set([...prev.permissions, ...visible])] })); }} className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-white/70">Select visible</button>
+                  <button type="button" onClick={() => { const visible = Object.values(permissionCategories).flat().filter(p => !createPermSearch || p.toLowerCase().includes(createPermSearch.toLowerCase())); setNewRole(prev => ({ ...prev, permissions: prev.permissions.filter(x => !visible.includes(x)) })); }} className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-white/70">Clear visible</button>
+                </div>
+              </div>
+              <div className="relative mb-3">
+                <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-xs" />
+                <input type="text" placeholder="Search server.view, user.create..." className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/40" value={createPermSearch} onChange={e => setCreatePermSearch(e.target.value)} />
+              </div>
+              <div className="max-h-80 overflow-y-auto space-y-3 pr-1">
+                {Object.entries(permissionCategories).map(([cat, perms]) => {
+                  const filtered = perms.filter(p => !createPermSearch || p.toLowerCase().includes(createPermSearch.toLowerCase()));
+                  if (!filtered.length) return null;
+                  const allChecked = filtered.every(p => newRole.permissions.includes(p));
+                  const someChecked = filtered.some(p => newRole.permissions.includes(p));
+                  return (
+                    <div key={cat} className="bg-white/5 rounded-lg p-3 border border-white/5">
+                      <label className="flex items-center gap-2 cursor-pointer mb-2">
+                        <input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = !allChecked && someChecked; }} onChange={e => { if (e.target.checked) setNewRole(prev => ({ ...prev, permissions: [...new Set([...prev.permissions, ...filtered])] })); else setNewRole(prev => ({ ...prev, permissions: prev.permissions.filter(x => !filtered.includes(x)) })); }} className="accent-brand-500" />
+                        <h4 className="text-xs font-semibold text-white/80 uppercase tracking-wider flex-1">{cat.replace('_', ' ')} <span className="text-white/40 font-normal">({filtered.length})</span></h4>
+                        <span className="text-[11px] text-white/50">{filtered.filter(p => newRole.permissions.includes(p)).length}/{filtered.length}</span>
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {filtered.map(p => (
+                          <label key={p} className="flex items-center gap-2 cursor-pointer bg-black/20 px-2 py-1.5 rounded hover:bg-black/30">
+                            <input type="checkbox" checked={newRole.permissions.includes(p)} onChange={e => setNewRole(prev => ({ ...prev, permissions: e.target.checked ? [...prev.permissions, p] : prev.permissions.filter(x => x !== p) }))} className="accent-brand-500 flex-shrink-0" />
+                            <span className="text-xs text-white/70 truncate" title={p}>{p}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowCreateRoleModal(false)} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80">Cancel</button><button type="submit" disabled={creatingRole} className="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg text-white flex items-center gap-2">{creatingRole ? <><FaSpinner className="animate-spin w-4 h-4" /> Creating...</> : <><FaPlus /> Create Role</>}</button></div>
           </form>
         </div>
@@ -680,14 +719,51 @@ export default function UsersPage() {
       {showEditRoleModal && editingRole && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { setShowEditRoleModal(false); setEditingRole(null); }} />
-          <form onSubmit={submitEditRole} className="relative bg-card border border-white/10 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-4">
+          <form onSubmit={submitEditRole} className="relative bg-card border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <div className="flex items-center justify-between mb-2 sticky top-0 bg-card/95 backdrop-blur pb-4 border-b border-white/10 z-10">
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><FaEdit className="text-brand-400" /> Edit Role: {editingRole.name}</h2>
               <button type="button" onClick={() => { setShowEditRoleModal(false); setEditingRole(null); }} className="text-white/60 hover:text-white"><FaTimes /></button>
             </div>
             {editingRole.is_system && <div className="bg-blue-500/20 border border-blue-500/30 text-blue-300 p-3 rounded-lg text-sm">System role - only description and permissions can be modified</div>}
             <div><label className="block text-sm text-white/70 mb-1">Description</label><textarea className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40" rows={2} value={editRoleForm.description} onChange={e => setEditRoleForm(p => ({ ...p, description: e.target.value }))} /></div>
-            <div><label className="block text-sm text-white/70 mb-1">Permissions</label><div className="max-h-64 overflow-y-auto space-y-3">{Object.entries(permissionCategories).map(([cat, perms]) => (<div key={cat}><h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-2">{cat.replace('_', ' ')}</h4><div className="grid grid-cols-2 gap-2">{perms.map(p => (<label key={p} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editRoleForm.permissions.includes(p)} onChange={e => setEditRoleForm(prev => ({ ...prev, permissions: e.target.checked ? [...prev.permissions, p] : prev.permissions.filter(x => x !== p) }))} className="accent-brand-500" /><span className="text-xs text-white/70">{p}</span></label>))}</div></div>))}</div></div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm text-white/70">Permissions <span className="text-white/40">({editRoleForm.permissions.length} selected)</span></label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { const visible = Object.values(permissionCategories).flat().filter(p => !editPermSearch || p.toLowerCase().includes(editPermSearch.toLowerCase())); setEditRoleForm(prev => ({ ...prev, permissions: [...new Set([...prev.permissions, ...visible])] })); }} className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-white/70">Select visible</button>
+                  <button type="button" onClick={() => { const visible = Object.values(permissionCategories).flat().filter(p => !editPermSearch || p.toLowerCase().includes(editPermSearch.toLowerCase())); setEditRoleForm(prev => ({ ...prev, permissions: prev.permissions.filter(x => !visible.includes(x)) })); }} className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-white/70">Clear visible</button>
+                </div>
+              </div>
+              <div className="relative mb-3">
+                <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-xs" />
+                <input type="text" placeholder="Search server.view, user.create..." className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/40" value={editPermSearch} onChange={e => setEditPermSearch(e.target.value)} />
+              </div>
+              <div className="max-h-80 overflow-y-auto space-y-3 pr-1">
+                {Object.entries(permissionCategories).map(([cat, perms]) => {
+                  const filtered = perms.filter(p => !editPermSearch || p.toLowerCase().includes(editPermSearch.toLowerCase()));
+                  if (!filtered.length) return null;
+                  const allChecked = filtered.every(p => editRoleForm.permissions.includes(p));
+                  const someChecked = filtered.some(p => editRoleForm.permissions.includes(p));
+                  return (
+                    <div key={cat} className="bg-white/5 rounded-lg p-3 border border-white/5">
+                      <label className="flex items-center gap-2 cursor-pointer mb-2">
+                        <input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = !allChecked && someChecked; }} onChange={e => { if (e.target.checked) setEditRoleForm(prev => ({ ...prev, permissions: [...new Set([...prev.permissions, ...filtered])] })); else setEditRoleForm(prev => ({ ...prev, permissions: prev.permissions.filter(x => !filtered.includes(x)) })); }} className="accent-brand-500" />
+                        <h4 className="text-xs font-semibold text-white/80 uppercase tracking-wider flex-1">{cat.replace('_', ' ')} <span className="text-white/40 font-normal">({filtered.length})</span></h4>
+                        <span className="text-[11px] text-white/50">{filtered.filter(p => editRoleForm.permissions.includes(p)).length}/{filtered.length}</span>
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {filtered.map(p => (
+                          <label key={p} className="flex items-center gap-2 cursor-pointer bg-black/20 px-2 py-1.5 rounded hover:bg-black/30">
+                            <input type="checkbox" checked={editRoleForm.permissions.includes(p)} onChange={e => setEditRoleForm(prev => ({ ...prev, permissions: e.target.checked ? [...prev.permissions, p] : prev.permissions.filter(x => x !== p) }))} className="accent-brand-500 flex-shrink-0" />
+                            <span className="text-xs text-white/70 truncate" title={p}>{p}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => { setShowEditRoleModal(false); setEditingRole(null); }} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80">Cancel</button><button type="submit" disabled={editingRolePerms} className="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded-lg text-white flex items-center gap-2">{editingRolePerms ? <><FaSpinner className="animate-spin w-4 h-4" /> Saving...</> : <><FaSave /> Save Changes</>}</button></div>
           </form>
         </div>

@@ -21,6 +21,21 @@ class Role(Base):
     permissions = Column(JSON, default=list)  
     is_system = Column(Boolean, default=False)  
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Crafty-inspired: delegation + quotas + per-server matrix
+    manager_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # who may edit this role
+    max_servers = Column(Integer, default=-1)  # -1 = unlimited, like Crafty
+    max_users = Column(Integer, default=-1)
+    max_roles = Column(Integer, default=-1)
+    servers_config = Column(JSON, default=dict)  # {server_name: {COMMANDS:true, TERMINAL:true, LOGS:true, SCHEDULE:true, BACKUP:true, FILES:true, CONFIG:true, PLAYERS:true}}
+
+// Association for multi-role support (Crafty allows many roles per user)
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
+    granted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class User(Base):
     __tablename__ = "users"
@@ -29,7 +44,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(String, default="user")  
+    role = Column(String, default="user")  # kept for back-compat; new multi-role via user_roles
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
@@ -37,6 +52,13 @@ class User(Base):
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)
     must_change_password = Column(Boolean, default=False)
+    # Crafty-inspired
+    is_superuser = Column(Boolean, default=False)  # only superuser can create superusers / manage all
+    manager_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # who manages this user
+    max_servers = Column(Integer, default=-1)
+    max_users = Column(Integer, default=-1)
+    max_roles = Column(Integer, default=-1)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     
     full_name = Column(String, nullable=True)

@@ -63,7 +63,7 @@ from realtime_routes import router as realtime_router
 from advanced_api_routes import router as advanced_api_router
 from client_mod_routes import router as client_mod_router
 from server_permissions import router as permissions_router
-from auth import require_auth, get_current_user, require_admin, require_moderator, get_password_hash, verify_token, get_user_by_username
+from auth import require_auth, get_current_user, require_admin, require_moderator, require_permission, get_password_hash, verify_token, get_user_by_username
 from scheduler import get_scheduler
 from stats_history import start_collector as start_stats_collector, stop_collector as stop_stats_collector, get_stats_history
 from backup_scheduler import (
@@ -530,7 +530,7 @@ class ServerImportRequest(BaseModel):
     java_version: str | None = None  # optional preferred Java version (8/11/17/21)
 
 @app.post("/api/servers/import")
-def import_server(req: ServerImportRequest, current_user: User = Depends(require_auth)):
+def import_server(req: ServerImportRequest, current_user: User = Depends(require_permission("server.create"))):
     """Adopt an existing server directory into Lynx without re-downloading jars.
 
     The directory must already exist at /data/servers/{name} (inside container) / host volume.
@@ -662,7 +662,7 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
         raise HTTPException(status_code=500, detail=f"Failed to import server: {e}")
 
 @app.post("/api/servers")
-def create_server(req: ServerCreateRequest, current_user: User = Depends(require_auth)):
+def create_server(req: ServerCreateRequest, current_user: User = Depends(require_permission("server.create"))):
     try:
         # Apply server defaults from Settings when not explicitly provided
         from settings_routes import get_server_defaults

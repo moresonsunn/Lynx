@@ -22,12 +22,20 @@ import {
   FaChevronDown,
   FaChevronUp,
   FaHistory,
+  FaTimes,
+  FaCopy,
+  FaEdit,
+  FaEllipsisV,
 } from 'react-icons/fa';
 
 const TASK_TYPES = [
   { value: 'backup', label: 'Backup', icon: FaServer, description: 'Create a backup of the server' },
   { value: 'restart', label: 'Restart', icon: FaSync, description: 'Restart the server' },
+  { value: 'start', label: 'Start', icon: FaPlay, description: 'Start the server if stopped' },
+  { value: 'stop', label: 'Stop', icon: FaTrash, description: 'Stop the server gracefully' },
   { value: 'command', label: 'Command', icon: FaCode, description: 'Execute a console command' },
+  { value: 'announce', label: 'Announce', icon: FaInfoCircle, description: 'Broadcast a message to all players (say)' },
+  { value: 'save', label: 'Save', icon: FaServer, description: 'Save the world (save-all)' },
   { value: 'cleanup', label: 'Cleanup', icon: FaBroom, description: 'Clean up old backups/logs' },
 ];
 
@@ -85,6 +93,8 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   const [deleteLoading, setDeleteLoading] = useState(null);
   const [toggleLoading, setToggleLoading] = useState(null);
   const [showCronHelp, setShowCronHelp] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+  const [menuOpenId, setMenuOpenId] = useState(null);
 
   // Reset form when opening/closing
   useEffect(() => {
@@ -222,6 +232,37 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
       showToast('error', e.message);
     } finally {
       setDeleteLoading(null);
+    }
+  };
+
+  const duplicateTask = async (task) => {
+    if (!serverName) {
+      showToast('error', 'Server name not available');
+      return;
+    }
+    try {
+      const baseUrl = `${API}/servers/${encodeURIComponent(serverName)}/schedules`;
+      const body = {
+        name: `${task.name} (copy)`,
+        task_type: task.task_type,
+        server_name: task.server_name,
+        cron_expression: task.cron_expression,
+        command: task.command || '',
+      };
+      const r = await fetch(baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${r.status}`);
+      }
+      const created = await r.json();
+      showToast('success', 'Task duplicated');
+      setTasks(prev => [...(prev || []), created]);
+    } catch (e) {
+      showToast('error', e.message);
     }
   };
 
@@ -426,7 +467,16 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
                         }`}
                         title="Edit"
                       >
-                        <FaChevronDown className="w-4 h-4" />
+                        <FaEdit className="w-4 h-4" />
+                      </button>
+
+                      {/* Expand / More */}
+                      <button
+                        onClick={() => setExpandedId(expandedId === task.id ? null : task.id)}
+                        className={`p-2 rounded-lg transition-colors ${expandedId === task.id ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
+                        title={expandedId === task.id ? 'Collapse' : 'Expand'}
+                      >
+                        {expandedId === task.id ? <FaChevronUp className="w-4 h-4" /> : <FaChevronDown className="w-4 h-4" />}
                       </button>
 
                       {/* Delete */}
@@ -442,6 +492,27 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
                       </button>
                     </div>
                   </div>
+                  {/* Expanded details — more options */}
+                  {expandedId === task.id && (
+                    <div className="mt-4 pt-4 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                      <div className="space-y-2">
+                        <div className="text-white/50 text-xs uppercase tracking-wider">Details</div>
+                        <div className="text-white/70">ID: <span className="font-mono text-white">{task.id}</span></div>
+                        <div className="text-white/70">Type: <span className="text-white">{typeInfo?.label || task.task_type}</span> — {typeInfo?.description}</div>
+                        {task.command && <div className="text-white/70">Command: <code className="bg-black/30 px-1 rounded">{task.command}</code></div>}
+                        <div className="text-white/50 text-xs">Cron: <code className="bg-black/30 px-1 rounded">{task.cron_expression}</code> — Next: {task.next_run ? new Date(task.next_run).toLocaleString() : '—'} · Last: {task.last_run ? new Date(task.last_run).toLocaleString() : 'never'}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-white/50 text-xs uppercase tracking-wider">Actions</div>
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => startEdit(task)} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-white text-xs flex items-center gap-1"><FaEdit /> Edit</button>
+                          <button onClick={() => duplicateTask(task)} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-white text-xs flex items-center gap-1"><FaCopy /> Duplicate</button>
+                          <button onClick={() => { navigator.clipboard.writeText(task.cron_expression); showToast('success','Cron copied'); }} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-white text-xs">Copy Cron</button>
+                        </div>
+                        <div className="text-xs text-white/40">More types: Backup, Restart, Start, Stop, Command, Announce (say), Save (save-all), Cleanup — edit to change.</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
