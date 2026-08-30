@@ -26,6 +26,7 @@ export default function ConfirmModal({
     onConfirm,
     onCancel,
     isLoading = false,
+    size = 'md',
 }) {
     if (!isOpen) return null;
 
@@ -36,9 +37,17 @@ export default function ConfirmModal({
     };
 
     const buttonStyle = variantStyles[confirmVariant] || variantStyles.danger;
+    const sizeClasses = {
+        sm: 'max-w-sm',
+        md: 'max-w-md',
+        lg: 'max-w-2xl',
+        xl: 'max-w-3xl',
+        '2xl': 'max-w-4xl',
+    };
+    const modalWidth = sizeClasses[size] || sizeClasses.md;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             {/* Backdrop */}
             <div
                 className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -46,7 +55,7 @@ export default function ConfirmModal({
             />
 
             {/* Modal */}
-            <div className="relative bg-ink-900 border border-white/10 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className={`relative bg-ink-900 border border-white/10 rounded-2xl shadow-2xl ${modalWidth} w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col`}>
                 {/* Header */}
                 <div className="flex items-center justify-between p-5 border-b border-white/10">
                     <div className="flex items-center gap-3">
@@ -67,8 +76,12 @@ export default function ConfirmModal({
                 </div>
 
                 {/* Body */}
-                <div className="p-5">
-                    <p className="text-white/70 leading-relaxed">{message}</p>
+                <div className="p-5 overflow-y-auto flex-1 min-h-0">
+                    {typeof message === 'string' ? (
+                        <p className="text-white/70 leading-relaxed">{message}</p>
+                    ) : (
+                        <div className="text-white/70 leading-relaxed">{message}</div>
+                    )}
                 </div>
 
                 {/* Footer */}

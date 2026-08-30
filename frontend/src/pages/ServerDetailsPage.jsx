@@ -147,7 +147,7 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTa
   };
 
   return (
-    <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+    <div className="space-y-4">
       {!isSteam && (
         <div className="glassmorphism rounded-xl p-4">
           <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -170,12 +170,12 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTa
                 showCategories={false}
                 label="Max RAM — min is auto-set to half. Restart required."
               />
-              <div className="flex items-center justify-between mt-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-3">
                 <span className="text-xs text-white/50">Current: {ramMin} → {ramMax} {ramMsg && <span className="ml-2 text-purple-300">{ramMsg}</span>}</span>
                 <button
                   onClick={handleRamSave}
                   disabled={ramSaving}
-                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold"
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
                 >
                   {ramSaving ? 'Saving...' : 'Save & Restart'}
                 </button>
@@ -184,7 +184,7 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTa
           )}
         </div>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Server Info */}
         <div className="glassmorphism rounded-xl p-4">
           <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -1224,7 +1224,7 @@ export default function ServerDetailsPage() {
         onConfirm={() => setShowSettingsModal(false)}
         onCancel={() => setShowSettingsModal(false)}
         confirmVariant="primary"
-        size="lg"
+        size="xl"
       />
     </div>
   );
