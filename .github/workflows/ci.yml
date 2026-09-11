@@ -172,7 +172,7 @@ jobs:
         exit 1
     
     - name: Build controller image (multi-arch)
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: docker/controller.Dockerfile

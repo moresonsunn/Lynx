@@ -2,7 +2,11 @@
 # Diese Datei ersetzt die alte, langsame unified.Dockerfile.
 
 # ---- Stage 1: Frontend bauen ----
-FROM node:20-alpine AS ui
+# NOTE: always build natively ($BUILDPLATFORM), never under QEMU emulation.
+# The output is pure static files (identical for amd64/arm64), and running
+# `npm install` emulated on arm64 crashes with
+# "qemu: uncaught target signal 4 (Illegal instruction)".
+FROM --platform=$BUILDPLATFORM node:20-alpine AS ui
 WORKDIR /ui
 
 # Abhängigkeiten installieren (mit explizitem react-is)
