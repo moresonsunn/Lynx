@@ -56,6 +56,47 @@ def _format_ram(mb_value: int, prefer: str = 'G') -> str:
     return f"{mb_value}M"
 
 
+def _normalize_cpu_cores(value: Any) -> int | None:
+    """Normalize a CPU core cap to a positive int, or None for unlimited."""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value or value.lower() in ("unlimited", "none", "0"):
+                return None
+        cores = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    if cores < 1:
+        return None
+    return min(cores, 1024)
+
+
+def _apply_cpu_affinity(pid: int, cores: int | None) -> bool:
+    """Pin a process tree leader to the first N CPUs (Linux only). Returns ok."""
+    if not cores:
+        return False
+    set_affinity = getattr(os, "sched_setaffinity", None)
+    if not callable(set_affinity):
+        return False
+    try:
+        import psutil as _psutil
+        total = _psutil.cpu_count(logical=True) or cores
+    except Exception:
+        try:
+            total = os.cpu_count() or cores
+        except Exception:
+            total = cores
+    mask = set(range(min(cores, total)))
+    try:
+        set_affinity(pid, mask)
+        return True
+    except Exception as e:
+        logger.warning(f"sched_setaffinity failed for pid {pid}: {e}")
+        return False
+
+
 class LocalRuntimeManager:
     def _server_dir(self, name: str) -> Path:
         return SERVERS_ROOT / name
@@ -175,6 +216,13 @@ class LocalRuntimeManager:
             self._pid_file(name).write_text(str(proc.pid), encoding="utf-8")
         except Exception:
             pass
+        # Enforce per-server CPU cap (first N CPUs) when configured
+        try:
+            cores = _normalize_cpu_cores(env.get("CPU_CORES"))
+            if cores:
+                _apply_cpu_affinity(proc.pid, cores)
+        except Exception:
+            pass
         return {"id": name, "name": name, "status": "running", "pid": proc.pid}
 
     def create_server(
@@ -187,6 +235,7 @@ class LocalRuntimeManager:
         min_ram: str = "1G",
         max_ram: str = "2G",
         installer_version: Optional[str] = None,
+        cpu_cores=None,
     ) -> Dict:
         srv_dir = self._server_dir(name)
         srv_dir.mkdir(parents=True, exist_ok=True)
@@ -201,6 +250,7 @@ class LocalRuntimeManager:
         max_mb = _ram_to_mb(max_ram, default_mb=2048)
         if max_mb < min_mb:
             max_mb = min_mb
+        cores = _normalize_cpu_cores(cpu_cores)
         meta = {
             "name": name,
             "type": server_type,
@@ -214,6 +264,8 @@ class LocalRuntimeManager:
             "host_port": int(host_port or MINECRAFT_PORT),
             "created_at": int(time.time()),
         }
+        if cores:
+            meta["cpu_cores"] = int(cores)
         self._save_meta(name, meta)
         env = {
             "SERVER_DIR_NAME": name,
@@ -223,6 +275,8 @@ class LocalRuntimeManager:
             "SERVER_TYPE": server_type,
             "SERVER_VERSION": version,
         }
+        if cores:
+            env["CPU_CORES"] = str(cores)
         return self._spawn(name, env)
 
     def create_server_from_existing(
@@ -233,6 +287,7 @@ class LocalRuntimeManager:
         max_ram: Optional[str] = None,
         extra_env: Optional[Dict[str, str]] = None,
         extra_labels: Optional[Dict[str, str]] = None,
+        cpu_cores=None,
     ) -> Dict:
         srv_dir = self._server_dir(name)
         if not srv_dir.exists() or not srv_dir.is_dir():
@@ -269,6 +324,19 @@ class LocalRuntimeManager:
         meta["max_ram"] = _format_ram(max_mb)
         meta["min_ram_mb"] = min_mb
         meta["max_ram_mb"] = max_mb
+        # CPU cap: explicit param wins, then env override, then stored meta
+        cores = _normalize_cpu_cores(cpu_cores)
+        if cores is None:
+            try:
+                cores = _normalize_cpu_cores((meta.get("env_overrides") or {}).get("CPU_CORES"))
+            except Exception:
+                cores = None
+        if cores is None:
+            cores = _normalize_cpu_cores(meta.get("cpu_cores"))
+        if cores:
+            meta["cpu_cores"] = int(cores)
+        else:
+            meta.pop("cpu_cores", None)
         self._save_meta(name, meta)
 
         env: Dict[str, str] = {
@@ -277,6 +345,8 @@ class LocalRuntimeManager:
             "MAX_RAM": meta["max_ram"],
             "SERVER_PORT": str(host_port or meta.get("host_port") or MINECRAFT_PORT),
         }
+        if cores:
+            env["CPU_CORES"] = str(cores)
         for k, v in (meta.get("env_overrides") or {}).items():
             if v is None:
                 continue
@@ -353,6 +423,42 @@ class LocalRuntimeManager:
             pass
         # Recreate with new RAM (meta will be updated inside create_server_from_existing)
         return self.create_server_from_existing(name, min_ram=n_min, max_ram=n_max)
+
+    def update_server_cpu(self, server_id, cpu_cores=None) -> Dict:
+        """Update CPU core cap for a local server — applied live, no restart.
+
+        cpu_cores: positive int, or None/"unlimited" to remove the cap.
+        """
+        name = server_id
+        srv_dir = self._server_dir(name)
+        if not srv_dir.exists():
+            raise RuntimeError(f"Server directory {srv_dir} not found")
+        cores = _normalize_cpu_cores(cpu_cores)
+        meta = self._load_meta(name)
+        if cores:
+            meta["cpu_cores"] = int(cores)
+        else:
+            meta.pop("cpu_cores", None)
+        stored = meta.get("env_overrides") or {}
+        if not isinstance(stored, dict):
+            stored = {}
+        if cores:
+            stored["CPU_CORES"] = str(cores)
+        else:
+            stored.pop("CPU_CORES", None)
+        meta["env_overrides"] = stored
+        self._save_meta(name, meta)
+        # Live-apply to the running process if present
+        live = False
+        try:
+            pid_txt = self._pid_file(name).read_text().strip()
+            pid = int(pid_txt) if pid_txt else None
+            if pid and self._is_running(pid) and cores:
+                live = _apply_cpu_affinity(pid, cores)
+        except Exception:
+            pass
+        return {"success": True, "cpu_cores": cores, "unlimited": cores is None,
+                "restarted": False, "live_applied": live, "id": name}
 
     def list_servers(self) -> List[Dict]:
         items: List[Dict] = []

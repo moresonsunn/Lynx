@@ -435,6 +435,7 @@ class ImportServerPackRequest(BaseModel):
     host_port: Optional[int] = None
     min_ram: Optional[str] = "2G"
     max_ram: Optional[str] = "4G"
+    cpu_cores: Optional[int] = None
 
 @router.post("/import")
 async def import_server_pack(
@@ -549,6 +550,7 @@ async def import_server_pack(
             host_port=payload.host_port,
             min_ram=payload.min_ram or "2G",
             max_ram=payload.max_ram or "4G",
+            cpu_cores=payload.cpu_cores,
         )
 
         if pack_metadata:
@@ -587,6 +589,7 @@ async def import_server_pack_upload(
     host_port: Optional[int] = Form(None),
     min_ram: str = Form("2G"),
     max_ram: str = Form("4G"),
+    cpu_cores: Optional[int] = Form(None),
     # Optional overrides to influence Java/runtime selection
     java_version_override: Optional[str] = Form(None),
     server_type: Optional[str] = Form(None),
@@ -754,6 +757,7 @@ async def import_server_pack_upload(
             min_ram=min_ram or "2G",
             max_ram=max_ram or "4G",
             extra_env=extra_env or None,
+            cpu_cores=cpu_cores,
         )
 
         # Update server_meta.json with detection results
@@ -792,6 +796,7 @@ class InstallRequest(BaseModel):
     host_port: Optional[int] = None
     min_ram: Optional[str] = None
     max_ram: Optional[str] = None
+    cpu_cores: Optional[int] = None
 
 
 class ResolveUrlRequest(BaseModel):
@@ -1214,6 +1219,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                 min_ram=min_ram_n,
                 max_ram=max_ram_n,
                 extra_env=extra_env or None,
+                cpu_cores=req.cpu_cores,
                 extra_labels={
                     "mc.modpack.provider": req.provider,
                     "mc.modpack.id": str(req.pack_id),

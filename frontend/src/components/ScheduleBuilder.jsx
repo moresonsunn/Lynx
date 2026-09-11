@@ -89,11 +89,9 @@ export default function ScheduleBuilder({ value, onChange }) {
 
   // sync when editing an existing task
   useEffect(() => {
-    if (value && value !== raw) {
-      setRaw(value);
-      setState(cronToBuilder(value));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!value) return;
+    setRaw((prev) => (prev === value ? prev : value));
+    setState(cronToBuilder(value));
   }, [value]);
 
   const emit = (next) => {

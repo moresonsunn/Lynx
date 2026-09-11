@@ -34,6 +34,33 @@ def _default_log_config():
 
 MINECRAFT_LABEL = "minecraft_server_manager"
 
+CPU_PERIOD_DEFAULT = 100000  # Docker default CFS period (µs)
+
+
+def parse_cpu_cores(value) -> int | None:
+    """Normalize a CPU core limit to a positive int, or None for unlimited."""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value or value.lower() in ("unlimited", "none", "0"):
+                return None
+        cores = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    if cores < 1:
+        return None
+    return min(cores, 1024)
+
+
+def cpu_quota_kwargs(cpu_cores) -> dict:
+    """HostConfig kwargs enforcing a hard cap of N CPU cores (CFS quota)."""
+    cores = parse_cpu_cores(cpu_cores)
+    if not cores:
+        return {}
+    return {"cpu_period": CPU_PERIOD_DEFAULT, "cpu_quota": cores * CPU_PERIOD_DEFAULT}
+
 
 
 DEFAULT_CASAOS_APP_ID = "lynx"
@@ -1427,7 +1454,7 @@ class DockerManager:
             
             return False
 
-    def create_server(self, name, server_type, version, host_port=None, loader_version=None, min_ram="1G", max_ram="2G", installer_version=None, extra_labels: dict | None = None):
+    def create_server(self, name, server_type, version, host_port=None, loader_version=None, min_ram="1G", max_ram="2G", installer_version=None, extra_labels: dict | None = None, cpu_cores=None):
         """
         Prepare server files for the requested type/version (downloading installers or jars as needed)
         and create a runtime container to run the server.
@@ -1484,6 +1511,7 @@ class DockerManager:
         port_binding = {f"{MINECRAFT_PORT}/tcp": selected_host_port}
 
         
+        cpu_limit = parse_cpu_cores(cpu_cores)
         env_vars = {
             "SERVER_DIR_NAME": name,
             "MIN_RAM": min_ram,
@@ -1492,6 +1520,8 @@ class DockerManager:
             "SERVER_TYPE": server_type,
             "SERVER_VERSION": version,
         }
+        if cpu_limit:
+            env_vars["CPU_CORES"] = str(cpu_limit)
         
         try:
             preferred_names = ["server.jar", "fabric-server-launch.jar"] if server_type.lower() in ("fabric", "banner") else ["server.jar"]
@@ -1576,6 +1606,7 @@ class DockerManager:
                 ):
                     
                     run_kwargs["entrypoint"] = ["/usr/local/bin/runtime-entrypoint.sh"]
+                run_kwargs.update(cpu_quota_kwargs(cpu_limit))
                 container = self.client.containers.run(
                     RUNTIME_IMAGE,
                     name=name,
@@ -1635,7 +1666,7 @@ class DockerManager:
 
         return {"id": container.id, "name": container.name, "status": container.status}
 
-    def create_server_from_existing(self, name: str, host_port: int | None = None, min_ram: str = "1G", max_ram: str = "2G", extra_env: dict | None = None, extra_labels: dict | None = None) -> dict:
+    def create_server_from_existing(self, name: str, host_port: int | None = None, min_ram: str = "1G", max_ram: str = "2G", extra_env: dict | None = None, extra_labels: dict | None = None, cpu_cores=None) -> dict:
         """Create a container for an existing server directory under /data/servers/{name} using the runtime image.
         Does not attempt to download any files; assumes files (including server.jar or installers) already exist.
         Optionally accepts extra_env to override runtime env (e.g., JAVA_BIN, JAVA_OPTS).
@@ -1702,6 +1733,17 @@ class DockerManager:
                     merged_env[str(k)] = str(v)
             except Exception:
                 pass
+
+            # CPU cap: explicit param wins, then env override, then stored meta (survives recreates)
+            cpu_limit = parse_cpu_cores(cpu_cores)
+            if cpu_limit is None:
+                cpu_limit = parse_cpu_cores(merged_env.get("CPU_CORES"))
+            if cpu_limit is None:
+                cpu_limit = parse_cpu_cores(meta.get("cpu_cores"))
+            if cpu_limit:
+                merged_env["CPU_CORES"] = str(cpu_limit)
+            else:
+                merged_env.pop("CPU_CORES", None)
 
             template_section = meta.get("template")
             template_info = template_section if isinstance(template_section, dict) else {}
@@ -1865,6 +1907,10 @@ class DockerManager:
             if max_mb is not None:
                 new_meta["max_ram"] = f"{max_mb}M"
                 new_meta["max_ram_mb"] = int(max_mb)
+            if cpu_limit:
+                new_meta["cpu_cores"] = int(cpu_limit)
+            elif "cpu_cores" in new_meta and not parse_cpu_cores(new_meta.get("cpu_cores")):
+                new_meta.pop("cpu_cores", None)
             if merged_env:
                 new_meta["env_overrides"] = merged_env
             if java_ver:
@@ -1902,6 +1948,7 @@ class DockerManager:
             except Exception:
                 pass
 
+            run_kwargs.update(cpu_quota_kwargs(cpu_limit))
             container = self.client.containers.run(
                 RUNTIME_IMAGE,
                 name=name,
@@ -3028,6 +3075,7 @@ class DockerManager:
                     env_map[k] = v
             min_ram = env_map.get("MIN_RAM", "1G")
             max_ram = env_map.get("MAX_RAM", "2G")
+            cpu_cores = parse_cpu_cores(env_map.get("CPU_CORES"))
 
             
             host_port = None
@@ -3048,7 +3096,7 @@ class DockerManager:
 
             
             extra_env = env_overrides or {}
-            return self.create_server_from_existing(name=name, host_port=host_port, min_ram=min_ram, max_ram=max_ram, extra_env=extra_env)
+            return self.create_server_from_existing(name=name, host_port=host_port, min_ram=min_ram, max_ram=max_ram, extra_env=extra_env, cpu_cores=cpu_cores)
         except docker.errors.NotFound:
             raise RuntimeError(f"Container {container_id} not found")
         except Exception as e:
@@ -3964,3 +4012,54 @@ class DockerManager:
             raise RuntimeError(f"Container {container_id} not found")
         except Exception as e:
             raise RuntimeError(f"Failed to update RAM: {e}")
+
+    def update_server_cpu(self, container_id, cpu_cores=None) -> dict:
+        """Update CPU core cap live (no restart) + persist for recreates.
+
+        cpu_cores: positive int, or None/"unlimited" to remove the cap.
+        Uses CFS quota (cpu_period/cpu_quota) so the container can never
+        exceed N cores of compute, wherever they are scheduled.
+        """
+        try:
+            container = self.client.containers.get(container_id)
+            server_name = container.name or container_id
+            cores = parse_cpu_cores(cpu_cores)
+
+            # Live-apply to the running container (no restart needed)
+            try:
+                if cores:
+                    container.update(cpu_period=CPU_PERIOD_DEFAULT, cpu_quota=cores * CPU_PERIOD_DEFAULT)
+                else:
+                    container.update(cpu_period=CPU_PERIOD_DEFAULT, cpu_quota=-1)
+            except Exception as live_e:
+                logger.warning(f"Live CPU update failed for {server_name}, persisting for next start: {live_e}")
+
+            # Persist to meta + env overrides so recreates keep the cap
+            try:
+                meta_path = SERVERS_ROOT / server_name / "server_meta.json"
+                meta = {}
+                if meta_path.exists():
+                    try:
+                        meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}")
+                    except Exception:
+                        meta = {}
+                eo = meta.get("env_overrides") or {}
+                if not isinstance(eo, dict):
+                    eo = {}
+                if cores:
+                    meta["cpu_cores"] = int(cores)
+                    eo["CPU_CORES"] = str(cores)
+                else:
+                    meta.pop("cpu_cores", None)
+                    eo.pop("CPU_CORES", None)
+                meta["env_overrides"] = eo
+                meta_path.parent.mkdir(parents=True, exist_ok=True)
+                meta_path.write_text(json.dumps(meta), encoding="utf-8")
+            except Exception:
+                pass
+
+            return {"success": True, "cpu_cores": cores, "unlimited": cores is None, "restarted": False}
+        except docker.errors.NotFound:
+            raise RuntimeError(f"Container {container_id} not found")
+        except Exception as e:
+            raise RuntimeError(f"Failed to update CPU: {e}")

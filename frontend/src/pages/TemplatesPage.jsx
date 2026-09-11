@@ -4,6 +4,7 @@ import { normalizeRamInput } from '../utils/ram';
 import { useTranslation } from '../i18n/I18nContext';
 import ModpackImporter from '../components/ModpackImporter';
 import RamSlider from '../components/RamSlider';
+import CpuSlider from '../components/CpuSlider';
 
 const SERVER_TYPES_WITH_LOADER = ['fabric', 'forge', 'neoforge'];
 const SERVER_TYPES = ['paper', 'purpur', 'vanilla', 'snapshot', 'fabric', 'forge', 'neoforge', 'mohist', 'magma', 'banner', 'catserver', 'spongeforge', 'bungeecord', 'velocity'];
@@ -26,6 +27,8 @@ export default function TemplatesPage({
   setMinRam: setCreateMinRam,
   maxRam: createMaxRam,
   setMaxRam: setCreateMaxRam,
+  cpuCores: createCpuCores,
+  setCpuCores: setCreateCpuCores,
   loaderVersion: createLoaderVersion,
   setLoaderVersion: setCreateLoaderVersion,
   loaderVersionsData: createLoaderVersionsData,
@@ -48,6 +51,7 @@ export default function TemplatesPage({
   const [hostPort, setHostPort] = useState('');
   const [minRam, setMinRam] = useState('1024M');
   const [maxRam, setMaxRam] = useState('4096M');
+  const [cpuCores, setCpuCores] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [zipFile, setZipFile] = useState(null);
@@ -203,6 +207,7 @@ export default function TemplatesPage({
         host_port: hostPort ? Number(hostPort) : null,
         min_ram: minRam,
         max_ram: maxRam,
+        cpu_cores: cpuCores,
       };
       const response = await fetch(`${API}/modpacks/install`, {
         method: 'POST',
@@ -356,6 +361,17 @@ export default function TemplatesPage({
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-xs text-white/50 mb-1">CPU (Max Cores)</label>
+              <CpuSlider
+                value={createCpuCores}
+                onChange={(v) => { if (typeof setCreateCpuCores === 'function') setCreateCpuCores(v); }}
+                label="Hard cap — the server can never use more than this. Applies live, no restart needed later."
+              />
+            </div>
+          </div>
+
           <div className="pt-2">
             <button
               type="submit"
@@ -441,6 +457,13 @@ export default function TemplatesPage({
           </div>
         </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold text-white/50 mb-1">CPU (MAX CORES)</label>
+            <CpuSlider value={cpuCores} onChange={setCpuCores} />
+          </div>
+        </div>
+
         <div className="mt-4">
           <button
             disabled={busy || !zipFile}
@@ -455,6 +478,7 @@ export default function TemplatesPage({
                 if (hostPort) formData.append('host_port', hostPort);
                 formData.append('min_ram', normMin);
                 formData.append('max_ram', normMax);
+                if (cpuCores) formData.append('cpu_cores', String(cpuCores));
                 if (zipFile) formData.append('file', zipFile);
                 await fetch(`${API}/modpacks/import-upload`, { method: 'POST', headers: safeAuthHeaders(), body: formData });
                 setMsg('Success! Check Servers tab.');
@@ -644,6 +668,13 @@ export default function TemplatesPage({
                     }}
                     showCategories={true}
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 mb-1">CPU (MAX CORES)</label>
+                  <CpuSlider value={cpuCores} onChange={setCpuCores} />
                 </div>
               </div>
 

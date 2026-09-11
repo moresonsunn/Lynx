@@ -81,7 +81,6 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
     load();
     const itv = setInterval(load, 3000);
     return () => { active = false; clearInterval(itv); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId, serverName]);
 
   async function getAvatar(player) {

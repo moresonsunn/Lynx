@@ -521,6 +521,7 @@ class ServerCreateRequest(BaseModel):
     installer_version: str | None = None  # for installers that have separate versioning
     min_ram: int | str | None = None  # MB or string like "512M"; None = use Settings > Server Defaults
     max_ram: int | str | None = None  # MB or string like "2G";  None = use Settings > Server Defaults
+    cpu_cores: int | None = None  # max CPU cores this server may use; None = unlimited
 
 class ServerImportRequest(BaseModel):
     name: str  # Must match existing directory under SERVERS_CONTAINER_ROOT
@@ -528,6 +529,7 @@ class ServerImportRequest(BaseModel):
     min_ram: int | str = 1024
     max_ram: int | str = 2048
     java_version: str | None = None  # optional preferred Java version (8/11/17/21)
+    cpu_cores: int | None = None  # max CPU cores; None = unlimited
 
 @app.post("/api/servers/import")
 def import_server(req: ServerImportRequest, current_user: User = Depends(require_permission("server.create"))):
@@ -641,6 +643,7 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
             min_ram=min_ram,
             max_ram=max_ram,
             extra_env=extra_env or None,
+            cpu_cores=req.cpu_cores,
         )
         # Enrich with host_port lookup (best effort)
         try:
@@ -688,7 +691,8 @@ def create_server(req: ServerCreateRequest, current_user: User = Depends(require
         
         # Pass loader_version if present, otherwise None
         result = get_docker_manager().create_server(
-            req.name, req.type, req.version, req.host_port, req.loader_version, min_ram, max_ram, req.installer_version
+            req.name, req.type, req.version, req.host_port, req.loader_version, min_ram, max_ram, req.installer_version,
+            cpu_cores=req.cpu_cores,
         )
         # Enrich with selected host port if possible (best effort)
         try:
@@ -1377,6 +1381,81 @@ def set_server_ram(container_id: str, request: dict = Body(...), current_user: U
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update RAM: {e}")
+
+
+@app.get("/api/servers/{container_id}/cpu")
+def get_server_cpu(container_id: str, current_user: User = Depends(require_server_permission("view", param_name="container_id"))):
+    """Get current CPU core cap (null = unlimited)."""
+    try:
+        from pathlib import Path
+        from config import SERVERS_ROOT
+        import json
+        meta_path = SERVERS_ROOT / container_id / "server_meta.json"
+        meta = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}")
+            except Exception:
+                meta = {}
+        cores = meta.get("cpu_cores")
+        try:
+            cores = int(cores) if cores is not None else None
+        except (TypeError, ValueError):
+            cores = None
+        if cores is None:
+            try:
+                eo = meta.get("env_overrides") or {}
+                if isinstance(eo, dict) and eo.get("CPU_CORES"):
+                    cores = int(float(eo.get("CPU_CORES")))
+            except (TypeError, ValueError):
+                pass
+        # host thread count so the UI can bound the slider
+        host_threads = None
+        try:
+            import psutil as _psutil
+            host_threads = _psutil.cpu_count(logical=True)
+        except Exception:
+            pass
+        if not host_threads:
+            try:
+                import os as _os
+                host_threads = _os.cpu_count()
+            except Exception:
+                pass
+        return {"cpu_cores": cores, "unlimited": cores is None, "host_threads": host_threads, "server_id": container_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get CPU: {e}")
+
+
+@app.post("/api/servers/{container_id}/cpu")
+def set_server_cpu(container_id: str, request: dict = Body(...), current_user: User = Depends(require_server_permission("manage", param_name="container_id"))):
+    """Update CPU core cap live (no restart). Body: {"cpu_cores": 2} or {"cpu_cores": null} for unlimited."""
+    cores = request.get("cpu_cores") if isinstance(request, dict) else None
+    if cores is not None:
+        try:
+            cores = int(float(cores))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="cpu_cores must be a positive integer or null")
+        if cores < 1:
+            raise HTTPException(status_code=400, detail="cpu_cores must be >= 1 (or null for unlimited)")
+        if cores > 1024:
+            raise HTTPException(status_code=400, detail="cpu_cores too large (max 1024)")
+    try:
+        rm = get_runtime_manager_or_docker()
+        updater = getattr(rm, "update_server_cpu", None)
+        if callable(updater):
+            result = updater(container_id, cores)
+        else:
+            from docker_manager import DockerManager
+            dm = DockerManager()
+            result = dm.update_server_cpu(container_id, cores)
+        if isinstance(result, dict) and result.get("success") is False:
+            raise HTTPException(status_code=500, detail=result.get("error") or "Failed to update CPU")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update CPU: {e}")
 
 
 @app.get("/api/servers/{container_id}/java-versions")

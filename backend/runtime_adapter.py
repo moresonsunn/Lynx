@@ -205,6 +205,7 @@ class LocalAdapter:
         installer_version: Optional[str] = None,
         extra_env: Optional[Dict[str, str]] = None,
         extra_labels: Optional[Dict[str, str]] = None,
+        cpu_cores=None,
     ) -> Dict:
         result = self.local.create_server(
             name,
@@ -215,6 +216,7 @@ class LocalAdapter:
             min_ram=min_ram,
             max_ram=max_ram,
             installer_version=installer_version,
+            cpu_cores=cpu_cores,
         )
         
         try:
@@ -240,6 +242,7 @@ class LocalAdapter:
         max_ram: str = "2G",
         extra_env: Optional[Dict[str, str]] = None,
         extra_labels: Optional[Dict[str, str]] = None,
+        cpu_cores=None,
     ) -> Dict:
         result = self.local.create_server_from_existing(
             name,
@@ -248,6 +251,7 @@ class LocalAdapter:
             max_ram=max_ram,
             extra_env=extra_env,
             extra_labels=extra_labels,
+            cpu_cores=cpu_cores,
         )
         
         try:
@@ -733,6 +737,13 @@ class LocalAdapter:
         """Update RAM allocation for local runtime via restart."""
         try:
             return self.local.update_server_ram(container_id, min_ram, max_ram)
+        except Exception as e:
+            return {"success": False, "error": str(e), "id": container_id}
+
+    def update_server_cpu(self, container_id: str, cpu_cores=None) -> Dict:
+        """Update CPU core cap for local runtime — live, no restart."""
+        try:
+            return self.local.update_server_cpu(container_id, cpu_cores)
         except Exception as e:
             return {"success": False, "error": str(e), "id": container_id}
 

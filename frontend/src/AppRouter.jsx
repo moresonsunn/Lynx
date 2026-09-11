@@ -382,6 +382,7 @@ function TemplatesPageWrapper() {
   const [hostPort, setHostPort] = useState('');
   const [minRam, setMinRam] = useState('2048M');
   const [maxRam, setMaxRam] = useState('4096M');
+  const [cpuCores, setCpuCores] = useState(null);
   const [loaderVersion, setLoaderVersion] = useState('');
   const [loaderVersionsData, setLoaderVersionsData] = useState(null);
   const [installerVersion, setInstallerVersion] = useState('');
@@ -460,6 +461,7 @@ function TemplatesPageWrapper() {
         host_port: hostPort ? Number(hostPort) : null,
         min_ram: minRam,
         max_ram: maxRam,
+        cpu_cores: cpuCores,
         loader_version: loaderVersion || null,
         installer_version: installerVersion || null,
       };
@@ -517,7 +519,7 @@ function TemplatesPageWrapper() {
     } catch (e) {
       showToast('error', `Failed to create server: ${e.message}`);
     }
-  }, [name, selectedType, version, hostPort, minRam, maxRam, loaderVersion, installerVersion, globalData, showToast, navigate]);
+  }, [name, selectedType, version, hostPort, minRam, maxRam, cpuCores, loaderVersion, installerVersion, globalData, showToast, navigate]);
 
   return (
     <React.Suspense fallback={<PageLoader />}>
@@ -539,6 +541,8 @@ function TemplatesPageWrapper() {
         setMinRam={setMinRam}
         maxRam={maxRam}
         setMaxRam={setMaxRam}
+        cpuCores={cpuCores}
+        setCpuCores={setCpuCores}
         loaderVersion={loaderVersion}
         setLoaderVersion={setLoaderVersion}
         loaderVersionsData={loaderVersionsData}

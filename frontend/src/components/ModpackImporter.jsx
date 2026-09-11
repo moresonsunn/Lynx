@@ -5,6 +5,7 @@ import {
 } from 'react-icons/fa';
 import { API, authHeaders } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
+import CpuSlider from './CpuSlider';
 
 export default function ModpackImporter({ onInstallStarted, onClose }) {
   const { showToast } = useToast();
@@ -17,6 +18,7 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
   const [hostPort, setHostPort] = useState(25565);
   const [minRam, setMinRam] = useState('2G');
   const [maxRam, setMaxRam] = useState('4G');
+  const [cpuCores, setCpuCores] = useState(null);
   const [installing, setInstalling] = useState(false);
   const [installProgress, setInstallProgress] = useState(null);
 
@@ -71,6 +73,7 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
           host_port: hostPort,
           min_ram: minRam,
           max_ram: maxRam,
+          cpu_cores: cpuCores,
         }),
       });
       if (!r.ok) {
@@ -311,6 +314,11 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
                   <option value="16G">16 GB</option>
                 </select>
               </div>
+            </div>
+
+            {/* CPU cap */}
+            <div className="mt-3">
+              <CpuSlider value={cpuCores} onChange={setCpuCores} />
             </div>
 
             {/* Install Progress */}

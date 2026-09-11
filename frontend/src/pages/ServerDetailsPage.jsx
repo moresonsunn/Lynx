@@ -52,6 +52,7 @@ import ResourceGraphs from '../components/ResourceGraphs';
 import ServerPermissionsPanel from '../components/server-details/ServerPermissionsPanel';
 import ConfirmModal from '../components/ConfirmModal';
 import RamSlider from '../components/RamSlider';
+import CpuSlider from '../components/CpuSlider';
 
 
 function formatUptime(seconds) {
@@ -103,6 +104,10 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTa
   const [ramLoading, setRamLoading] = useState(true);
   const [ramSaving, setRamSaving] = useState(false);
   const [ramMsg, setRamMsg] = useState('');
+  const [cpuCores, setCpuCores] = useState(null);
+  const [cpuLoading, setCpuLoading] = useState(true);
+  const [cpuSaving, setCpuSaving] = useState(false);
+  const [cpuMsg, setCpuMsg] = useState('');
 
   useEffect(() => {
     if (isSteam || !serverId) return;
@@ -146,6 +151,45 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTa
     }
   };
 
+  useEffect(() => {
+    if (isSteam || !serverId) { setCpuLoading(false); return; }
+    let cancelled = false;
+    async function loadCpu() {
+      try {
+        const r = await fetch(`${API}/servers/${serverId}/cpu`, { headers: authHeaders() });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (!cancelled && d && !d.unlimited && d.cpu_cores) setCpuCores(d.cpu_cores);
+      } catch {
+        // keep unlimited default
+      } finally {
+        if (!cancelled) setCpuLoading(false);
+      }
+    }
+    loadCpu();
+    return () => { cancelled = true; };
+  }, [serverId, isSteam]);
+
+  const handleCpuSave = async () => {
+    setCpuSaving(true);
+    setCpuMsg('');
+    try {
+      const r = await fetch(`${API}/servers/${serverId}/cpu`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ cpu_cores: cpuCores }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+      setCpuMsg(cpuCores ? `Capped at ${cpuCores} core${cpuCores === 1 ? '' : 's'} — applied live.` : 'Unlimited — applied live.');
+      setTimeout(() => setCpuMsg(''), 4000);
+    } catch (e) {
+      setCpuMsg(`Failed: ${e.message}`);
+    } finally {
+      setCpuSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {!isSteam && (
@@ -178,6 +222,35 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTa
                   className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
                 >
                   {ramSaving ? 'Saving...' : 'Save & Restart'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {!isSteam && (
+        <div className="glassmorphism rounded-xl p-4">
+          <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <FaMicrochip className="text-emerald-400" />
+            CPU Allocation
+          </h4>
+          {cpuLoading ? (
+            <div className="text-sm text-white/50">Loading CPU limit...</div>
+          ) : (
+            <>
+              <CpuSlider
+                value={cpuCores}
+                onChange={setCpuCores}
+                label="Hard cap — the server can never use more than this. Applies instantly, no restart."
+              />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-3">
+                <span className="text-xs text-white/50">Current: {cpuCores ? `${cpuCores} core${cpuCores === 1 ? '' : 's'}` : 'unlimited'} {cpuMsg && <span className="ml-2 text-emerald-300">{cpuMsg}</span>}</span>
+                <button
+                  onClick={handleCpuSave}
+                  disabled={cpuSaving}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+                >
+                  {cpuSaving ? 'Saving...' : 'Apply Live'}
                 </button>
               </div>
             </>
