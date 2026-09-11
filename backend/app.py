@@ -918,10 +918,17 @@ def get_server_stats_history(
 
 @app.get("/api/servers/stats")
 def get_bulk_stats(ttl: int = Query(3, ge=0, le=60), current_user: User = Depends(require_auth)):
-    """Return stats for all servers in one response (cached briefly)."""
+    """Return stats for all servers in one response (cached briefly).
+
+    No player probes here — counts come from the roster endpoint. Probing
+    players inside the 5s global poll added seconds per server and stalled tabs.
+    """
     try:
         dm = get_docker_manager()
-        return dm.get_bulk_server_stats(ttl_seconds=ttl)
+        try:
+            return dm.get_bulk_server_stats(ttl_seconds=ttl, include_players=False)
+        except TypeError:
+            return dm.get_bulk_server_stats(ttl_seconds=ttl)
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Stats unavailable: {e}")
 

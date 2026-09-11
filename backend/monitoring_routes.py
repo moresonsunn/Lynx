@@ -126,7 +126,10 @@ async def get_system_health(
     try:
         docker_manager = get_docker_manager()
         servers = docker_manager.list_servers()
-        stats_cache = docker_manager.get_bulk_server_stats(ttl_seconds=5)
+        try:
+            stats_cache = docker_manager.get_bulk_server_stats(ttl_seconds=5, include_players=False)
+        except TypeError:
+            stats_cache = docker_manager.get_bulk_server_stats(ttl_seconds=5)
         
         total_servers = len(servers)
         running_servers = len([s for s in servers if s.get("status") == "running"])

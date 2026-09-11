@@ -8,13 +8,6 @@ import {
   FaChevronRight,
   FaPlay,
   FaStop,
-  FaServer,
-  FaDownload,
-  FaExclamationTriangle,
-  FaClock,
-  FaShieldAlt,
-  FaInfoCircle,
-  FaCheck,
 } from 'react-icons/fa';
 
 
@@ -66,35 +59,8 @@ export default function DashboardPage() {
   const [maxRam, setMaxRam] = useState('4096M');
 
 
-  // --- Activity Feed ---
-  const [activityFeed, setActivityFeed] = useState([]);
-  const [activityLoading, setActivityLoading] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setActivityLoading(true);
-      try {
-        const r = await fetch(`${API}/realtime/notifications?limit=8`, { headers: authHeaders() });
-        if (r.ok && !cancelled) {
-          const d = await r.json();
-          setActivityFeed(d.notifications || []);
-        }
-      } catch { }
-      if (!cancelled) setActivityLoading(false);
-    })();
-    // Re-fetch every 30s
-    const interval = setInterval(async () => {
-      try {
-        const r = await fetch(`${API}/realtime/notifications?limit=8`, { headers: authHeaders() });
-        if (r.ok && !cancelled) {
-          const d = await r.json();
-          setActivityFeed(d.notifications || []);
-        }
-      } catch { }
-    }, 30000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, []);
+  // NOTE: Recent Activity feed removed — the section had no real purpose and
+  // its polling added load. Notifications remain available via the header bell.
 
   // --- Quick Actions ---
   const [actionLoading, setActionLoading] = useState({});
@@ -453,10 +419,10 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Two-column: Servers + Activity Feed */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Server List — 2/3 width */}
-          <div className="lg:col-span-2 space-y-4">
+        {/* Servers — full width (Recent Activity removed) */}
+        <div className="grid grid-cols-1 gap-6">
+          {/* Server List */}
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-medium text-white">Servers</h2>
               <button
@@ -534,94 +500,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Activity Feed — 1/3 width */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium text-white">Recent Activity</h2>
-            </div>
-
-            <div className="glassmorphism rounded-xl p-4">
-              {activityFeed.length > 0 ? (
-                <div className="space-y-3">
-                  {activityFeed.map((item) => {
-                    const typeIcons = {
-                      server_start: { icon: FaPlay, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-                      server_stop: { icon: FaStop, color: 'text-red-400', bg: 'bg-red-500/15' },
-                      server_crash: { icon: FaExclamationTriangle, color: 'text-orange-400', bg: 'bg-orange-500/15' },
-                      backup: { icon: FaDownload, color: 'text-blue-400', bg: 'bg-blue-500/15' },
-                      scheduled: { icon: FaClock, color: 'text-purple-400', bg: 'bg-purple-500/15' },
-                      security: { icon: FaShieldAlt, color: 'text-yellow-400', bg: 'bg-yellow-500/15' },
-                    };
-                    const cfg = typeIcons[item.type] || { icon: FaInfoCircle, color: 'text-blue-400', bg: 'bg-blue-500/15' };
-                    const Icon = cfg.icon;
-                    const ago = (() => {
-                      if (!item.created_at) return '';
-                      const s = Math.floor((Date.now() - new Date(item.created_at)) / 1000);
-                      if (s < 60) return 'just now';
-                      const m = Math.floor(s / 60);
-                      if (m < 60) return `${m}m ago`;
-                      const h = Math.floor(m / 60);
-                      if (h < 24) return `${h}h ago`;
-                      return `${Math.floor(h / 24)}d ago`;
-                    })();
-
-                    return (
-                      <div key={item.id} className="flex items-start gap-3">
-                        <div className={`mt-0.5 p-1.5 rounded-lg ${cfg.bg} flex-shrink-0`}>
-                          <Icon className={`text-[10px] ${cfg.color}`} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-white/80 truncate">{item.title}</div>
-                          <div className="text-[11px] text-white/40">{ago}</div>
-                        </div>
-                        {!item.is_read && <span className="w-1.5 h-1.5 rounded-full bg-brand-500 mt-2 flex-shrink-0" />}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <FaClock className="text-2xl text-white/20 mx-auto mb-2" />
-                  <div className="text-sm text-white/40">No recent activity</div>
-                  <div className="text-xs text-white/30 mt-1">Server events will appear here</div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Alerts */}
-        <div className="space-y-6">
-
-          {/* Clean Alerts */}
-          {alerts.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-medium text-white">{t('modpackInstall.recentIssues')}</h2>
-              </div>
-
-              <div className="glassmorphism rounded-xl divide-y divide-white/10">
-                {alerts.slice(0, 3).map((alert, index) => {
-                  const isError = alert.type === 'critical' || alert.type === 'error';
-
-                  return (
-                    <div key={alert.id || index} className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-2 h-2 rounded-full mt-2 ${isError ? 'bg-red-400' : 'bg-yellow-400'
-                          }`} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-white text-sm">{alert.message}</div>
-                          <div className="text-xs text-white/50 mt-1">
-                            {new Date(alert.timestamp).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
 
       </div>

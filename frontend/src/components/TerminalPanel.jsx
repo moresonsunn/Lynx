@@ -51,22 +51,35 @@ export default function TerminalPanel({ containerId, serverId, resetToken = 0 })
     return () => { active = false; };
   }, [container, resetToken]);
 
-  // Polling
+  // Polling — serialized: next poll only starts after the previous one
+  // finishes, so a slow backend can never stack up requests (death spiral).
+  // Paused while the tab is hidden.
   useEffect(() => {
     if (!container) return;
     let active = true;
-    let interval = null;
+    let timer = null;
+    let ctrl = null;
     async function pollLogs() {
+      if (!active) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(pollLogs, 4000);
+        return;
+      }
       try {
-        const r = await fetch(`${API}/servers/${container}/logs?tail=200`, { headers: authHeaders() });
+        ctrl = new AbortController();
+        const timeout = setTimeout(() => { try { ctrl.abort(); } catch {} }, 15000);
+        const r = await fetch(`${API}/servers/${container}/logs?tail=200`, { headers: authHeaders(), signal: ctrl.signal });
+        clearTimeout(timeout);
         const d = await r.json();
         if (active && d && typeof d.logs === 'string') setRawLogs(d.logs);
       } catch (e) {
-        if (active) setRawLogs('');
+        if (active && e && e.name !== 'AbortError') setRawLogs('');
+      } finally {
+        if (active) timer = setTimeout(pollLogs, 4000);
       }
     }
-    interval = setInterval(pollLogs, 4000);
-    return () => { active = false; if (interval) clearInterval(interval); };
+    pollLogs();
+    return () => { active = false; if (timer) clearTimeout(timer); try { ctrl && ctrl.abort(); } catch {} };
   }, [container]);
 
   // Compile regex safely

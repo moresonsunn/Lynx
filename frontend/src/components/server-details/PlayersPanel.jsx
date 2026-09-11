@@ -73,14 +73,24 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
     }
   }
 
+  // Serialized roster poll: never overlap requests, pause when tab hidden.
   useEffect(() => {
     let active = true;
+    let timer = null;
     async function load() {
-      await fetchRoster();
+      if (!active) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(load, 3000);
+        return;
+      }
+      try {
+        await fetchRoster();
+      } finally {
+        if (active) timer = setTimeout(load, 3000);
+      }
     }
     load();
-    const itv = setInterval(load, 3000);
-    return () => { active = false; clearInterval(itv); };
+    return () => { active = false; if (timer) clearTimeout(timer); };
   }, [serverId, serverName]);
 
   async function getAvatar(player) {

@@ -9,6 +9,8 @@ from config import SERVERS_ROOT, SERVERS_HOST_ROOT, SERVERS_VOLUME_NAME
 from download_manager import prepare_server_files
 import time
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from mcrcon import MCRcon
 
 import requests  
@@ -444,6 +446,8 @@ class DockerManager:
         self.client = self._init_client()
         
         self._stats_cache: dict[str, tuple[float, dict]] = {}
+        self._logs_cache: dict[tuple[str, int], tuple[float, dict]] = {}
+        self._logs_lock = threading.Lock()
         self._cached_casaos_app_id: str | None = None
         
         
@@ -3189,9 +3193,23 @@ class DockerManager:
         return {"old_name": old_name, "new_name": new_name, "container": result}
 
     def get_server_logs(self, container_id, tail: int = 200):
+        # 2s cache: the console tab polls every 4s (often from several tabs at
+        # once). Without this, bursts of identical Docker log reads pile up.
+        key = (str(container_id), int(tail))
+        now = time.time()
+        with self._logs_lock:
+            hit = self._logs_cache.get(key)
+            if hit and now - hit[0] <= 2:
+                return hit[1]
         container = self._get_container_any(container_id)
         logs = container.logs(tail=tail).decode(errors="ignore")
-        return {"id": container.id, "logs": logs}
+        data = {"id": container.id, "logs": logs}
+        with self._logs_lock:
+            self._logs_cache[key] = (time.time(), data)
+            # bound memory: drop entries older than 30s
+            for k in [k for k, (ts, _) in self._logs_cache.items() if now - ts > 30]:
+                self._logs_cache.pop(k, None)
+        return data
 
     def _detect_rcon_config(self, container) -> dict:
         """Detect RCON configuration from container env vars, supporting multiple game types.
@@ -3514,15 +3532,38 @@ class DockerManager:
         self._stats_cache[container_id] = (now, data)
         return data
 
-    def get_bulk_server_stats(self, ttl_seconds: int = 3) -> dict:
-        """Return stats for all labeled servers in one call, using cache for speed."""
+    def get_bulk_server_stats(self, ttl_seconds: int = 3, include_players: bool = False) -> dict:
+        """Return stats for all labeled servers in one call, using cache for speed.
+
+        Per-server Docker stats (container.stats) block ~1s each — fetch cache
+        misses in parallel so 2 servers cost ~1s, not ~1s each sequentially.
+        include_players is accepted for signature parity (docker stats never
+        included player probes).
+        """
         stats: dict[str, dict] = {}
         try:
             servers = self.list_servers()
-            for s in servers:
-                cid = s.get("id")
-                if cid:
-                    stats[cid] = self.get_server_stats_cached(cid, ttl_seconds)
+            cids = [s.get("id") for s in servers if s.get("id")]
+            if not cids:
+                return stats
+            now = time.time()
+            todo = [cid for cid in cids
+                    if not (self._stats_cache.get(cid) and now - self._stats_cache[cid][0] <= ttl_seconds)]
+            for cid in cids:
+                hit = self._stats_cache.get(cid)
+                if hit and now - hit[0] <= ttl_seconds:
+                    stats[cid] = hit[1]
+            if todo:
+                with ThreadPoolExecutor(max_workers=min(8, len(todo))) as ex:
+                    futs = {ex.submit(self.get_server_stats, cid): cid for cid in todo}
+                    for fut, cid in futs.items():
+                        try:
+                            data = fut.result(timeout=20)
+                        except Exception as e:
+                            logger.debug(f"stats failed for {cid}: {e}")
+                            data = {"id": cid, "error": "stats timeout"}
+                        self._stats_cache[cid] = (time.time(), data)
+                        stats[cid] = data
         except Exception as e:
             logger.warning(f"Bulk stats failed: {e}")
         return stats

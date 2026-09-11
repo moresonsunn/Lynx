@@ -314,7 +314,10 @@ class LocalAdapter:
         self.local.update_metadata(container_id, **fields)
 
     
-    def get_server_stats(self, container_id: str) -> Dict:
+    def get_server_stats(self, container_id: str, include_players: bool = True) -> Dict:
+        # NOTE: include_players runs the full mcstatus→RCON→log probe chain
+        # (seconds in the worst case). The 5s global poll must pass False —
+        # player counts come from the roster endpoint, not from stats.
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
             return self._get_docker().get_server_stats(steam_id)
@@ -411,8 +414,10 @@ class LocalAdapter:
             except Exception:
                 pass
 
-        # Get player count via RCON/mcstatus if server is running
-        if pid and psutil.pid_exists(pid):
+        # Get player count via RCON/mcstatus if server is running.
+        # Skipped when include_players=False (hot polling path) — the roster
+        # endpoint owns player counts; probing here added seconds per call.
+        if include_players and pid and psutil.pid_exists(pid):
             try:
                 player_info = self.get_player_info(container_id)
                 player_count = player_info.get("online", 0)
@@ -436,13 +441,26 @@ class LocalAdapter:
             "player_count": player_count,
         }
 
-    def get_bulk_server_stats(self, ttl_seconds: int = 3) -> Dict:
-        results: Dict[str, Dict] = {}
+    def get_bulk_server_stats(self, ttl_seconds: int = 3, include_players: bool = False) -> Dict:
+        # Hot path for the global 5s poll: no player probes, servers in parallel.
+        # (get_server_stats still sleeps 0.15s for CPU sampling — parallel keeps
+        # the whole call at ~0.2s instead of 0.15s × N servers + probe chains.)
+        from concurrent.futures import ThreadPoolExecutor
+        ids: List[str] = []
         for it in self.list_servers():
             container_id = it.get("id") or it.get("name")
-            if not container_id:
-                continue
-            results[container_id] = self.get_server_stats(str(container_id))
+            if container_id:
+                ids.append(str(container_id))
+        results: Dict[str, Dict] = {}
+        if not ids:
+            return results
+        with ThreadPoolExecutor(max_workers=min(8, len(ids))) as ex:
+            futs = {ex.submit(self.get_server_stats, cid, include_players): cid for cid in ids}
+            for fut, cid in futs.items():
+                try:
+                    results[cid] = fut.result(timeout=15)
+                except Exception:
+                    results[cid] = {"id": cid, "error": "stats timeout"}
         return results
 
     def get_player_info(self, container_id: str) -> Dict:
@@ -761,7 +779,17 @@ class LocalAdapter:
         try:
             if not log_path.exists():
                 return {"id": container_id, "logs": ""}
-            lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+            # Tail-read the last 64KB instead of the whole file (can be 50MB+).
+            # Reading the full file on every 4s console poll stalled the worker.
+            with open(log_path, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - 65536))
+                # drop a possible partial first line
+                chunk = f.read().decode("utf-8", errors="ignore")
+            lines = chunk.splitlines()
+            if lines and size > 65536:
+                lines = lines[1:]
             tail_lines = lines[-tail:] if tail and tail > 0 else lines
             return {"id": container_id, "logs": "\n".join(tail_lines)}
         except Exception:

@@ -118,12 +118,20 @@ export function GlobalDataProvider({ children }) {
     store.setState(updater);
   }, [store]);
 
+  const statsInFlight = useRef(false);
   const refreshServerStats = useCallback(async () => {
+    // Skip if a previous poll is still running — overlapping stats calls
+    // (each ~1s of Docker sampling) stacked up and stalled every tab.
+    if (statsInFlight.current) return;
+    statsInFlight.current = true;
     try {
       if (typeof window !== 'undefined' && window.HEAVY_PANEL_ACTIVE) return;
       if (typeof document !== 'undefined' && document.hidden) return;
       if (!getStoredToken()) return;
-      const r = await fetch(`${API}/servers/stats?ttl=3`, { headers: authHeaders() });
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => { try { ctrl.abort(); } catch {} }, 20000);
+      const r = await fetch(`${API}/servers/stats?ttl=3`, { headers: authHeaders(), signal: ctrl.signal });
+      clearTimeout(timeout);
       if (!r.ok) return;
       const data = await r.json();
       store.setState((current) => {
@@ -136,6 +144,9 @@ export function GlobalDataProvider({ children }) {
         return { ...current, serverStats: merged };
       });
     } catch { /* ignore */ }
+    finally {
+      statsInFlight.current = false;
+    }
   }, [store]);
 
   // Initial, minimal preload: only globally-shared data (server types + servers).

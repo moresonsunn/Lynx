@@ -63,11 +63,23 @@ const PlayersWidget = ({ serverName, serverId }) => {
   };
 
   useEffect(() => {
-    fetchPlayers();
-
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchPlayers, 30000);
-    return () => clearInterval(interval);
+    let active = true;
+    let timer = null;
+    // Serialized: never overlap, pause when tab hidden
+    async function loop() {
+      if (!active) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(loop, 30000);
+        return;
+      }
+      try {
+        await fetchPlayers();
+      } finally {
+        if (active) timer = setTimeout(loop, 30000);
+      }
+    }
+    loop();
+    return () => { active = false; if (timer) clearTimeout(timer); };
   }, [serverName]);
 
   const handleRefresh = () => {

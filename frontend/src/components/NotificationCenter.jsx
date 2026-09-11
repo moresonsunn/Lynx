@@ -66,7 +66,6 @@ export default function NotificationCenter() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const panelRef = useRef(null);
-  const pollRef = useRef(null);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -82,11 +81,24 @@ export default function NotificationCenter() {
     }
   }, []);
 
-  // Poll every 30 seconds
+  // Poll every 30 seconds — serialized, paused when tab hidden
   useEffect(() => {
-    fetchNotifications();
-    pollRef.current = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(pollRef.current);
+    let active = true;
+    let timer = null;
+    async function loop() {
+      if (!active) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(loop, 30000);
+        return;
+      }
+      try {
+        await fetchNotifications();
+      } finally {
+        if (active) timer = setTimeout(loop, 30000);
+      }
+    }
+    loop();
+    return () => { active = false; if (timer) clearTimeout(timer); };
   }, [fetchNotifications]);
 
   // Refresh when panel opens
