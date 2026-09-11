@@ -67,14 +67,14 @@ async def create_scheduled_task(
 ):
     """Create a new scheduled task."""
     
-    valid_types = ["backup", "restart", "command", "cleanup"]
+    valid_types = ["backup", "restart", "start", "stop", "command", "announce", "save", "cleanup"]
     if task_data.task_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid task type. Must be one of: {valid_types}"
         )
-    
-    
+
+
     scheduler = get_scheduler()
     try:
         next_run = scheduler.get_next_run_time(task_data.cron_expression)
@@ -85,18 +85,24 @@ async def create_scheduled_task(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid cron expression: {str(e)}"
         )
-    
-    
-    if task_data.task_type in ["backup", "restart"] and not task_data.server_name:
+
+
+    if task_data.task_type in ["backup", "restart", "start", "stop", "save", "announce"] and not task_data.server_name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"server_name is required for {task_data.task_type} tasks"
         )
-    
+
     if task_data.task_type == "command" and not task_data.command:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="command is required for command tasks"
+        )
+
+    if task_data.task_type == "announce" and not (task_data.command or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="message is required for announce tasks (use the Command field)"
         )
     
     
@@ -138,7 +144,7 @@ def _enrich_task_with_next_run(task: ScheduledTask, db: Session):
 
 def _validate_task_data(task_data: ScheduledTaskCreate):
     """Validate task creation data."""
-    valid_types = ["backup", "restart", "command", "cleanup"]
+    valid_types = ["backup", "restart", "start", "stop", "command", "announce", "save", "cleanup"]
     if task_data.task_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -156,7 +162,7 @@ def _validate_task_data(task_data: ScheduledTaskCreate):
             detail=f"Invalid cron expression: {str(e)}"
         )
 
-    if task_data.task_type in ["backup", "restart"] and not task_data.server_name:
+    if task_data.task_type in ["backup", "restart", "start", "stop", "save", "announce"] and not task_data.server_name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"server_name is required for {task_data.task_type} tasks"
@@ -166,6 +172,12 @@ def _validate_task_data(task_data: ScheduledTaskCreate):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="command is required for command tasks"
+        )
+
+    if task_data.task_type == "announce" and not (task_data.command or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="message is required for announce tasks (use the Command field)"
         )
 
 
@@ -354,8 +366,16 @@ async def run_server_task_now(
             await scheduler.execute_backup_task(task.id)
         elif task.task_type == "restart":
             await scheduler.execute_restart_task(task.id)
+        elif task.task_type == "start":
+            await scheduler.execute_start_task(task.id)
+        elif task.task_type == "stop":
+            await scheduler.execute_stop_task(task.id)
         elif task.task_type == "command":
             await scheduler.execute_command_task(task.id)
+        elif task.task_type == "announce":
+            await scheduler.execute_announce_task(task.id)
+        elif task.task_type == "save":
+            await scheduler.execute_save_task(task.id)
         elif task.task_type == "cleanup":
             await scheduler.execute_cleanup_task(task.id)
         else:
@@ -363,9 +383,9 @@ async def run_server_task_now(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unknown task type: {task.task_type}"
             )
-        
+
         return {"message": f"Task '{task.name}' executed successfully"}
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -491,8 +511,16 @@ async def run_task_now(
             await scheduler.execute_backup_task(task.id)
         elif task.task_type == "restart":
             await scheduler.execute_restart_task(task.id)
+        elif task.task_type == "start":
+            await scheduler.execute_start_task(task.id)
+        elif task.task_type == "stop":
+            await scheduler.execute_stop_task(task.id)
         elif task.task_type == "command":
             await scheduler.execute_command_task(task.id)
+        elif task.task_type == "announce":
+            await scheduler.execute_announce_task(task.id)
+        elif task.task_type == "save":
+            await scheduler.execute_save_task(task.id)
         elif task.task_type == "cleanup":
             await scheduler.execute_cleanup_task(task.id)
         else:
@@ -500,9 +528,9 @@ async def run_task_now(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unknown task type: {task.task_type}"
             )
-        
+
         return {"message": f"Task '{task.name}' executed successfully"}
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

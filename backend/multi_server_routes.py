@@ -301,8 +301,9 @@ async def _execute_bulk_operation(
                 success_count += 1
             
             elif operation_type == "backup":
+                import asyncio as _asyncio
                 from backup_manager import create_backup
-                backup = create_backup(server_name)
+                backup = await _asyncio.to_thread(create_backup, server_name)
                 try:
                     from backup_scheduler import apply_retention_now
                     apply_retention_now(server_name)

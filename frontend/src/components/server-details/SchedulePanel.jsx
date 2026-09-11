@@ -17,7 +17,6 @@ import {
   FaBroom,
   FaSync,
   FaInfoCircle,
-  FaExternalLinkAlt,
   FaSpinner,
   FaChevronDown,
   FaChevronUp,
@@ -25,26 +24,21 @@ import {
   FaTimes,
   FaCopy,
   FaEdit,
-  FaEllipsisV,
+  FaStop,
+  FaMoon,
+  FaSun,
 } from 'react-icons/fa';
+import ScheduleBuilder from '../ScheduleBuilder';
 
 const TASK_TYPES = [
-  { value: 'backup', label: 'Backup', icon: FaServer, description: 'Create a backup of the server' },
+  { value: 'backup', label: 'Backup', icon: FaServer, description: 'Create a backup of the server (runs in background, won’t freeze the panel)' },
   { value: 'restart', label: 'Restart', icon: FaSync, description: 'Restart the server' },
-  { value: 'start', label: 'Start', icon: FaPlay, description: 'Start the server if stopped' },
-  { value: 'stop', label: 'Stop', icon: FaTrash, description: 'Stop the server gracefully' },
+  { value: 'start', label: 'Start', icon: FaPlay, description: 'Start the server (e.g. back on at 9 AM)' },
+  { value: 'stop', label: 'Stop', icon: FaStop, description: 'Stop the server gracefully (e.g. down at 2 AM)' },
   { value: 'command', label: 'Command', icon: FaCode, description: 'Execute a console command' },
   { value: 'announce', label: 'Announce', icon: FaInfoCircle, description: 'Broadcast a message to all players (say)' },
   { value: 'save', label: 'Save', icon: FaServer, description: 'Save the world (save-all)' },
   { value: 'cleanup', label: 'Cleanup', icon: FaBroom, description: 'Clean up old backups/logs' },
-];
-
-const CRON_EXAMPLES = [
-  { expression: '0 2 * * *', description: 'Daily at 2:00 AM' },
-  { expression: '0 */6 * * *', description: 'Every 6 hours' },
-  { expression: '0 0 * * 0', description: 'Weekly on Sunday at midnight' },
-  { expression: '*/30 * * * *', description: 'Every 30 minutes' },
-  { expression: '0 0 1 * *', description: 'Monthly on the 1st at midnight' },
 ];
 
 export default function SchedulePanel({ serverName: propServerName, serverId: propServerId }) {
@@ -92,9 +86,8 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
   const [runLoading, setRunLoading] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(null);
   const [toggleLoading, setToggleLoading] = useState(null);
-  const [showCronHelp, setShowCronHelp] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
-  const [menuOpenId, setMenuOpenId] = useState(null);
+  const [pairBusy, setPairBusy] = useState(false);
 
   // Reset form when opening/closing
   useEffect(() => {
@@ -130,14 +123,46 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
 
   const validateForm = () => {
     if (!formData.name.trim()) return 'Task name is required';
-    if (!formData.cron_expression.trim()) return 'Cron expression is required';
-    if (['backup', 'restart'].includes(formData.task_type) && !formData.server_name.trim()) {
-      return 'Server is required for backup/restart tasks';
+    if (!formData.cron_expression.trim()) return 'Schedule is required';
+    if (['backup', 'restart', 'start', 'stop', 'save', 'announce'].includes(formData.task_type) && !formData.server_name.trim()) {
+      return 'Server is required for this task type';
     }
     if (formData.task_type === 'command' && !formData.command.trim()) {
       return 'Command is required for command tasks';
     }
+    if (formData.task_type === 'announce' && !formData.command.trim()) {
+      return 'Message is required for announce tasks';
+    }
     return null;
+  };
+
+  const createOvernightPair = async () => {
+    if (!serverName) {
+      showToast('error', 'Server name not available');
+      return;
+    }
+    setPairBusy(true);
+    try {
+      const base = `${API}/servers/${encodeURIComponent(serverName)}/schedules`;
+      const headers = { 'Content-Type': 'application/json', ...authHeaders() };
+      const stopBody = { name: 'Nightly stop (2 AM)', task_type: 'stop', server_name: serverName, cron_expression: '0 2 * * *', command: '' };
+      const startBody = { name: 'Morning start (9 AM)', task_type: 'start', server_name: serverName, cron_expression: '0 9 * * *', command: '' };
+      const created = [];
+      for (const body of [stopBody, startBody]) {
+        const r = await fetch(base, { method: 'POST', headers, body: JSON.stringify(body) });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${r.status}`);
+        }
+        created.push(await r.json());
+      }
+      setTasks(prev => [...(prev || []), ...created]);
+      showToast('success', 'Overnight schedule created: stop 2 AM, start 9 AM');
+    } catch (e) {
+      showToast('error', e.message);
+    } finally {
+      setPairBusy(false);
+    }
   };
 
   const submitTask = async () => {
@@ -314,11 +339,22 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
             <FaClock className="text-brand-500" />
             Scheduled Tasks
           </h2>
-          <p className="text-white/60 mt-1">Automate server backups, restarts, commands, and cleanup</p>
+          <p className="text-white/60 mt-1">Automate backups, restarts, stops, starts, commands and cleanup</p>
         </div>
-        <Link to={`/servers/${propServerId}/schedules/new`} className="bg-brand-500 hover:bg-brand-600 px-4 py-2 rounded-lg flex items-center gap-2">
-          <FaPlus /> Create Task
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={createOvernightPair}
+            disabled={pairBusy || !serverName}
+            className="bg-white/10 hover:bg-white/20 disabled:opacity-50 px-4 py-2 rounded-lg flex items-center gap-2 text-sm"
+            title="Create two tasks: stop every day at 2 AM, start every day at 9 AM"
+          >
+            {pairBusy ? <FaSpinner className="animate-spin" /> : <><FaMoon /> <FaSun /></>} Overnight 2 AM → 9 AM
+          </button>
+          <Link to={`/servers/${propServerId}/schedules/new`} className="bg-brand-500 hover:bg-brand-600 px-4 py-2 rounded-lg flex items-center gap-2">
+            <FaPlus /> Create Task
+          </Link>
+        </div>
       </div>
 
       {/* Tasks List */}
@@ -470,13 +506,14 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
                         <FaEdit className="w-4 h-4" />
                       </button>
 
-                      {/* Expand / More */}
+                      {/* Expand / More — fixed: functional update + explicit button type */}
                       <button
-                        onClick={() => setExpandedId(expandedId === task.id ? null : task.id)}
-                        className={`p-2 rounded-lg transition-colors ${expandedId === task.id ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
-                        title={expandedId === task.id ? 'Collapse' : 'Expand'}
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setExpandedId((prev) => (String(prev) === String(task.id) ? null : task.id)); }}
+                        className={`p-2 rounded-lg transition-colors cursor-pointer ${String(expandedId) === String(task.id) ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
+                        title={String(expandedId) === String(task.id) ? 'Collapse' : 'Expand'}
                       >
-                        {expandedId === task.id ? <FaChevronUp className="w-4 h-4" /> : <FaChevronDown className="w-4 h-4" />}
+                        {String(expandedId) === String(task.id) ? <FaChevronUp className="w-4 h-4 pointer-events-none" /> : <FaChevronDown className="w-4 h-4 pointer-events-none" />}
                       </button>
 
                       {/* Delete */}
@@ -493,7 +530,7 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
                     </div>
                   </div>
                   {/* Expanded details — more options */}
-                  {expandedId === task.id && (
+                  {String(expandedId) === String(task.id) && (
                     <div className="mt-4 pt-4 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                       <div className="space-y-2">
                         <div className="text-white/50 text-xs uppercase tracking-wider">Details</div>
@@ -567,8 +604,8 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
               <p className="text-xs text-white/50 mt-1">{taskTypeInfo?.description}</p>
             </div>
 
-            {/* Server Selection (for backup/restart) */}
-            {['backup', 'restart'].includes(formData.task_type) && (
+            {/* Server Selection (for server-bound types) */}
+            {['backup', 'restart', 'start', 'stop', 'save', 'announce'].includes(formData.task_type) && (
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-1">Server <span className="text-red-400">*</span></label>
                 <select
@@ -581,58 +618,17 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
                     <option key={s.id} value={s.name}>{s.name}</option>
                   ))}
                 </select>
-                <p className="text-xs text-white/50 mt-1">Required for backup and restart tasks</p>
+                <p className="text-xs text-white/50 mt-1">Required for backup / restart / start / stop / save / announce tasks</p>
               </div>
             )}
 
-            {/* Cron Expression */}
+            {/* Schedule — friendly builder, no cron typing */}
             <div>
-              <label className="block text-sm font-medium text-white/70 mb-1 flex items-center gap-2">
-                Cron Expression <span className="text-red-400">*</span>
-                <a
-                  href="https://crontab.guru/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={e => { e.stopPropagation(); setShowCronHelp(true); }}
-                  className="text-brand-400 hover:text-brand-300 text-xs flex items-center gap-1"
-                >
-                  <FaExternalLinkAlt className="w-3 h-3" /> crontab.guru
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setShowCronHelp(!showCronHelp)}
-                  className="p-1 text-white/50 hover:text-white"
-                  title="Show examples"
-                >
-                  {showCronHelp ? <FaChevronUp className="w-4 h-4" /> : <FaChevronDown className="w-4 h-4" />}
-                </button>
-              </label>
-              <input
-                type="text"
-                required
-                className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 font-mono"
-                placeholder="0 2 * * *"
+              <label className="block text-sm font-medium text-white/70 mb-2">When should it run? <span className="text-red-400">*</span></label>
+              <ScheduleBuilder
                 value={formData.cron_expression}
-                onChange={e => handleInputChange('cron_expression', e.target.value)}
+                onChange={(cron) => handleInputChange('cron_expression', cron)}
               />
-              {showCronHelp && (
-                <div className="mt-2 p-3 bg-white/5 border border-white/10 rounded-lg">
-                  <p className="text-xs text-white/60 mb-2">Common examples (min hour day month weekday):</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {CRON_EXAMPLES.map((ex, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => handleInputChange('cron_expression', ex.expression)}
-                        className="text-left p-2 bg-white/5 hover:bg-white/10 rounded text-sm border border-white/10"
-                      >
-                        <code className="font-mono text-brand-300">{ex.expression}</code>
-                        <span className="text-white/60 ml-2">{ex.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Command (only for command type) */}
@@ -648,6 +644,22 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
                   onChange={e => handleInputChange('command', e.target.value)}
                 />
                 <p className="text-xs text-white/50 mt-1">The command to execute in the server console</p>
+              </div>
+            )}
+
+            {/* Message (announce type) */}
+            {formData.task_type === 'announce' && (
+              <div>
+                <label className="block text-sm font-medium text-white/70 mb-1">Message <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  required
+                  className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  placeholder="Server restarts in 10 minutes!"
+                  value={formData.command}
+                  onChange={e => handleInputChange('command', e.target.value)}
+                />
+                <p className="text-xs text-white/50 mt-1">Broadcast to all players via <code>say</code></p>
               </div>
             )}
 
@@ -697,39 +709,6 @@ export default function SchedulePanel({ serverName: propServerName, serverId: pr
         </div>
       )}
 
-      {/* Cron Help Modal */}
-      {showCronHelp && !editingTask && !showForm && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowCronHelp(false)} />
-          <div className="relative bg-card border border-white/10 rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <FaInfoCircle className="text-brand-400" /> Cron Expression Help
-              </h3>
-              <button onClick={() => setShowCronHelp(false)} className="text-white/60 hover:text-white">
-                <FaTimes className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-white/70 text-sm">Format: <code className="font-mono bg-white/5 px-1 rounded">minute hour day month weekday</code></p>
-            <div className="space-y-2">
-              {CRON_EXAMPLES.map((ex, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => { handleInputChange('cron_expression', ex.expression); setShowForm(true); setShowCronHelp(false); }}
-                  className="w-full text-left p-3 bg-white/5 hover:bg-white/10 rounded border border-white/10"
-                >
-                  <code className="font-mono text-brand-300 block">{ex.expression}</code>
-                  <span className="text-white/60 text-sm">{ex.description}</span>
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-white/40 mt-2">
-              Learn more at <a href="https://crontab.guru/" target="_blank" rel="noopener noreferrer" className="text-brand-400 underline">crontab.guru</a>
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

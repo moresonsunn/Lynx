@@ -27,6 +27,7 @@ import {
   FaBan,
   FaUserPlus,
   FaUserMinus,
+  FaCopy,
 } from 'react-icons/fa';
 
 async function parseError(resp) {
@@ -103,6 +104,8 @@ export default function UsersPage() {
   const [editingRolePerms, setEditingRolePerms] = useState(false);
   const [createPermSearch, setCreatePermSearch] = useState('');
   const [editPermSearch, setEditPermSearch] = useState('');
+  const [roleSearch, setRoleSearch] = useState('');
+  const [expandedRole, setExpandedRole] = useState(null);
 
   // Delete confirmations
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { type: 'user'|'role', item }
@@ -308,6 +311,7 @@ export default function UsersPage() {
   const openEditRole = (role) => {
     setEditingRole(role);
     setEditRoleForm({ description: role.description || '', permissions: role.permissions || [] });
+    setEditPermSearch('');
     setShowEditRoleModal(true);
   };
 
@@ -535,47 +539,109 @@ export default function UsersPage() {
       {/* ROLES TAB */}
       {activeTab === 'roles' && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <h3 className="font-medium text-white">Roles</h3>
-            <button onClick={openCreateRole} className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 rounded text-white text-sm flex items-center gap-2">
+            <div className="relative flex-1 sm:max-w-xs sm:ml-auto">
+              <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-xs" />
+              <input
+                type="text"
+                placeholder="Search roles..."
+                className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/40"
+                value={roleSearch}
+                onChange={(e) => setRoleSearch(e.target.value)}
+              />
+            </div>
+            <button onClick={openCreateRole} className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 rounded text-white text-sm flex items-center gap-2 whitespace-nowrap">
               <FaPlus /> Create Role
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {safeRoles.map((role) => (
+            {safeRoles
+              .filter((role) => {
+                if (!roleSearch.trim()) return true;
+                const q = roleSearch.toLowerCase();
+                return (
+                  role.name?.toLowerCase().includes(q) ||
+                  role.description?.toLowerCase().includes(q) ||
+                  (role.permissions || []).some((p) => p.toLowerCase().includes(q))
+                );
+              })
+              .map((role) => {
+              const perms = new Set(role.permissions || []);
+              const userCount = safeUsers.filter((u) => u.role === role.name).length;
+              const expanded = String(expandedRole) === String(role.name);
+              return (
               <div key={role.name} className="bg-white/5 border border-white/10 rounded-lg p-6 hover:bg-white/10 transition-colors">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: role.color || '#6b7280' }}>
                     <FaShieldAlt className="text-xl text-white" />
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-lg" style={{ color: role.color || '#ffffff' }}>{role.name}</h3>
-                    <p className="text-sm text-white/60">{role.description || 'No description'}</p>
+                    <p className="text-sm text-white/60 truncate" title={role.description}>{role.description || 'No description'}</p>
                   </div>
-                  {role.is_system && <div className="bg-blue-500/20 text-blue-300 px-2 py-1 rounded text-xs">System</div>}
+                  {role.is_system && <div className="bg-blue-500/20 text-blue-300 px-2 py-1 rounded text-xs flex-shrink-0">System</div>}
                 </div>
-                <div className="space-y-3 mb-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-white/70">Permissions</span>
-                    <span className="text-sm font-medium text-white">{role.permissions?.length || 0}</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                    {role.permissions?.slice(0, 10).map(p => (
+                <div className="flex items-center gap-3 text-xs text-white/50 mb-3">
+                  <span className="px-2 py-0.5 bg-white/10 rounded">{role.permissions?.length || 0} permissions</span>
+                  <span className="px-2 py-0.5 bg-white/10 rounded">{userCount} user{userCount === 1 ? '' : 's'}</span>
+                </div>
+                {/* Category coverage bars instead of raw chip spam */}
+                <div className="space-y-1.5 mb-4">
+                  {Object.entries(permissionCategories).map(([cat, catPerms]) => {
+                    const have = catPerms.filter((p) => perms.has(p)).length;
+                    if (!have) return null;
+                    const pct = Math.round((have / catPerms.length) * 100);
+                    return (
+                      <div key={cat} className="flex items-center gap-2 text-xs">
+                        <span className="w-28 truncate text-white/60">{cat.replace('_', ' ')}</span>
+                        <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div className="h-full bg-brand-500 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-white/50 w-10 text-right">{have}/{catPerms.length}</span>
+                      </div>
+                    );
+                  })}
+                  {(role.permissions?.length || 0) === 0 && (
+                    <div className="text-xs text-white/40">No permissions</div>
+                  )}
+                </div>
+                {expanded && (
+                  <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto mb-3 p-2 bg-black/20 rounded-lg">
+                    {(role.permissions || []).map((p) => (
                       <span key={p} className="px-2 py-0.5 bg-white/10 rounded text-xs text-white/70">{p}</span>
                     ))}
-                    {(role.permissions?.length || 0) > 10 && <span className="px-2 py-0.5 bg-white/10 rounded text-xs text-white/50">+{(role.permissions?.length || 0) - 10} more</span>}
                   </div>
-                </div>
+                )}
                 <div className="flex gap-2">
-                  <button onClick={() => openEditRole(role)} className="flex-1 py-2 px-4 bg-white/10 hover:bg-white/20 rounded-lg text-sm">Edit</button>
+                  <button onClick={() => openEditRole(role)} className="flex-1 py-2 px-4 bg-white/10 hover:bg-white/20 rounded-lg text-sm flex items-center justify-center gap-2"><FaEdit /> Edit</button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditPermSearch(''); setExpandedRole(expanded ? null : role.name); }}
+                    className={`px-3 py-2 rounded-lg text-sm ${expanded ? 'bg-white/20 text-white' : 'bg-white/10 text-white/60 hover:text-white'}`}
+                    title={expanded ? 'Hide permissions' : 'Show permissions'}
+                  >
+                    {expanded ? 'Hide' : 'View'}
+                  </button>
                   {!role.is_system && (
-                    <button onClick={() => confirmDelete('role', role)} className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-lg text-red-400 text-sm flex items-center gap-2">
-                      <FaTrash /> Delete
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        title="Duplicate role"
+                        onClick={() => { setNewRole({ name: `${role.name}_copy`, description: role.description || '', permissions: [...(role.permissions || [])] }); setCreatePermSearch(''); setShowCreateRoleModal(true); }}
+                        className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/70 text-sm"
+                      >
+                        <FaCopy />
+                      </button>
+                      <button onClick={() => confirmDelete('role', role)} className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-lg text-red-400 text-sm flex items-center gap-2">
+                        <FaTrash />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
           {safeRoles.length === 0 && (
             <div className="text-center py-12 text-white/60">

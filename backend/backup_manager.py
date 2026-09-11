@@ -14,8 +14,15 @@ DEFAULT_BACKUPS_ROOT = SERVERS_ROOT.parent / "backups"
 DEFAULT_BACKUPS_ROOT.mkdir(parents=True, exist_ok=True)
 
 # Volatile directories excluded from backups to prevent archive bloat over time
-# (rotated logs, crash dumps, loader caches). Extend via BACKUP_EXCLUDE_DIRS.
-_DEFAULT_BACKUP_EXCLUDES = {"logs", "crash-reports", "cache", ".cache", "tmp"}
+# (rotated logs, crash dumps, loader caches, previous backups). Extend via BACKUP_EXCLUDE_DIRS.
+# NOTE: "backups" MUST stay excluded — the old code copied each archive into
+# server_dir/backups/ and the next run re-archived all previous zips (exponential growth + freeze).
+_DEFAULT_BACKUP_EXCLUDES = {"logs", "crash-reports", "cache", ".cache", "tmp", "backups"}
+
+# Guard against overlapping runs (scheduler + manual click at same time)
+_BACKUP_IN_PROGRESS: set = set()
+import threading as _threading
+_BACKUP_LOCK = _threading.Lock()
 
 
 def _backup_excludes() -> set:
@@ -32,14 +39,28 @@ def _is_excluded(rel: Path, excludes: set) -> bool:
 
 
 def _archive_zip(root: Path, archive_path: Path, excludes: set) -> None:
-    with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    # compresslevel=1: ~3x faster than default 6, slightly larger file.
+    # Backups used to freeze the whole app for minutes on big worlds.
+    with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
         for path in root.rglob("*"):
             if not path.is_file():
                 continue
-            rel = path.relative_to(root)
+            # skip lock / temp / socket files that break zips or bloat them
+            if path.name in ("session.lock",):
+                continue
+            if path.suffix in (".tmp", ".temp", ".lock"):
+                continue
+            try:
+                rel = path.relative_to(root)
+            except ValueError:
+                continue
             if _is_excluded(rel, excludes):
                 continue
-            zf.write(path, rel.as_posix())
+            try:
+                zf.write(path, rel.as_posix())
+            except (OSError, ValueError):
+                # file vanished mid-backup (world saving) — skip, don't abort
+                continue
 
 
 def _archive_tar(root: Path, archive_path: Path, excludes: set, mode: str) -> None:
@@ -124,38 +145,52 @@ async def create_backup_async(name: str, compression: str = 'zip') -> dict:
 
 
 def _create_backup_sync(name: str, compression: str = 'zip') -> dict:
-    """Internal synchronous backup implementation."""
+    """Internal synchronous backup implementation.
+
+    Runs in a worker thread (see create_backup_async / scheduler to_thread).
+    Never call directly from an async event-loop handler — it blocks for
+    seconds/minutes on big worlds and freezes the whole panel.
+    """
     from settings_routes import get_backup_settings
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
 
-    server_dir = _server_path(name)
-    backup_settings = get_backup_settings()
+    with _BACKUP_LOCK:
+        if name in _BACKUP_IN_PROGRESS:
+            raise ValueError(f"Backup already running for {name} — please wait")
+        _BACKUP_IN_PROGRESS.add(name)
+    try:
+        server_dir = _server_path(name)
+        backup_settings = get_backup_settings()
 
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    dest_dir = _get_backups_root() / name
-    dest_dir.mkdir(parents=True, exist_ok=True)
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        dest_dir = _get_backups_root() / name
+        dest_dir.mkdir(parents=True, exist_ok=True)
 
-    # Also create in server's own backups/ folder
-    server_backup_dir = server_dir / "backups"
-    server_backup_dir.mkdir(parents=True, exist_ok=True)
+        compress = backup_settings.get("compress", True)
+        fmt = compression if compression in {"zip", "gztar", "bztar", "tar"} else ('zip' if compress else 'tar')
+        excludes = _backup_excludes()
 
-    compress = backup_settings.get("compress", True)
-    fmt = compression if compression in {"zip", "gztar", "bztar", "tar"} else ('zip' if compress else 'tar')
-    excludes = _backup_excludes()
+        started = time.time()
+        if fmt == 'zip':
+            archive_path = dest_dir / f"{name}-{ts}.zip"
+            _archive_zip(server_dir, archive_path, excludes)
+        else:
+            ext = {'gztar': '.tar.gz', 'bztar': '.tar.bz2', 'tar': '.tar'}[fmt]
+            mode = {'gztar': 'w:gz', 'bztar': 'w:bz2', 'tar': 'w'}[fmt]
+            archive_path = dest_dir / f"{name}-{ts}{ext}"
+            _archive_tar(server_dir, archive_path, excludes, mode)
 
-    if fmt == 'zip':
-        archive_path = dest_dir / f"{name}-{ts}.zip"
-        _archive_zip(server_dir, archive_path, excludes)
-    else:
-        ext = {'gztar': '.tar.gz', 'bztar': '.tar.bz2', 'tar': '.tar'}[fmt]
-        mode = {'gztar': 'w:gz', 'bztar': 'w:bz2', 'tar': 'w'}[fmt]
-        archive_path = dest_dir / f"{name}-{ts}{ext}"
-        _archive_tar(server_dir, archive_path, excludes, mode)
-
-    # Also copy to server's own backups/ folder
-    server_archive_path = server_backup_dir / archive_path.name
-    shutil.copy2(archive_path, server_archive_path)
-
-    return {"file": archive_path.name, "size": archive_path.stat().st_size}
+        # NOTE: intentionally NO second copy into server_dir/backups/ anymore.
+        # The old duplicate doubled disk IO/time AND got re-archived on the
+        # next run (backups-inside-backups → exponential growth → freeze).
+        # list_backups() still reads legacy copies if present.
+        size = archive_path.stat().st_size
+        _log.info(f"Backup {archive_path.name} done in {time.time()-started:.1f}s ({size//1024//1024} MB)")
+        return {"file": archive_path.name, "size": size}
+    finally:
+        with _BACKUP_LOCK:
+            _BACKUP_IN_PROGRESS.discard(name)
 
 
 def restore_backup(name: str, backup_file: str) -> None:

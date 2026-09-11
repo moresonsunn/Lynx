@@ -164,45 +164,55 @@ class TaskScheduler:
         task_type = cast(str, task.task_type)
 
         
+        _job_kwargs: Dict[str, Any] = dict(id=job_id, args=[task.id], max_instances=1, coalesce=True, misfire_grace_time=300)
         if task_type == "backup":
             self.scheduler.add_job(
                 self.execute_backup_task,
                 trigger=trigger,
-                id=job_id,
-                args=[task.id],
-                max_instances=1
+                **_job_kwargs
             )
         elif task_type == "restart":
             self.scheduler.add_job(
                 self.execute_restart_task,
                 trigger=trigger,
-                id=job_id,
-                args=[task.id],
-                max_instances=1
+                **_job_kwargs
+            )
+        elif task_type in ("start", "stop"):
+            fn = self.execute_start_task if task_type == "start" else self.execute_stop_task
+            self.scheduler.add_job(
+                fn,
+                trigger=trigger,
+                **_job_kwargs
             )
         elif task_type == "command":
             self.scheduler.add_job(
                 self.execute_command_task,
                 trigger=trigger,
-                id=job_id,
-                args=[task.id],
-                max_instances=1
+                **_job_kwargs
+            )
+        elif task_type == "announce":
+            self.scheduler.add_job(
+                self.execute_announce_task,
+                trigger=trigger,
+                **_job_kwargs
+            )
+        elif task_type == "save":
+            self.scheduler.add_job(
+                self.execute_save_task,
+                trigger=trigger,
+                **_job_kwargs
             )
         elif task_type == "cleanup":
             self.scheduler.add_job(
                 self.execute_cleanup_task,
                 trigger=trigger,
-                id=job_id,
-                args=[task.id],
-                max_instances=1
+                **_job_kwargs
             )
         elif task_type == "integrity":
             self.scheduler.add_job(
                 self.execute_integrity_task,
                 trigger=trigger,
-                id=job_id,
-                args=[task.id],
-                max_instances=1
+                **_job_kwargs
             )
         else:
             raise ValueError(f"Unknown task type: {task_type}")
@@ -235,8 +245,22 @@ class TaskScheduler:
         new_rank = order.get(new_status, 0)
         return new_status if new_rank > current_rank else current
     
+    def _resolve_container(self, server_name: Optional[str]) -> Optional[str]:
+        """Find container id by server name (case-insensitive)."""
+        try:
+            docker_manager = self.get_docker_manager()
+            servers = docker_manager.list_servers() or []
+            if server_name:
+                low = server_name.lower()
+                for server in servers:
+                    if (server.get("name") or "").lower() == low:
+                        return server.get("id")
+            return None
+        except Exception:
+            return None
+
     async def execute_backup_task(self, task_id: int):
-        """Execute a backup task."""
+        """Execute a backup task (off-loop — zip runs in a worker thread)."""
         db = SessionLocal()
         server_name: Optional[str] = None
         try:
@@ -247,19 +271,21 @@ class TaskScheduler:
             task = cast(ScheduledTask, task_db)
             if not bool(getattr(task, "is_active", False)):
                 return
-            
+
             logger.info(f"Executing backup task: {self._task_label(task, task_id)}")
-            
-            
+
+
             setattr(task, "last_run", datetime.utcnow())
-            
+            db.commit()
+
             try:
-                
+
                 server_name = cast(Optional[str], getattr(task, "server_name", None))
                 if not server_name:
                     raise ValueError("Backup task has no server_name configured")
 
-                result = create_backup(server_name)
+                # OFF-LOOP: the zip can take minutes on big worlds; never block the event loop
+                result = await asyncio.to_thread(create_backup, server_name)
                 
                 
                 backup_record = BackupTask(
@@ -300,7 +326,7 @@ class TaskScheduler:
             db.close()
     
     async def execute_restart_task(self, task_id: int):
-        """Execute a server restart task."""
+        """Execute a server restart task (off-loop docker calls)."""
         db = SessionLocal()
         try:
             task = self._get_task(db, task_id)
@@ -308,87 +334,153 @@ class TaskScheduler:
                 return
 
             logger.info(f"Executing restart task: {self._task_label(task, task_id)}")
-            
-            
+
+
             setattr(task, "last_run", datetime.utcnow())
-            
+            db.commit()
+
             try:
-                docker_manager = self.get_docker_manager()
-                servers = docker_manager.list_servers()
-                
-                
-                target_server = None
                 server_name = cast(Optional[str], getattr(task, "server_name", None))
-                for server in servers:
-                    if server_name and server.get("name") == server_name:
-                        target_server = server
-                        break
-                
-                if target_server:
-                    container_id = target_server.get("id")
-                    if container_id:
-                        
-                        docker_manager.stop_server(container_id)
-                        await asyncio.sleep(5)  
-                        docker_manager.start_server(container_id)
-                        if server_name:
-                            logger.info(f"Restarted server: {server_name}")
-                    else:
-                        logger.error(f"No container ID found for server: {server_name}")
+                container_id = await asyncio.to_thread(self._resolve_container, server_name)
+                if container_id:
+                    docker_manager = self.get_docker_manager()
+                    await asyncio.to_thread(docker_manager.stop_server, container_id)
+                    await asyncio.sleep(5)
+                    await asyncio.to_thread(docker_manager.start_server, container_id)
+                    if server_name:
+                        logger.info(f"Restarted server: {server_name}")
                 else:
                     logger.error(f"Server not found for restart task: {server_name}")
-                    
+
             except Exception as e:
                 logger.error(f"Restart task failed: {e}")
-            
-            db.commit()
-            
+
         finally:
             db.close()
-    
-    async def execute_command_task(self, task_id: int):
-        """Execute a command task."""
+
+    async def execute_start_task(self, task_id: int):
+        """Start a stopped server on schedule (e.g. back on at 9 AM)."""
         db = SessionLocal()
         try:
             task = self._get_task(db, task_id)
             if not task or not bool(getattr(task, "is_active", False)):
                 return
-            
+            logger.info(f"Executing start task: {self._task_label(task, task_id)}")
+            setattr(task, "last_run", datetime.utcnow())
+            db.commit()
+            try:
+                server_name = cast(Optional[str], getattr(task, "server_name", None))
+                container_id = await asyncio.to_thread(self._resolve_container, server_name)
+                if container_id:
+                    await asyncio.to_thread(self.get_docker_manager().start_server, container_id)
+                    logger.info(f"Started server: {server_name}")
+                else:
+                    logger.error(f"Server not found for start task: {server_name}")
+            except Exception as e:
+                logger.error(f"Start task failed: {e}")
+        finally:
+            db.close()
+
+    async def execute_stop_task(self, task_id: int):
+        """Stop a running server on schedule (e.g. down at 2 AM)."""
+        db = SessionLocal()
+        try:
+            task = self._get_task(db, task_id)
+            if not task or not bool(getattr(task, "is_active", False)):
+                return
+            logger.info(f"Executing stop task: {self._task_label(task, task_id)}")
+            setattr(task, "last_run", datetime.utcnow())
+            db.commit()
+            try:
+                server_name = cast(Optional[str], getattr(task, "server_name", None))
+                container_id = await asyncio.to_thread(self._resolve_container, server_name)
+                if container_id:
+                    await asyncio.to_thread(self.get_docker_manager().stop_server, container_id)
+                    logger.info(f"Stopped server: {server_name}")
+                else:
+                    logger.error(f"Server not found for stop task: {server_name}")
+            except Exception as e:
+                logger.error(f"Stop task failed: {e}")
+        finally:
+            db.close()
+
+    async def execute_announce_task(self, task_id: int):
+        """Broadcast a message to all players (say <command or message>)."""
+        db = SessionLocal()
+        try:
+            task = self._get_task(db, task_id)
+            if not task or not bool(getattr(task, "is_active", False)):
+                return
+            setattr(task, "last_run", datetime.utcnow())
+            db.commit()
+            try:
+                server_name = cast(Optional[str], getattr(task, "server_name", None))
+                message = (cast(Optional[str], getattr(task, "command", None)) or "").strip()
+                if not message:
+                    raise ValueError("Announce task has no message (use the Command field)")
+                container_id = await asyncio.to_thread(self._resolve_container, server_name)
+                if container_id:
+                    cmd = message if message.startswith("say ") else f"say {message}"
+                    await asyncio.to_thread(self.get_docker_manager().send_command, container_id, cmd)
+                    logger.info(f"Announced on {server_name}: {message}")
+                else:
+                    logger.error(f"Server not found for announce task: {server_name}")
+            except Exception as e:
+                logger.error(f"Announce task failed: {e}")
+        finally:
+            db.close()
+
+    async def execute_save_task(self, task_id: int):
+        """Save the world (save-all) without restarting."""
+        db = SessionLocal()
+        try:
+            task = self._get_task(db, task_id)
+            if not task or not bool(getattr(task, "is_active", False)):
+                return
+            setattr(task, "last_run", datetime.utcnow())
+            db.commit()
+            try:
+                server_name = cast(Optional[str], getattr(task, "server_name", None))
+                container_id = await asyncio.to_thread(self._resolve_container, server_name)
+                if container_id:
+                    await asyncio.to_thread(self.get_docker_manager().send_command, container_id, "save-all")
+                    logger.info(f"Saved world on {server_name}")
+                else:
+                    logger.error(f"Server not found for save task: {server_name}")
+            except Exception as e:
+                logger.error(f"Save task failed: {e}")
+        finally:
+            db.close()
+    
+    async def execute_command_task(self, task_id: int):
+        """Execute a command task (off-loop)."""
+        db = SessionLocal()
+        try:
+            task = self._get_task(db, task_id)
+            if not task or not bool(getattr(task, "is_active", False)):
+                return
+
             task_name = cast(Optional[str], getattr(task, "name", None))
             logger.info(f"Executing command task: {task_name or task_id}")
-            
-            
+
+
             setattr(task, "last_run", datetime.utcnow())
-            
+            db.commit()
+
             try:
-                docker_manager = self.get_docker_manager()
-                servers = docker_manager.list_servers()
-                
-                
-                target_server = None
                 server_name = cast(Optional[str], getattr(task, "server_name", None))
-                for server in servers:
-                    if server_name and server.get("name") == server_name:
-                        target_server = server
-                        break
-                
-                if target_server:
-                    container_id = target_server.get("id")
-                    command = cast(Optional[str], getattr(task, "command", None))
-                    if container_id and command:
-                        
-                        docker_manager.send_command(container_id, command)
-                        logger.info(f"Executed command '{command}' on {server_name}")
-                    else:
-                        logger.error(f"No container ID or command for server: {server_name}")
+                container_id = await asyncio.to_thread(self._resolve_container, server_name)
+                command = cast(Optional[str], getattr(task, "command", None))
+                if container_id and command:
+
+                    await asyncio.to_thread(self.get_docker_manager().send_command, container_id, command)
+                    logger.info(f"Executed command '{command}' on {server_name}")
                 else:
-                    logger.error(f"Server not found for command task: {server_name}")
-                    
+                    logger.error(f"No container ID or command for server: {server_name}")
+
             except Exception as e:
                 logger.error(f"Command task failed: {e}")
-            
-            db.commit()
-            
+
         finally:
             db.close()
     
