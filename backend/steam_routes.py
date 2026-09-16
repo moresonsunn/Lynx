@@ -223,7 +223,7 @@ def _get_games_cache() -> list[dict]:
 
 @router.get("/games")
 async def list_games(
-    limit: int = 9,
+    limit: int = 100,
     offset: int = 0,
     include_all: bool = False,
     current_user=Depends(require_auth),

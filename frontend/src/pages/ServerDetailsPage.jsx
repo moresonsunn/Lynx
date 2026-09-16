@@ -715,6 +715,10 @@ export default function ServerDetailsPage() {
           const onlineCount = typeof playerData?.count === 'number' ? playerData.count : onlinePlayers.length;
           const maxPlayers = playerData?.max || 0;
           const connectPort = server.host_port || typeVersionData?.host_port;
+          // LAN IP from the backend (host address players on the local network
+          // reach); falls back to localhost when detection is unavailable.
+          const connectHost = typeVersionData?.lan_ip || server?.lan_ip || 'localhost';
+          const connectAddr = `${connectHost}:${connectPort}`;
           const steamPorts = typeVersionData?.steam_ports || server?.steam_ports || [];
           const gamePortInfo = typeVersionData?.game_port || server?.game_port;
           const portSummary = typeVersionData?.port_summary || server?.port_summary || [];
@@ -730,7 +734,7 @@ export default function ServerDetailsPage() {
                   </div>
                   <div>
                     <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider">Quick Connect</h3>
-                    <p className="text-white font-mono text-lg mt-0.5">localhost:{connectPort}</p>
+                    <p className="text-white font-mono text-lg mt-0.5">{connectAddr}</p>
                     {isSteam && portSummary.length > 1 && (
                       <p className="text-white/40 text-xs mt-1 font-mono">
                         All ports: {portSummary.join(', ')}
@@ -740,7 +744,7 @@ export default function ServerDetailsPage() {
                 </div>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(`localhost:${connectPort}`);
+                    navigator.clipboard.writeText(connectAddr);
                     setCopiedAddress(true);
                     setTimeout(() => setCopiedAddress(false), 2000);
                   }}

@@ -1,0 +1,144 @@
+{
+  "counter_strike_source": {
+    "display_name": "Counter-Strike: Source",
+    "steam_appid": 240,
+    "category": "Shooter",
+    "summary": "Classic Source-engine CS:S dedicated server.",
+    "notes": "Add a GSLT (AppID 240) for public server listing. Uses the generic ich777 steamcmd image with explicit CSS parameters.",
+    "default_name": "css",
+    "image": "ghcr.io/ich777/steamcmd:latest",
+    "game_port": {"port": 27015, "protocol": "udp"},
+    "ports": [
+      {"container": 27015, "protocol": "udp"},
+      {"container": 27015, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "232330",
+      "GAME_NAME": "cstrike",
+      "GAME_PARAMS": "-secure +maxplayers 32 +map de_dust2",
+      "GAME_PORT": 27015,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "day_of_defeat_source": {
+    "display_name": "Day of Defeat: Source",
+    "steam_appid": 300,
+    "category": "Shooter",
+    "summary": "WW2 Source-engine DoD:S dedicated server.",
+    "notes": "Add a GSLT (AppID 300) for public server listing.",
+    "default_name": "dods",
+    "image": "ghcr.io/ich777/steamcmd:dods",
+    "game_port": {"port": 27015, "protocol": "udp"},
+    "ports": [
+      {"container": 27015, "protocol": "udp"},
+      {"container": 27015, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "232290",
+      "GAME_NAME": "dod",
+      "GAME_PARAMS": "-secure +maxplayers 32 +map dod_anzio",
+      "GAME_PORT": 27015,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "hl2dm": {
+    "display_name": "Half-Life 2: Deathmatch",
+    "steam_appid": 320,
+    "category": "Shooter",
+    "summary": "HL2DM Source dedicated server.",
+    "notes": "Lightweight classic deathmatch server.",
+    "default_name": "hl2dm",
+    "image": "ghcr.io/ich777/steamcmd:hl2dm",
+    "game_port": {"port": 27015, "protocol": "udp"},
+    "ports": [
+      {"container": 27015, "protocol": "udp"},
+      {"container": 27015, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "232370",
+      "GAME_NAME": "hl2mp",
+      "GAME_PARAMS": "-secure +maxplayers 16 +map dm_lockdown",
+      "GAME_PORT": 27015,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "left4dead": {
+    "display_name": "Left 4 Dead",
+    "steam_appid": 500,
+    "category": "Shooter",
+    "summary": "Co-op zombie survival dedicated server.",
+    "notes": "Starts on the No Mercy campaign; change the map via GAME_PARAMS.",
+    "default_name": "l4d",
+    "image": "ghcr.io/ich777/steamcmd:l4d",
+    "game_port": {"port": 27015, "protocol": "udp"},
+    "ports": [
+      {"container": 27015, "protocol": "udp"},
+      {"container": 27015, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "500",
+      "GAME_NAME": "left4dead",
+      "GAME_PARAMS": "+maxplayers 8 +map l4d_hospital01_apartment",
+      "GAME_PORT": 27015,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "insurgency": {
+    "display_name": "Insurgency (2014)",
+    "steam_appid": 222880,
+    "category": "Shooter",
+    "summary": "Tactical Source shooter dedicated server.",
+    "notes": "Set your map and mode via GAME_PARAMS if the default does not suit you.",
+    "default_name": "insurgency",
+    "image": "ghcr.io/ich777/steamcmd:insurgency",
+    "game_port": {"port": 27015, "protocol": "udp"},
+    "ports": [
+      {"container": 27015, "protocol": "udp"},
+      {"container": 27015, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "222880",
+      "GAME_NAME": "insurgency",
+      "GAME_PORT": 27015,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "sven_coop": {
+    "display_name": "Sven Co-op",
+    "steam_appid": 276060,
+    "category": "Shooter",
+    "summary": "Co-op Half-Life campaign dedicated server.",
+    "notes": "Set your start map via GAME_PARAMS if the default does not suit you.",
+    "default_name": "sven",
+    "image": "ghcr.io/ich777/steamcmd:svencoop",
+    "game_port": {"port": 27015, "protocol": "udp"},
+    "ports": [
+      {"container": 27015, "protocol": "udp"},
+      {"container": 27015, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "276060",
+      "GAME_NAME": "svencoop",
+      "GAME_PORT": 27015,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  }
+}

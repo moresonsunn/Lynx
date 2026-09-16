@@ -7,7 +7,7 @@ import time
 import psutil
 
 from local_runtime import LocalRuntimeManager, MINECRAFT_PORT
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, detect_server_from_files, resolve_server_dir, get_lan_ip
 
 
 _RAM_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMGTP]?)(?:I?B)?\s*$", re.IGNORECASE)
@@ -284,19 +284,33 @@ class LocalAdapter:
         return self.local.create_server_from_existing(container_id, min_ram=None, max_ram=None)
 
     def restart_server(self, container_id: str) -> Dict:
-        
+        """Restart a server with robust port-release handling.
+
+        The old implementation called stop → start with zero delay, which
+        caused 'address already in use' when the Java child process was
+        still alive or the socket lingered in TIME_WAIT.  Now stop_server()
+        handles full process-tree kill + port verification internally, and
+        we add a final safety check before re-spawning.
+        """
         try:
             steam_id = self._resolve_steam_id(container_id)
         except Exception:
             steam_id = None
         if steam_id:
             return self._get_docker().restart_server(steam_id)
+
+        # Stop — this now kills the full process tree and waits for the port
         try:
             self.local.stop_server(container_id)
         except Exception:
             pass
-        
+
+        # Extra safety: brief pause to let the OS fully release the socket
+        # (handles the rare TIME_WAIT edge case)
+        time.sleep(0.5)
+
         return self.local.create_server_from_existing(container_id, min_ram=None, max_ram=None)
+
 
     def kill_server(self, container_id: str) -> Dict:
         steam_id = self._resolve_steam_id(container_id)
@@ -607,6 +621,22 @@ class LocalAdapter:
         host_port = meta.get("host_port") or MINECRAFT_PORT
         server_type = meta.get("type")
         version = meta.get("version")
+        # Fill gaps from the server directory itself (jars, latest.log head).
+        # Meta-only lookup is why imported/ZIP servers always showed Unknown.
+        try:
+            srv_dir = resolve_server_dir(container_id)
+            if srv_dir is not None:
+                files = detect_server_from_files(srv_dir)
+                if not server_type or str(server_type).lower() in ("", "custom", "unknown"):
+                    server_type = files.get("server_type") or server_type
+                if not version:
+                    version = files.get("server_version") or version
+                if not meta.get("loader_version") and files.get("loader_version"):
+                    meta["loader_version"] = files["loader_version"]
+                if (not meta.get("java_version") or meta.get("java_version") == "unknown") and files.get("java_version"):
+                    meta["java_version"] = files["java_version"]
+        except Exception:
+            pass
         created_at = meta.get("created_at")
         
         if not created_at:
@@ -646,6 +676,7 @@ class LocalAdapter:
             "port_mappings": {f"{MINECRAFT_PORT}/tcp": {"host_port": host_port, "host_ip": None}},
             "exists": exists,
             "java_args": java_args,
+            "lan_ip": get_lan_ip(),
             "server_kind": str(meta.get("server_kind") or "minecraft").lower(),
         }
         return info

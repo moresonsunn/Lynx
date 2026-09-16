@@ -41,8 +41,12 @@ node_modules/
 # Production builds
 static/build/
 
-# Docker volumes and data
+# Docker volumes and data (root-level only — backend/data holds the tracked
+# Steam catalog JSON overlays, so it must NOT be ignored; user uploads under
+# backend/data/avatars stay ignored explicitly)
 data/
+!backend/data/
+backend/data/avatars/
 backups/
 postgres_data/
 mc_servers_data/

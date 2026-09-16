@@ -1,0 +1,199 @@
+{
+  "dont_starve_together": {
+    "display_name": "Don't Starve Together",
+    "steam_appid": 322330,
+    "category": "Survival",
+    "summary": "Co-op wilderness survival dedicated server.",
+    "notes": "For public listing add your Klei cluster token to the server files after first start; runs LAN-only without one.",
+    "default_name": "dst",
+    "image": "ghcr.io/ich777/steamcmd:dontstarve",
+    "game_port": {"port": 10999, "protocol": "udp"},
+    "ports": [
+      {"container": 10999, "protocol": "udp"},
+      {"container": 11000, "protocol": "udp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "343050",
+      "GAME_PORT": 10999,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "scp_secret_laboratory": {
+    "display_name": "SCP: Secret Laboratory",
+    "steam_appid": 700330,
+    "category": "Shooter",
+    "summary": "Multiplayer horror FPS dedicated server.",
+    "notes": "Runs with default config; tune config_gameplay.txt in the server files afterwards.",
+    "default_name": "scpsl",
+    "image": "ghcr.io/ich777/steamcmd:scp-secretlaboratory",
+    "game_port": {"port": 7777, "protocol": "udp"},
+    "ports": [
+      {"container": 7777, "protocol": "udp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "700330",
+      "GAME_PORT": 7777,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "starbound": {
+    "display_name": "Starbound",
+    "steam_appid": 211820,
+    "category": "Sandbox",
+    "summary": "Space sandbox dedicated server.",
+    "notes": "First start generates the universe; allow a few extra minutes.",
+    "default_name": "starbound",
+    "image": "ghcr.io/ich777/steamcmd:starbound",
+    "game_port": {"port": 21025, "protocol": "tcp"},
+    "ports": [
+      {"container": 21025, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "211820",
+      "GAME_PORT": 21025,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "wurm_unlimited": {
+    "display_name": "Wurm Unlimited",
+    "steam_appid": 402370,
+    "category": "Sandbox",
+    "summary": "Sandbox MMO dedicated server.",
+    "notes": "First start generates the world and can take a while; needs plenty of RAM.",
+    "default_name": "wurm",
+    "image": "ghcr.io/ich777/steamcmd:wurmunlimited",
+    "game_port": {"port": 3724, "protocol": "tcp"},
+    "ports": [
+      {"container": 3724, "protocol": "tcp"},
+      {"container": 3724, "protocol": "udp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "402390",
+      "GAME_PORT": 3724,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "barotrauma": {
+    "display_name": "Barotrauma",
+    "steam_appid": 602960,
+    "category": "Simulation",
+    "summary": "Co-op submarine survival dedicated server.",
+    "notes": "Runs headless with default settings; adjust serversettings.xml afterwards if needed.",
+    "default_name": "barotrauma",
+    "image": "ghcr.io/ich777/steamcmd:barotrauma",
+    "game_port": {"port": 14242, "protocol": "udp"},
+    "ports": [
+      {"container": 14242, "protocol": "udp"},
+      {"container": 14242, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "1026340",
+      "GAME_PORT": 14242,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "stationeers": {
+    "display_name": "Stationeers",
+    "steam_appid": 544550,
+    "category": "Simulation",
+    "summary": "Space station sim dedicated server.",
+    "notes": "First start downloads game files; allow extra time before connecting.",
+    "default_name": "stationeers",
+    "image": "ghcr.io/ich777/steamcmd:stationeers",
+    "game_port": {"port": 27016, "protocol": "udp"},
+    "ports": [
+      {"container": 27016, "protocol": "udp"},
+      {"container": 27016, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "544550",
+      "GAME_PORT": 27016,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "avorion": {
+    "display_name": "Avorion",
+    "steam_appid": 445220,
+    "category": "Sandbox",
+    "summary": "Space sandbox dedicated server.",
+    "notes": "Runs with default galaxy settings; adjust server.ini afterwards if needed.",
+    "default_name": "avorion",
+    "image": "ghcr.io/ich777/steamcmd:avorion",
+    "game_port": {"port": 27000, "protocol": "udp"},
+    "ports": [
+      {"container": 27000, "protocol": "udp"},
+      {"container": 27000, "protocol": "tcp"},
+      {"container": 27003, "protocol": "udp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "445220",
+      "GAME_PORT": 27000,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "chivalry": {
+    "display_name": "Chivalry: Medieval Warfare",
+    "steam_appid": 219640,
+    "category": "Action",
+    "summary": "Medieval slasher dedicated server.",
+    "notes": "Uses the image default map/mode; override via GAME_PARAMS if needed.",
+    "default_name": "chivalry",
+    "image": "ghcr.io/ich777/steamcmd:chivalrymw",
+    "game_port": {"port": 7777, "protocol": "udp"},
+    "ports": [
+      {"container": 7777, "protocol": "udp"},
+      {"container": 27015, "protocol": "udp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "219640",
+      "GAME_PORT": 7777,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  },
+  "core_keeper": {
+    "display_name": "Core Keeper",
+    "steam_appid": 1621690,
+    "category": "Sandbox",
+    "summary": "Mining sandbox dedicated server.",
+    "notes": "First start generates the world; allow a few extra minutes.",
+    "default_name": "corekeeper",
+    "image": "ghcr.io/ich777/steamcmd:corekeeper",
+    "game_port": {"port": 27016, "protocol": "udp"},
+    "ports": [
+      {"container": 27016, "protocol": "udp"},
+      {"container": 27016, "protocol": "tcp"}
+    ],
+    "env": {
+      "UID": 99,
+      "GID": 100,
+      "GAME_ID": "1963720",
+      "GAME_PORT": 27016,
+      "VALIDATE": "false"
+    },
+    "volume": {"container": "/serverdata"}
+  }
+}

@@ -5,7 +5,8 @@ import docker
 import json
 from pathlib import Path
 from typing import Optional, List, Dict
-from config import SERVERS_ROOT, SERVERS_HOST_ROOT, SERVERS_VOLUME_NAME
+from config import (SERVERS_ROOT, SERVERS_HOST_ROOT, SERVERS_VOLUME_NAME,
+                     detect_server_from_files, resolve_server_dir, get_lan_ip)
 from download_manager import prepare_server_files
 import time
 import logging
@@ -859,25 +860,70 @@ class DockerManager:
                 java_opts = labels["mc.env.JAVA_OPTS"]
 
             # ── Runtime detection of Java version & server version ──
-            # If values are missing or defaulted, try to detect them from
-            # the running container and its filesystem.
-            java_from_label = "mc.java_version" in labels
-            java_from_env = any(
-                e.startswith("JAVA_VERSION=") or e.startswith("JAVA_VERSION_OVERRIDE=")
-                for e in env_vars
-            )
+            # Filesystem first (shared volume: works regardless of container
+            # mount namespaces and log rotation), then container exec/logs.
+            # Treat "custom"/empty label values as missing.
+            def _missing(v):
+                return not v or (isinstance(v, str) and v.strip().lower() in ("", "custom", "unknown"))
+            if isinstance(server_type, str) and server_type.strip().lower() == "custom":
+                server_type = None
+            server_display_name = getattr(container, "name", None) or container_id
             if server_kind == "minecraft":
-                # --- Detect Java version from running container ---
-                if not java_from_label and not java_from_env and container.status == "running":
+                # --- 1) Files on the shared volume (meta, jars, latest.log head) ---
+                try:
+                    srv_dir = resolve_server_dir(server_display_name)
+                    if srv_dir is not None:
+                        files = detect_server_from_files(srv_dir)
+                        if _missing(server_type) and files.get("server_type"):
+                            server_type = files["server_type"]
+                        if _missing(server_version) and files.get("server_version"):
+                            server_version = files["server_version"]
+                        if _missing(loader_version) and files.get("loader_version"):
+                            loader_version = files["loader_version"]
+                        if files.get("java_version"):
+                            java_version = files["java_version"]
+                            java_bin = f"/usr/local/bin/java{java_version}"
+                        # Persist so future calls (and restarts) are instant
+                        try:
+                            meta_path = srv_dir / "server_meta.json"
+                            meta = {}
+                            if meta_path.exists():
+                                meta = json.loads(meta_path.read_text(encoding="utf-8", errors="ignore") or "{}")
+                            changed = False
+                            if server_type and _missing(meta.get("server_type")) and _missing(meta.get("type")):
+                                meta["server_type"] = server_type
+                                changed = True
+                            if server_version and _missing(meta.get("server_version")) and _missing(meta.get("version")):
+                                meta["server_version"] = server_version
+                                changed = True
+                            if loader_version and _missing(meta.get("loader_version")):
+                                meta["loader_version"] = loader_version
+                                changed = True
+                            if changed:
+                                meta.setdefault("name", server_display_name)
+                                meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # --- 2) Detect Java version from running container ---
+                java_from_label = "mc.java_version" in labels
+                java_from_env = any(
+                    e.startswith("JAVA_VERSION=") or e.startswith("JAVA_VERSION_OVERRIDE=")
+                    for e in env_vars
+                )
+                if java_version in (None, "", "21") and not java_from_label and not java_from_env and container.status == "running":
                     try:
                         detected_java = self._get_java_version(container)
                         if detected_java:
                             java_version = detected_java
+                            java_bin = f"/usr/local/bin/java{detected_java}"
                     except Exception:
                         pass
 
-                # --- Detect server version / type from logs & filesystem ---
-                if not server_version or not server_type:
+                # --- 3) Legacy container-log/mount fallback for anything left ---
+                if _missing(server_version) or _missing(server_type):
                     try:
                         detect_out = {
                             "server_version": server_version,
@@ -1025,6 +1071,7 @@ class DockerManager:
                 "java_version": java_version,
                 "java_bin": java_bin,
                 "java_args": java_opts,
+                "lan_ip": get_lan_ip(),
                 "stats": stats,
                 "created": attrs.get("Created", None),
                 "state": attrs.get("State", {}),
@@ -1213,7 +1260,10 @@ class DockerManager:
 
     def _get_java_version(self, container) -> Optional[str]:
         """
-        Runs 'java -version' inside the container and returns the Java version string.
+        Runs 'java -version' inside the container and returns the MAJOR Java
+        version string (e.g. "17"). Tries well-known Lynx install paths because
+        bare `java` is often not on the container PATH (which is why detection
+        previously always fell back to "21").
         Returns None if Java is not found or error occurs.
         """
         try:
@@ -1221,17 +1271,36 @@ class DockerManager:
             if container.status != "running":
                 return None
 
-            exit_code, output_bytes = container.exec_run(
-                "java -version", stderr=True, stdout=False
-            )
-            if exit_code != 0:
+            candidates = [
+                "java",
+                "/usr/local/bin/java21",
+                "/usr/local/bin/java17",
+                "/usr/local/bin/java11",
+                "/usr/local/bin/java8",
+                "/opt/java/openjdk/bin/java",
+            ]
+            output_text = ""
+            for cmd in candidates:
+                try:
+                    exit_code, output_bytes = container.exec_run(
+                        f"{cmd} -version", stderr=True, stdout=False
+                    )
+                    if exit_code == 0 and output_bytes:
+                        output_text = output_bytes.decode(errors="ignore")
+                        if "version" in output_text:
+                            break
+                except Exception:
+                    continue
+            if not output_text:
                 return None
-
-            output_text = output_bytes.decode(errors="ignore")
-            # e.g. 'openjdk version "17.0.8" 2023-07-18'
+            # e.g. 'openjdk version "17.0.8" 2023-07-18' -> "17";
+            # legacy 'java version "1.8.0_392"' -> "8"
             match = re.search(r'version "([^"]+)"', output_text)
             if match:
-                return match.group(1)
+                ver = match.group(1).strip()
+                if ver.startswith("1."):
+                    return ver.split(".")[1]
+                return ver.split(".")[0]
             return None
         except docker.errors.NotFound:
             logger.warning(f"Container {container.id} not found when trying to get Java version")

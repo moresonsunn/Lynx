@@ -902,6 +902,58 @@ cleanup_stale_session_lock() {
 
 cleanup_stale_session_lock || true
 
+# Kill any zombie processes still holding the Minecraft port.
+# This happens when the controller crashes or the entrypoint is killed
+# but the Java child process survives as an orphan.  Inspired by
+# Crafty Controller's pre-start cleanup logic.
+kill_stale_port_holders() {
+  local port="${SERVER_PORT:-25565}"
+  # Find PIDs listening on the port
+  local pids
+  pids=$(ss -tlnp "sport = :${port}" 2>/dev/null \
+         | grep -oP 'pid=\K[0-9]+' \
+         | sort -u)
+  if [ -z "$pids" ]; then
+    # Fallback: try lsof
+    pids=$(lsof -ti ":${port}" 2>/dev/null | sort -u)
+  fi
+  if [ -z "$pids" ]; then
+    echo "DEBUG: Port ${port} is free — no stale processes"
+    return 0
+  fi
+  echo "WARNING: Found stale process(es) on port ${port}: $pids"
+  for p in $pids; do
+    # Skip our own PID
+    [ "$p" = "$$" ] && continue
+    echo "WARNING: Killing stale process $p holding port ${port}"
+    kill -15 "$p" 2>/dev/null || true
+  done
+  # Give them a moment, then force-kill survivors
+  sleep 2
+  for p in $pids; do
+    [ "$p" = "$$" ] && continue
+    if kill -0 "$p" 2>/dev/null; then
+      echo "WARNING: Force-killing stubborn process $p"
+      kill -9 "$p" 2>/dev/null || true
+    fi
+  done
+  sleep 1
+}
+
+# Remove stale console FIFO and orphaned tail processes from a prior run
+cleanup_stale_fifo() {
+  if [ -e "console.in" ]; then
+    echo "DEBUG: Removing stale console.in FIFO"
+    rm -f "console.in" 2>/dev/null || true
+  fi
+  # Kill any orphaned 'tail -f console.in' from a previous run
+  pkill -f "tail -f.*console.in" 2>/dev/null || true
+}
+
+kill_stale_port_holders || true
+cleanup_stale_fifo || true
+
+
 # Preferred jars/patterns
 echo "DEBUG: Searching for server jars in $(pwd)"
 echo "DEBUG: Current directory contents: $(ls -la)"
@@ -1039,6 +1091,13 @@ start_server_with_recovery() {
       disable_datapacks_auto
     fi
     
+    # Clean up stale FIFO and orphaned tail processes from prior iteration
+    rm -f console.in 2>/dev/null || true
+    pkill -f "tail -f.*console.in" 2>/dev/null || true
+
+    # Verify port is free before (re)starting
+    kill_stale_port_holders || true
+
     # Create console FIFO
     mkfifo -m 600 console.in 2>/dev/null || true
     

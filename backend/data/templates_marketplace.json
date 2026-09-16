@@ -1,0 +1,152 @@
+[
+  {
+    "id": "paper-survival-starter",
+    "name": "Paper Survival Essentials",
+    "short_description": "Optimized Paper SMP starter kit with curated quality-of-life plugins and backups pre-configured.",
+    "description": "Performance tuned Paper server with essentials, Dynmap-lite, and daily backups. Verified to run smoothly on modest hardware.",
+    "server_type": "paper",
+    "minecraft_version": "1.20.4",
+    "loader": "paper",
+    "recommended_ram": {
+      "min": "3G",
+      "max": "6G"
+    },
+    "java_version": "21",
+    "tags": ["survival", "paper", "plugins"],
+    "rating": 4.7,
+    "votes": 128,
+    "verified_by": "Lynx Team",
+    "last_verified": "2024-11-01",
+    "homepage": "https://paper-plugins.example.com",
+    "install": {
+      "provider": "modrinth",
+      "pack_id": "paper-essentials-suite",
+      "version_id": null
+    }
+  },
+  {
+    "id": "fabric-vanilla-plus",
+    "name": "Fabric Vanilla+",
+    "short_description": "Lightweight Fabric server with Lithium, Sodium, and community-picked performance mods.",
+    "description": "A vanilla-plus experience using Fabric with performance and utility mods that keep gameplay close to stock while boosting TPS.",
+    "server_type": "fabric",
+    "minecraft_version": "1.20.1",
+    "loader": "fabric",
+    "recommended_ram": {
+      "min": "4G",
+      "max": "8G"
+    },
+    "java_version": "17",
+    "tags": ["fabric", "performance", "vanilla"],
+    "rating": 4.8,
+    "votes": 204,
+    "verified_by": "Community Review Board",
+    "last_verified": "2024-10-18",
+    "homepage": "https://fabric-vanilla.example.com",
+    "install": {
+      "provider": "modrinth",
+      "pack_id": "fabric-vanilla-plus",
+      "version_id": null
+    }
+  },
+  {
+    "id": "forge-adventure-pack",
+    "name": "Forge Adventure Pack",
+    "short_description": "Forge modpack curated for adventurous SMPs with quests and exploration.",
+    "description": "Ships with questing progression, dozens of structures, and balanced combat tweaks. Ideal for small public servers.",
+    "server_type": "forge",
+    "minecraft_version": "1.19.2",
+    "loader": "forge",
+    "recommended_ram": {
+      "min": "6G",
+      "max": "10G"
+    },
+    "java_version": "17",
+    "tags": ["forge", "adventure", "quests"],
+    "rating": 4.6,
+    "votes": 173,
+    "verified_by": "Lynx Team",
+    "last_verified": "2024-09-12",
+    "homepage": "https://forge-adventure.example.com",
+    "install": {
+      "provider": "curseforge",
+      "pack_id": "forge-adventure-pack",
+      "version_id": null
+    }
+  },
+  {
+    "id": "cobblemon-community",
+    "name": "Cobblemon Community Server",
+    "short_description": "Pokemon-inspired gameplay with Cobblemon and curated performance mods.",
+    "description": "Feature-complete Cobblemon server with crossplay tweaks and grief protection baked in.",
+    "server_type": "fabric",
+    "minecraft_version": "1.20.1",
+    "loader": "fabric",
+    "recommended_ram": {
+      "min": "6G",
+      "max": "8G"
+    },
+    "java_version": "17",
+    "tags": ["fabric", "cobblemon", "community"],
+    "rating": 4.9,
+    "votes": 311,
+    "verified_by": "Cobblemon Collective",
+    "last_verified": "2024-11-05",
+    "homepage": "https://cobblemon.example.com",
+    "install": {
+      "provider": "modrinth",
+      "pack_id": "cobblemon-community-server",
+      "version_id": null
+    }
+  },
+  {
+    "id": "minigame-arcade",
+    "name": "Minigame Arcade Bundle",
+    "short_description": "Turn-key Paper mini-game hub with lobby, SkyWars, and BedWars rotations.",
+    "description": "Pre-configured lobby with matchmaking, leaderboards, and three polished mini-game rotations. Includes daily restarts and backups.",
+    "server_type": "paper",
+    "minecraft_version": "1.20.2",
+    "loader": "paper",
+    "recommended_ram": {
+      "min": "4G",
+      "max": "8G"
+    },
+    "java_version": "21",
+    "tags": ["paper", "minigames", "lobby"],
+    "rating": 4.5,
+    "votes": 89,
+    "verified_by": "Lynx Team",
+    "last_verified": "2024-08-27",
+    "homepage": "https://minigames.example.com",
+    "install": {
+      "provider": "modrinth",
+      "pack_id": "minigame-arcade-suite",
+      "version_id": null
+    }
+  },
+  {
+    "id": "tech-progressive",
+    "name": "Tech Progressive",
+    "short_description": "Kitchen-sink tech modpack focused on automation and AE2 progression.",
+    "description": "Balanced tech progression featuring Create, Applied Energistics 2, Mekanism, and community QAed scripts for stability.",
+    "server_type": "forge",
+    "minecraft_version": "1.20.1",
+    "loader": "forge",
+    "recommended_ram": {
+      "min": "8G",
+      "max": "12G"
+    },
+    "java_version": "17",
+    "tags": ["forge", "tech", "automation"],
+    "rating": 4.7,
+    "votes": 256,
+    "verified_by": "Community Review Board",
+    "last_verified": "2024-10-02",
+    "homepage": "https://tech-progressive.example.com",
+    "install": {
+      "provider": "curseforge",
+      "pack_id": "tech-progressive",
+      "version_id": null
+    }
+  }
+]

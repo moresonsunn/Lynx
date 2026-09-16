@@ -1,4 +1,5 @@
 import os
+import socket
 import subprocess
 import time
 import logging
@@ -6,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 import re
+import psutil
 
 from config import SERVERS_ROOT
 from download_manager import prepare_server_files
@@ -148,6 +150,93 @@ class LocalRuntimeManager:
         except Exception:
             return False
 
+    # ---- Robust process & port management (inspired by Crafty Controller) ----
+
+    def _kill_process_tree(self, pid: int, timeout: int = 10) -> None:
+        """Kill a process and ALL its descendants (Java, tail, etc.) using psutil.
+
+        The entrypoint runs ``tail -f console.in | java …`` inside a bash
+        pipeline, so the PID we store is the *shell* — **not** the Java
+        process.  Sending SIGTERM only to the shell leaves the Java child
+        alive, which keeps the Minecraft port bound.  Crafty Controller
+        solves this by walking the entire process tree and terminating
+        every descendant before the parent.
+        """
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+        except psutil.NoSuchProcess:
+            return
+
+        # Terminate children first (Java, tail, etc.), then the parent shell
+        for proc in children:
+            try:
+                proc.terminate()  # SIGTERM
+            except psutil.NoSuchProcess:
+                pass
+        try:
+            parent.terminate()
+        except psutil.NoSuchProcess:
+            pass
+
+        # Wait for everyone to exit
+        all_procs = children + [parent]
+        gone, alive = psutil.wait_procs(all_procs, timeout=timeout)
+
+        # Force-kill any survivors
+        for proc in alive:
+            try:
+                logger.warning(f"Force-killing surviving process {proc.pid} ({proc.name()})")
+                proc.kill()  # SIGKILL
+            except psutil.NoSuchProcess:
+                pass
+
+        # Final reap — make sure zombies are collected
+        if alive:
+            psutil.wait_procs(alive, timeout=3)
+
+    def _wait_for_port_release(self, port: int, timeout: float = 30.0,
+                               interval: float = 0.5) -> bool:
+        """Block until *port* is no longer accepting connections.
+
+        Returns ``True`` if the port became free within *timeout* seconds,
+        ``False`` if it is still in use (caller should try harder).
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                if s.connect_ex(('127.0.0.1', port)) != 0:
+                    return True            # port is free
+            time.sleep(interval)
+        return False
+
+    def _find_and_kill_port_holders(self, port: int) -> int:
+        """Find any process still bound to *port* and kill its whole tree.
+
+        Returns the number of process trees killed.  This is the safety-net
+        for orphan Java processes that survived ``stop_server()``.
+        """
+        killed = 0
+        seen_pids: set = set()
+        try:
+            for conn in psutil.net_connections(kind='inet'):
+                if conn.laddr.port == port and conn.pid and conn.pid not in seen_pids:
+                    seen_pids.add(conn.pid)
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        logger.warning(
+                            f"Killing zombie process {conn.pid} ({proc.name()}) "
+                            f"still holding port {port}"
+                        )
+                        self._kill_process_tree(conn.pid, timeout=5)
+                        killed += 1
+                    except psutil.NoSuchProcess:
+                        pass
+        except (psutil.AccessDenied, OSError) as exc:
+            logger.warning(f"Cannot enumerate connections for port {port}: {exc}")
+        return killed
+
     def _ensure_server_port(self, srv_dir: Path, port: int) -> None:
         props = srv_dir / "server.properties"
         try:
@@ -179,6 +268,27 @@ class LocalRuntimeManager:
             self._ensure_server_port(srv_dir, port_val)
         except Exception:
             pass
+
+        # --- Port pre-flight: make sure nothing is still bound ---
+        try:
+            port_val = int(env.get("SERVER_PORT", MINECRAFT_PORT))
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                if s.connect_ex(('127.0.0.1', port_val)) == 0:
+                    # Port is occupied — try to free it
+                    logger.warning(
+                        f"Port {port_val} still in use before spawning {name}; "
+                        f"attempting cleanup"
+                    )
+                    self._find_and_kill_port_holders(port_val)
+                    if not self._wait_for_port_release(port_val, timeout=10):
+                        logger.error(
+                            f"Port {port_val} could not be freed for {name}; "
+                            f"server may fail to bind"
+                        )
+        except Exception as exc:
+            logger.debug(f"Port pre-flight check error (non-fatal): {exc}")
+
 
         # Rotate server.stdout.log if it grows beyond 50 MB to avoid filling disk after a day
         try:
@@ -358,6 +468,19 @@ class LocalRuntimeManager:
         return self._spawn(name, env)
 
     def stop_server(self, server_id: str) -> Dict:
+        """Stop a server by killing its **entire** process tree.
+
+        The old implementation only sent SIGTERM/SIGKILL to the parent PID
+        (the bash entrypoint shell).  Because the entrypoint runs Java inside
+        a pipeline (``tail | java``), the Java child was left alive as an
+        orphan — still holding the Minecraft port.  On the next restart the
+        controller would get "address already in use".
+
+        This rewrite mirrors Crafty Controller's approach:
+        1. Kill the full process tree (parent + all descendants) via psutil.
+        2. Resolve the server port from meta and wait for it to be released.
+        3. If anything still holds the port, find and force-kill it.
+        """
         name = server_id
         pid = None
         try:
@@ -365,35 +488,44 @@ class LocalRuntimeManager:
             pid = int(pid_txt) if pid_txt else None
         except Exception:
             pid = None
+
+        # Determine the port so we can verify it is freed
+        meta = self._load_meta(name)
+        port = int(meta.get("host_port") or MINECRAFT_PORT)
+
         if not pid:
-            return {"id": name, "status": "unknown", "method": "noop"}
-        try:
-            killpg = getattr(os, "killpg", None)
-            if callable(killpg):
-                killpg(pid, 15)
-            else:
-                os.kill(pid, 15)
-        except Exception as e:
-            logger.warning(f"SIGTERM failed for {name} ({pid}): {e}")
-        deadline = time.time() + 10
-        while time.time() < deadline:
-            if not self._is_running(pid):
-                break
-            time.sleep(0.5)
-        if self._is_running(pid):
+            # No PID file — but the port might still be held by a zombie.
+            # Safety-net: check and kill anything on that port.
+            self._find_and_kill_port_holders(port)
             try:
-                killpg = getattr(os, "killpg", None)
-                if callable(killpg):
-                    killpg(pid, 9)
-                else:
-                    os.kill(pid, 9)
-            except Exception as e:
-                logger.warning(f"SIGKILL failed for {name} ({pid}): {e}")
+                self._pid_file(name).unlink(missing_ok=True)
+            except Exception:
+                pass
+            return {"id": name, "status": "unknown", "method": "noop"}
+
+        # --- Step 1: Kill the entire process tree ---
+        logger.info(f"Stopping server {name} (pid {pid}) — killing process tree")
+        self._kill_process_tree(pid, timeout=15)
+
+        # Clean up the PID file
         try:
             self._pid_file(name).unlink(missing_ok=True)
         except Exception:
             pass
-        return {"id": name, "status": "stopped", "method": "signal"}
+
+        # --- Step 2: Wait for the port to become free ---
+        if not self._wait_for_port_release(port, timeout=15, interval=0.5):
+            logger.warning(
+                f"Port {port} still in use after killing tree for {name}; "
+                f"hunting for zombie processes"
+            )
+            # --- Step 3: Safety-net — find and kill anything still on the port ---
+            self._find_and_kill_port_holders(port)
+            # Give the OS a moment to release the socket
+            self._wait_for_port_release(port, timeout=5, interval=0.25)
+
+        return {"id": name, "status": "stopped", "method": "process_tree"}
+
 
     def update_server_ram(self, server_id: str, min_ram: str | None, max_ram: str | None) -> Dict:
         """Update RAM allocation for a local server and restart it."""
