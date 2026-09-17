@@ -49,6 +49,27 @@ def _admin_headers(client):
     return _login(client, "admin", "AdminPass123")
 
 
+@pytest.fixture()
+def user_headers(client, db_session):
+    """Create (once) and log in a plain `user`-role account."""
+    from models import User
+
+    if not db_session.query(User).filter(User.username == "user_probe").first():
+        admin_h = _login(client, "admin", "AdminPass123")
+        r = client.post(
+            "/api/users",
+            json={
+                "username": "user_probe",
+                "email": "user_probe@localhost",
+                "password": "UserPass123",
+                "role": "user",
+            },
+            headers=admin_h,
+        )
+        assert r.status_code in (200, 201), f"setup: create user failed: {r.status_code} {r.text}"
+    return _login(client, "user_probe", "UserPass123")
+
+
 def test_helper_cannot_list_users(client, helper_headers):
     r = client.get("/api/users", headers=helper_headers)
     assert r.status_code == 403, f"helper listed users: {r.status_code} {r.text}"
@@ -205,7 +226,7 @@ def test_helper_cannot_read_config_bundle_without_grant(client, helper_headers):
 
 def test_grant_defaults_to_view_and_view_cannot_operate(client, helper_headers, db_session):
     """Omitting `permission` must grant least-privilege view, which must not
-    pass the operate gate (but must pass the view gate)."""
+    pass the operate/manage gates (but must pass the view gate)."""
     from models import User
 
     admin_h = _admin_headers(client)
@@ -221,8 +242,19 @@ def test_grant_defaults_to_view_and_view_cannot_operate(client, helper_headers, 
     rows = r.json().get("permissions", [])
     mine = [p for p in rows if p.get("user_id") == helper.id]
     assert mine and mine[0].get("permission") == "view", f"grant default not view: {rows}"
+    # view must NOT manage (delete) ...
+    r = client.delete("/api/servers/DAWG_VIEW", headers=helper_headers)
+    assert r.status_code == 403, f"view grant deleted server: {r.status_code} {r.text}"
+    # ... must NOT send console commands ...
+    r = client.post(
+        "/api/servers/DAWG_VIEW/command",
+        json={"command": "say hi"},
+        headers=helper_headers,
+    )
+    assert r.status_code == 403, f"view grant sent command: {r.status_code} {r.text}"
+    # ... but power stays blocked and view reads work.
     r = client.post("/api/servers/DAWG_VIEW/stop", headers=helper_headers)
-    assert r.status_code == 403, f"view grant operated server: {r.status_code} {r.text}"
+    assert r.status_code == 403, f"view grant stopped server: {r.status_code} {r.text}"
     r = client.get("/api/servers/DAWG_VIEW/stats", headers=helper_headers)
     # Gate must pass (Docker itself 404s/503s in this sandbox — that proves it).
     assert r.status_code != 403, f"view grant blocked from stats: {r.status_code} {r.text}"
@@ -239,3 +271,37 @@ def test_notifications_require_login(client):
     """Anonymous notification reads must be 401, not an AttributeError 500."""
     r = client.get("/api/realtime/notifications")
     assert r.status_code == 401, f"anonymous notifications: {r.status_code} {r.text}"
+
+
+# ── Policy: plain users can only use explicitly granted servers ───────────────
+
+def test_plain_user_cannot_power_without_grant(client, user_headers):
+    for method, url, kwargs in [
+        ("POST", "/api/servers/NOWHERE/start", {}),
+        ("POST", "/api/servers/NOWHERE/stop", {}),
+        ("POST", "/api/servers/NOWHERE/restart", {}),
+        ("POST", "/api/servers/NOWHERE/power", {"json": {"signal": "start"}}),
+    ]:
+        r = client.request(method, url, headers=user_headers, **kwargs)
+        assert r.status_code == 403, f"user powered via {url}: {r.status_code} {r.text}"
+
+
+def test_plain_user_cannot_kill_without_grant(client, user_headers):
+    r = client.post("/api/servers/NOWHERE/power", json={"signal": "kill"}, headers=user_headers)
+    assert r.status_code == 403, f"user killed server w/o grant: {r.status_code} {r.text}"
+
+
+def test_plain_user_cannot_edit(client, user_headers):
+    """No grant: console, files, config, delete, mods must all 403."""
+    r = client.post("/api/servers/NOWHERE/command", json={"command": "say hi"}, headers=user_headers)
+    assert r.status_code == 403, f"user sent command: {r.status_code} {r.text}"
+    r = client.delete("/api/servers/NOWHERE", headers=user_headers)
+    assert r.status_code == 403, f"user deleted server: {r.status_code} {r.text}"
+    r = client.post(
+        "/api/mods/NOWHERE/install",
+        json={"url": "https://example.com/evil.jar", "filename": "evil.jar"},
+        headers=user_headers,
+    )
+    assert r.status_code == 403, f"user installed mod: {r.status_code} {r.text}"
+    r = client.get("/api/servers/NOWHERE/config-bundle", headers=user_headers)
+    assert r.status_code == 403, f"user read config bundle: {r.status_code} {r.text}"

@@ -581,6 +581,20 @@ export default function ServerDetailsPage() {
     );
   }
 
+  if (!access.loading && !access.canView) {
+    return (
+      <div className="p-6">
+        <button
+          onClick={() => navigate('/servers')}
+          className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
+        >
+          <FaArrowLeft /> {t('servers.backToServers')}
+        </button>
+        <div className="text-white/60">You don&apos;t have access to this server. Ask an admin to grant it in Server Access Control.</div>
+      </div>
+    );
+  }
+
   const isRunning = server.status === 'running';
   const displayType = isSteam
     ? `Steam · ${prettify(typeVersionData?.steam_game || server?.steam_game || server?.type || 'Dedicated')}`
@@ -618,7 +632,7 @@ export default function ServerDetailsPage() {
               </div>
             </div>
 
-            {/* Action buttons (gated by server grant level; backend enforces with 403) */}
+            {/* Action buttons (power needs operate grant; edit/manage gated; backend 403s) */}
             <div className="flex items-center gap-2">
               {access.canOperate && (isRunning ? (
                 <>
