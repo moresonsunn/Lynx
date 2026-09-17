@@ -91,7 +91,7 @@ async def create_template(
         )
     
     
-    valid_java_versions = ["8", "11", "17", "21"]
+    valid_java_versions = ["8", "11", "17", "21", "25"]
     if template_data.java_version not in valid_java_versions:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -199,7 +199,7 @@ async def update_template(
         template.max_ram = template_data.max_ram
     
     if template_data.java_version is not None:
-        valid_java_versions = ["8", "11", "17", "21"]
+        valid_java_versions = ["8", "11", "17", "21", "25"]
         if template_data.java_version not in valid_java_versions:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

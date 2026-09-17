@@ -12,13 +12,16 @@ select_java_version() {
     
     case "$server_type" in
     "vanilla"|"paper"|"purpur")
-      # For 1.8-1.16 -> Java 8; 1.17-1.18 -> Java 17; 1.19+ -> Java 21
+      # 1.8-1.16 -> Java 8; 1.17-1.18 -> Java 17; 1.19-1.21 -> Java 21; 26+ -> Java 25
             if [[ "$version" == 1.8* ]] || [[ "$version" == 1.9* ]] || [[ "$version" == 1.10* ]] || [[ "$version" == 1.11* ]] || [[ "$version" == 1.12* ]] || [[ "$version" == 1.13* ]] || [[ "$version" == 1.14* ]] || [[ "$version" == 1.15* ]] || [[ "$version" == 1.16* ]]; then
                 echo "DEBUG: select_java_version: vanilla/paper/purpur matched 1.8-1.16 -> Java 8" >&2
                 java_version="8"
             elif [[ "$version" == 1.17* ]] || [[ "$version" == 1.18* ]]; then
                 echo "DEBUG: select_java_version: vanilla/paper/purpur matched 1.17-1.18 -> Java 17" >&2
                 java_version="17"
+            elif [[ "$version" == 26* ]]; then
+                echo "DEBUG: select_java_version: vanilla/paper/purpur matched 26+ -> Java 25" >&2
+                java_version="25"
             elif [[ "$version" == 1.19* ]] || [[ "$version" == 1.20* ]] || [[ "$version" == 1.21* ]]; then
                 echo "DEBUG: select_java_version: vanilla/paper/purpur matched 1.19+ -> Java 21" >&2
                 java_version="21"
@@ -27,8 +30,11 @@ select_java_version() {
             fi
             ;;
   "fabric"|"quilt"|"banner")
-      # Fabric/Quilt/Banner: 1.8-1.16 -> Java 8; 1.17-1.18 -> Java 17; 1.19+ -> Java 21
-      if [[ "$version" == 1.19* ]] || [[ "$version" == 1.20* ]] || [[ "$version" == 1.21* ]]; then
+      # Fabric/Quilt/Banner: 1.8-1.16 -> Java 8; 1.17-1.18 -> Java 17; 1.19-1.21 -> Java 21; 26+ -> Java 25
+      if [[ "$version" == 26* ]]; then
+  echo "DEBUG: select_java_version: fabric/quilt matched 26+ -> Java 25" >&2
+        java_version="25"
+      elif [[ "$version" == 1.19* ]] || [[ "$version" == 1.20* ]] || [[ "$version" == 1.21* ]]; then
   echo "DEBUG: select_java_version: fabric/quilt matched 1.19+ -> Java 21" >&2
         java_version="21"
       elif [[ "$version" == 1.17* ]] || [[ "$version" == 1.18* ]]; then
@@ -40,8 +46,11 @@ select_java_version() {
       fi
       ;;
   "forge"|"neoforge"|"mohist"|"magma"|"catserver"|"spongeforge")
-      # Forge-based hybrids: <=1.12 -> Java 8; 1.13-1.20.4 -> Java 17; 1.20.5+/1.21+ -> Java 21
-      if [[ "$version" == 1.8* ]] || [[ "$version" == 1.9* ]] || [[ "$version" == 1.10* ]] || [[ "$version" == 1.11* ]] || [[ "$version" == 1.12* ]]; then
+      # Forge-based hybrids: <=1.12 -> Java 8; 1.13-1.20.4 -> Java 17; 1.20.5+/1.21 -> Java 21; 26+ -> Java 25
+      if [[ "$version" == 26* ]]; then
+  echo "DEBUG: select_java_version: forge-hybrid matched 26+ -> Java 25" >&2
+        java_version="25"
+      elif [[ "$version" == 1.8* ]] || [[ "$version" == 1.9* ]] || [[ "$version" == 1.10* ]] || [[ "$version" == 1.11* ]] || [[ "$version" == 1.12* ]]; then
                 echo "DEBUG: select_java_version: forge-hybrid matched <=1.12 -> Java 8" >&2
                 java_version="8"
       elif [[ "$version" == 1.20.5* ]] || [[ "$version" == 1.20.6* ]] || [[ "$version" == 1.21* ]]; then
@@ -86,7 +95,7 @@ detect_mc_version() {
     # Try to extract version from jar filename
     for jar in paper-*.jar purpur-*.jar; do
         if [ -f "$jar" ]; then
-            version=$(echo "$jar" | grep -oP '(1\.\d+(\.\d+)?)' | head -1)
+            version=$(echo "$jar" | grep -oP '(26\.\d+|1\.\d+(\.\d+)?)' | head -1)
             [ -n "$version" ] && echo "$version" && return
         fi
     done
@@ -137,6 +146,8 @@ find_any_java() {
     "/opt/jdk-11.0.21+9/bin/java"
     "/opt/jdk-17.0.9+9/bin/java"
     "/opt/jdk-21.0.5+9/bin/java"
+    "/opt/jdk-25+36/bin/java"
+    "/usr/local/bin/java25"
     "/usr/local/bin/java21"
     "/usr/local/bin/java17"
     "/usr/local/bin/java11"

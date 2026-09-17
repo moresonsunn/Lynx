@@ -446,6 +446,8 @@ def get_java_versions(current_user: User = Depends(require_auth)):
         "/opt/java/java11/bin/java",
         "/opt/java/java17/bin/java",
         "/opt/java/java21/bin/java",
+        "/opt/java/java25/bin/java",
+        "/usr/local/bin/java25",
         "/usr/lib/jvm/java-8-openjdk/bin/java",
         "/usr/lib/jvm/java-11-openjdk/bin/java",
         "/usr/lib/jvm/java-17-openjdk/bin/java",

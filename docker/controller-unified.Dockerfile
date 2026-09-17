@@ -72,6 +72,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
         JAVA11_DIR="jdk-11.0.21+9"; \
         JAVA17_URL="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.9%2B9/OpenJDK17U-jdk_aarch64_linux_hotspot_17.0.9_9.tar.gz"; \
         JAVA17_DIR="jdk-17.0.9+9"; \
+        JAVA25_URL="https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25%2B36/OpenJDK25U-jdk_aarch64_linux_hotspot_25_36.tar.gz"; \
+        JAVA25_DIR="jdk-25+36"; \
     else \
         JAVA8_URL="https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u392-b08/OpenJDK8U-jdk_x64_linux_hotspot_8u392b08.tar.gz"; \
         JAVA8_DIR="jdk8u392-b08"; \
@@ -79,6 +81,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
         JAVA11_DIR="jdk-11.0.21+9"; \
         JAVA17_URL="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.9%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.9_9.tar.gz"; \
         JAVA17_DIR="jdk-17.0.9+9"; \
+        JAVA25_URL="https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25%2B36/OpenJDK25U-jdk_x64_linux_hotspot_25_36.tar.gz"; \
+        JAVA25_DIR="jdk-25+36"; \
     fi && \
     echo "Downloading Java 8..." && \
     wget -qO- "$JAVA8_URL" | tar -xz -C /opt/ && \
@@ -88,7 +92,10 @@ RUN ARCH=$(dpkg --print-architecture) && \
     ln -sf /opt/$JAVA11_DIR/bin/java /usr/local/bin/java11 && \
     echo "Downloading Java 17..." && \
     wget -qO- "$JAVA17_URL" | tar -xz -C /opt/ && \
-    ln -sf /opt/$JAVA17_DIR/bin/java /usr/local/bin/java17
+    ln -sf /opt/$JAVA17_DIR/bin/java /usr/local/bin/java17 && \
+    echo "Downloading Java 25..." && \
+    wget -qO- "$JAVA25_URL" | tar -xz -C /opt/ && \
+    ln -sf /opt/$JAVA25_DIR/bin/java /usr/local/bin/java25
 
 # ---- Java 21 Symlink ----
 RUN if [ -x "/opt/java/openjdk/bin/java" ]; then \
@@ -112,7 +119,8 @@ RUN echo "=== Verifying Java installations ===" && \
     echo "Java 8:" && /usr/local/bin/java8 -version 2>&1 | head -1 && \
     echo "Java 11:" && /usr/local/bin/java11 -version 2>&1 | head -1 && \
     echo "Java 17:" && /usr/local/bin/java17 -version 2>&1 | head -1 && \
-    echo "Java 21:" && /usr/local/bin/java21 -version 2>&1 | head -1
+    echo "Java 21:" && /usr/local/bin/java21 -version 2>&1 | head -1 && \
+    echo "Java 25:" && /usr/local/bin/java25 -version 2>&1 | head -1
 
 # ---- Runtime-Entrypoint ----
 COPY docker/runtime-entrypoint.sh /usr/local/bin/runtime-entrypoint.sh

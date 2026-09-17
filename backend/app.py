@@ -549,8 +549,8 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
         dm = get_docker_manager()
         extra_env: dict[str, str] = {}
         if req.java_version:
-            if req.java_version not in ["8", "11", "17", "21"]:
-                raise HTTPException(status_code=400, detail="Invalid java_version (allowed: 8,11,17,21)")
+            if req.java_version not in ["8", "11", "17", "21", "25"]:
+                raise HTTPException(status_code=400, detail="Invalid java_version (allowed: 8,11,17,21,25)")
             extra_env["JAVA_VERSION"] = req.java_version
             extra_env["JAVA_BIN"] = f"/usr/local/bin/java{req.java_version}"
 
@@ -1245,7 +1245,7 @@ def get_server_config_bundle(
             java_args = info.get("java_args") or ""
             java = {
                 "current_version": java_version,
-                "available_versions": ["8", "11", "17", "21"],
+                "available_versions": ["8", "11", "17", "21", "25"],
                 "custom_args": java_args,
             }
     except Exception:
@@ -1268,8 +1268,8 @@ def set_server_java_version(container_id: str, request: dict = Body(...), curren
         java_version = request.get("java_version")
         if not java_version:
             raise HTTPException(status_code=400, detail="java_version is required")
-        if java_version not in ["8", "11", "17", "21"]:
-            raise HTTPException(status_code=400, detail="Invalid Java version. Must be 8, 11, 17, or 21")
+        if java_version not in ["8", "11", "17", "21", "25"]:
+            raise HTTPException(status_code=400, detail="Invalid Java version. Must be 8, 11, 17, 21, or 25")
 
         result = rm.update_server_java_version(container_id, java_version)
         if isinstance(result, dict) and result.get("success") is False:
@@ -1485,7 +1485,8 @@ def get_available_java_versions(container_id: str, current_user: User = Depends(
             {"version": "8", "name": "Java 8", "description": "Legacy support (1.8-1.16)", "bin": "/usr/local/bin/java8"},
             {"version": "11", "name": "Java 11", "description": "Intermediate support", "bin": "/usr/local/bin/java11"},
             {"version": "17", "name": "Java 17", "description": "Modern support (1.17+)", "bin": "/usr/local/bin/java17"},
-            {"version": "21", "name": "Java 21", "description": "Latest performance (1.19+)", "bin": "/usr/local/bin/java21"}
+            {"version": "21", "name": "Java 21", "description": "Latest performance (1.19+)", "bin": "/usr/local/bin/java21"},
+            {"version": "25", "name": "Java 25", "description": "Required for MC 26+", "bin": "/usr/local/bin/java25"}
         ]
         
         return {

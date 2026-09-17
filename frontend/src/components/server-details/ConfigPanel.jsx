@@ -60,7 +60,7 @@ export default function ConfigPanel({ server, onRestart }) {
         const raw = Array.isArray(data.available_versions) ? data.available_versions : [];
         const normalized = raw.map(v => (
           typeof v === 'string'
-            ? { version: v, name: `Java ${v}`, description: v === '21' ? 'Latest LTS' : (v === '17' ? 'LTS' : '') }
+            ? { version: v, name: `Java ${v}`, description: v === '25' ? 'Required (MC 26+)' : (v === '21' ? 'Latest LTS' : (v === '17' ? 'LTS' : '')) }
             : v
         ));
         setJavaVersions(normalized);
@@ -132,7 +132,7 @@ export default function ConfigPanel({ server, onRestart }) {
                 const rawJ = Array.isArray(d.java.available_versions) ? d.java.available_versions : [];
                 const normalizedJ = rawJ.map(v => (
                   typeof v === 'string'
-                    ? { version: v, name: `Java ${v}`, description: v === '21' ? 'Latest LTS' : (v === '17' ? 'LTS' : '') }
+                    ? { version: v, name: `Java ${v}`, description: v === '25' ? 'Required (MC 26+)' : (v === '21' ? 'Latest LTS' : (v === '17' ? 'LTS' : '')) }
                     : v
                 ));
                 setJavaVersions(normalizedJ);
@@ -204,7 +204,7 @@ export default function ConfigPanel({ server, onRestart }) {
             const raw = Array.isArray(data.available_versions) ? data.available_versions : [];
             const normalized = raw.map(v => (
               typeof v === 'string'
-                ? { version: v, name: `Java ${v}`, description: v === '21' ? 'Latest LTS' : (v === '17' ? 'LTS' : '') }
+                ? { version: v, name: `Java ${v}`, description: v === '25' ? 'Required (MC 26+)' : (v === '21' ? 'Latest LTS' : (v === '17' ? 'LTS' : '')) }
                 : v
             ));
             setJavaVersions(normalized);

@@ -681,7 +681,7 @@ class LocalAdapter:
     def update_server_java_version(self, container_id: str, java_version: str) -> Dict:
         
         try:
-            if java_version not in ("8", "11", "17", "21"):
+            if java_version not in ("8", "11", "17", "21", "25"):
                 raise ValueError(f"Invalid Java version: {java_version}")
             java_bin = f"/usr/local/bin/java{java_version}"
 

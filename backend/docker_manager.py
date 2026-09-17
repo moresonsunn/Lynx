@@ -1274,6 +1274,7 @@ class DockerManager:
 
             candidates = [
                 "java",
+                "/usr/local/bin/java25",
                 "/usr/local/bin/java21",
                 "/usr/local/bin/java17",
                 "/usr/local/bin/java11",
@@ -3895,8 +3896,8 @@ class DockerManager:
             container = self.client.containers.get(container_id)
             
             
-            if java_version not in ["8", "11", "17", "21"]:
-                raise ValueError(f"Invalid Java version: {java_version}. Must be 8, 11, 17, or 21")
+            if java_version not in ["8", "11", "17", "21", "25"]:
+                raise ValueError(f"Invalid Java version: {java_version}. Must be 8, 11, 17, 21, or 25")
             
             
             attrs = container.attrs or {}

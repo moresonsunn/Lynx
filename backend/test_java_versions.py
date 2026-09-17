@@ -45,6 +45,7 @@ def test_java_versions():
         ("/usr/local/bin/java11", "Java 11"),
         ("/usr/local/bin/java17", "Java 17"),
         ("/usr/local/bin/java21", "Java 21"),
+        ("/usr/local/bin/java25", "Java 25"),
     ]
     
     available_versions = []
