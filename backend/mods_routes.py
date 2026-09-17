@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from auth import require_auth, require_moderator
+from server_permissions import require_server_permission
 from models import User
 from file_manager import upload_file as fm_upload_file, delete_path as fm_delete_path
 from config import get_server_dir
@@ -40,7 +41,7 @@ async def list_mods(
 async def upload_mod(
     server_name: str,
     file: UploadFile = File(...),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(require_server_permission("manage")),
 ):
     """Upload a mod JAR into the mods directory."""
     if file is None or not getattr(file, "filename", None):
@@ -149,7 +150,7 @@ class ModInstallRequest(BaseModel):
 async def install_mod(
     server_name: str,
     payload: ModInstallRequest,
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(require_server_permission("manage")),
 ):
     """Install a mod by downloading from URL."""
     # Validate server exists

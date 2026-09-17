@@ -1,16 +1,27 @@
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Any
+from typing import Dict, List, Optional, Set, Any, Tuple
 import re
 import json
+import threading
 import time
 import psutil
 
 from local_runtime import LocalRuntimeManager, MINECRAFT_PORT
-from config import SERVERS_ROOT, detect_server_from_files, resolve_server_dir, get_lan_ip
+from config import (SERVERS_ROOT, detect_server_from_files, resolve_server_dir,
+                     get_lan_ip, sanitize_player_names, online_from_log_lines,
+                     read_log_tail_lines)
 
 
 _RAM_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMGTP]?)(?:I?B)?\s*$", re.IGNORECASE)
+
+# Host network baseline for local-runtime net accounting (module-level on
+# purpose). The stats collector constructs a FRESH LocalAdapter every cycle
+# (get_runtime_manager() has no cache), so an instance attribute reset on
+# every sample and rates were stuck at 0.0 forever. Process-persistent base
+# fixes it; a backend restart simply starts a new baseline (one zero sample).
+_HOST_NET_BASE: Optional[Tuple[int, int]] = None
+_HOST_NET_BASE_LOCK = threading.Lock()
 
 def _live_cpu_count() -> int:
     """Live CPU count — never cache, so a host CPU swap is reflected after container restart."""
@@ -400,16 +411,20 @@ class LocalAdapter:
                         pass
                     # per-process net counters don't exist on psutil.Process; use host counters as approximation
                     pass
-                # Fallback to host net counters for local runtime (better than 0)
-                # Return cumulative values so stats_history can compute correct rates
+                # Fallback to host net counters for local runtime (better than 0).
+                # Return cumulative values so stats_history can compute correct
+                # rates. Baseline is module-global (see _HOST_NET_BASE): the
+                # collector rebuilds the adapter every cycle, so an instance
+                # attribute would reset each sample and pin rates at zero.
                 try:
                     hc = psutil.net_io_counters()
                     raw_rx = hc.bytes_recv
                     raw_tx = hc.bytes_sent
-                    # Store base on first call; return cumulative delta from that base
-                    if not hasattr(self, "_host_net_base"):
-                        self._host_net_base = (raw_rx, raw_tx)
-                    base_rx, base_tx = self._host_net_base
+                    global _HOST_NET_BASE
+                    with _HOST_NET_BASE_LOCK:
+                        if _HOST_NET_BASE is None:
+                            _HOST_NET_BASE = (raw_rx, raw_tx)
+                        base_rx, base_tx = _HOST_NET_BASE
                     total_rx = max(0, raw_rx - base_rx)
                     total_tx = max(0, raw_tx - base_tx)
                 except Exception:
@@ -563,32 +578,14 @@ class LocalAdapter:
         except Exception:
             pass
 
-        # Strategy 3: Parse latest.log for online players
+        # Strategy 3: Parse latest.log for online players (bounded tail read +
+        # settled-state scan: newest event per player decides, stop lines end
+        # the session so stale joins can't resurrect).
         try:
             server_dir = SERVERS_ROOT / container_id
             log_file = server_dir / "logs" / "latest.log"
             if log_file.exists():
-                log_text = log_file.read_text(encoding="utf-8", errors="ignore")
-                lines = log_text.splitlines()
-                # Track joins and leaves to compute currently-online set
-                online_set: Dict[str, bool] = {}  # name -> True if online
-                joined_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
-                left_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out|lost connection)", re.IGNORECASE)
-                # Also detect server stop/restart which clears all online players
-                stop_re = re.compile(r"(Stopping the server|Stopping server|Server closed|Closing Server)", re.IGNORECASE)
-                for line in lines:
-                    if stop_re.search(line):
-                        online_set.clear()
-                        continue
-                    jm = joined_re.search(line)
-                    if jm:
-                        online_set[jm.group(1)] = True
-                        continue
-                    lm = left_re.search(line)
-                    if lm:
-                        online_set.pop(lm.group(1), None)
-                        continue
-                names_log = [n for n, v in online_set.items() if v]
+                names_log, _ = online_from_log_lines(read_log_tail_lines(log_file))
                 if names_log or mcstatus_result is None:
                     online_count = len(names_log)
                     if mcstatus_result and mcstatus_result["online"] > online_count:

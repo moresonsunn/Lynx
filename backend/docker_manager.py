@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from typing import Optional, List, Dict
 from config import (SERVERS_ROOT, SERVERS_HOST_ROOT, SERVERS_VOLUME_NAME,
-                     detect_server_from_files, resolve_server_dir, get_lan_ip)
+                     detect_server_from_files, resolve_server_dir, get_lan_ip,
+                     online_from_log_lines)
 from download_manager import prepare_server_files
 import time
 import logging
@@ -3848,25 +3849,12 @@ class DockerManager:
 
             
             # Strategy 5: Parse recent container logs for join/leave events
+            # (settled-state scan: newest event per player decides; stop lines
+            # end the session so stale joins can't resurrect as online).
             try:
-                log_output = container.logs(tail=200, timestamps=False).decode(errors="ignore")
+                log_output = container.logs(tail=800, timestamps=False).decode(errors="ignore")
                 lines = log_output.splitlines()
-                online_set = {}
-                joined_re_docker = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
-                left_re_docker = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out|lost connection)", re.IGNORECASE)
-                stop_re_docker = re.compile(r"(Stopping the server|Stopping server|Server closed|Closing Server)", re.IGNORECASE)
-                for line in lines:
-                    if stop_re_docker.search(line):
-                        online_set.clear()
-                        continue
-                    jm = joined_re_docker.search(line)
-                    if jm:
-                        online_set[jm.group(1)] = True
-                        continue
-                    lm = left_re_docker.search(line)
-                    if lm:
-                        online_set.pop(lm.group(1), None)
-                names_from_logs = list(online_set.keys())
+                names_from_logs, _ = online_from_log_lines(lines)
                 if names_from_logs:
                     count = len(names_from_logs)
                     if mcstatus_result and mcstatus_result["online"] > count:

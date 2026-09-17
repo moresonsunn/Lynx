@@ -10,9 +10,27 @@ from datetime import datetime
 import json
 import asyncio
 
-from database import get_db
+from database import get_db, SessionLocal
 from models import User, Notification
-from auth import get_current_user
+from auth import require_auth, verify_token, get_user_by_username
+from server_permissions import user_can_access_server
+
+
+def _ws_user(token: str, db) -> User | None:
+    """Resolve a WS query-param JWT to a User (None when invalid)."""
+    try:
+        payload = verify_token(token)
+    except Exception:
+        return None
+    if not payload:
+        return None
+    username = payload.get("sub")
+    if not username:
+        return None
+    try:
+        return get_user_by_username(db, username)
+    except Exception:
+        return None
 
 router = APIRouter(prefix="/realtime", tags=["realtime"])
 
@@ -73,39 +91,53 @@ manager = ConnectionManager()
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str):
     """Main WebSocket connection for real-time updates"""
-    
-    # Authenticate user from token
-    from auth import verify_token
-    user_id = verify_token(token)
-    if not user_id:
-        await websocket.close(code=1008)
-        return
-    
+
+    db = SessionLocal()
+    try:
+        user = _ws_user(token, db)
+        if not user:
+            await websocket.close(code=1008)
+            return
+        user_id = user.id
+    finally:
+        db.close()
+
     await manager.connect(websocket, user_id)
-    
+
     try:
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
-            
+
             # Handle different message types
             if message.get('type') == 'ping':
                 await websocket.send_json({'type': 'pong'})
-            
+
             elif message.get('type') == 'subscribe_console':
                 server_name = message.get('server_name')
                 if server_name:
+                    db = SessionLocal()
+                    try:
+                        allowed = user_can_access_server(user, server_name, "view", db)
+                    finally:
+                        db.close()
+                    if not allowed:
+                        await websocket.send_json({
+                            'type': 'error',
+                            'detail': f"No view access to server '{server_name}'"
+                        })
+                        continue
                     manager.subscribe_to_console(websocket, server_name)
                     await websocket.send_json({
                         'type': 'subscribed',
                         'server_name': server_name
                     })
-            
+
             elif message.get('type') == 'unsubscribe_console':
                 server_name = message.get('server_name')
                 if server_name:
                     manager.unsubscribe_from_console(websocket, server_name)
-    
+
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)
 
@@ -113,13 +145,17 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
 @router.websocket("/console/{server_name}")
 async def console_stream(websocket: WebSocket, server_name: str, token: str):
     """Stream console output for a specific server"""
-    
-    from auth import verify_token
-    user_id = verify_token(token)
-    if not user_id:
+
+    db = SessionLocal()
+    try:
+        user = _ws_user(token, db)
+        allowed = user is not None and user_can_access_server(user, server_name, "view", db)
+    finally:
+        db.close()
+    if not allowed:
         await websocket.close(code=1008)
         return
-    
+
     await websocket.accept()
     manager.subscribe_to_console(websocket, server_name)
     
@@ -138,7 +174,7 @@ async def console_stream(websocket: WebSocket, server_name: str, token: str):
 async def get_notifications(
     unread_only: bool = False,
     limit: int = 50,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get user notifications"""
@@ -169,7 +205,7 @@ async def get_notifications(
 @router.post("/notifications/{notification_id}/read")
 async def mark_notification_read(
     notification_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Mark notification as read"""
@@ -191,7 +227,7 @@ async def mark_notification_read(
 
 @router.post("/notifications/read-all")
 async def mark_all_read(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Mark all notifications as read"""

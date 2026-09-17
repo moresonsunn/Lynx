@@ -15,7 +15,7 @@ import re
 import logging
 from pathlib import Path
 
-from auth import get_current_user, require_moderator
+from auth import require_auth, require_moderator
 from database import get_db
 from integrations_store import get_integration_key as _store_key
 
@@ -1608,7 +1608,7 @@ async def download_thunderstore_mod(
 # =============================================================================
 
 @router.get("/sources/{game_slug}")
-async def get_mod_sources(game_slug: str, current_user=Depends(get_current_user)):
+async def get_mod_sources(game_slug: str, current_user=Depends(require_auth)):
     """Get available mod sources for a game"""
     sources = get_mod_source_for_game(game_slug)
     
@@ -1641,7 +1641,7 @@ async def get_mod_sources(game_slug: str, current_user=Depends(get_current_user)
     }
 
 @router.get("/sources-all")
-async def get_all_game_mod_sources(current_user=Depends(get_current_user)):
+async def get_all_game_mod_sources(current_user=Depends(require_auth)):
     """Get the unified mod sources registry for all games"""
     return {"games": GAME_MOD_SOURCES}
 
@@ -1650,7 +1650,7 @@ async def search_workshop_mods(
     appid: int = Query(..., description="Steam App ID"),
     q: str = Query("", description="Search query"),
     page: int = Query(1, ge=1),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Search Steam Workshop for mods"""
     results = await search_workshop(appid, q, page)
@@ -1659,7 +1659,7 @@ async def search_workshop_mods(
 @router.get("/workshop/item/{workshop_id}")
 async def get_workshop_item(
     workshop_id: str,
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Get details for a Steam Workshop item"""
     return await get_workshop_item_details(workshop_id)
@@ -1669,7 +1669,7 @@ async def search_thunderstore_mods(
     community: str = Query(..., description="Thunderstore community slug"),
     q: str = Query("", description="Search query"),
     page: int = Query(1, ge=1),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Search Thunderstore for mods"""
     results = await search_thunderstore(community, q, page)
@@ -1679,7 +1679,7 @@ async def search_thunderstore_mods(
 async def get_thunderstore_mod(
     namespace: str,
     name: str,
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Get details for a Thunderstore package"""
     # Determine community from request context or default
@@ -1869,7 +1869,7 @@ async def install_thunderstore_mod(
 async def list_installed_mods(
     server_id: str,
     game_slug: str = Query(...),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """List installed mods for a server"""
     # Determine mod path based on game - check all source registries
@@ -2303,7 +2303,7 @@ async def nexus_search_mods(
     game_slug: str = Query(..., description="Game slug like 'valheim', 'baldurs_gate_3'"),
     q: str = Query("", description="Search query"),
     page: int = Query(1, ge=1),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Search mods on Nexus Mods for a specific game"""
     if game_slug not in NEXUS_GAMES:
@@ -2325,7 +2325,7 @@ async def nexus_search_mods(
 async def nexus_get_mod(
     game_slug: str,
     mod_id: int,
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Get details for a Nexus Mods mod"""
     if game_slug not in NEXUS_GAMES:
@@ -2338,7 +2338,7 @@ async def nexus_get_mod(
 async def nexus_get_mod_files(
     game_slug: str,
     mod_id: int,
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Get files for a Nexus Mods mod"""
     if game_slug not in NEXUS_GAMES:
@@ -2398,7 +2398,7 @@ async def modio_search_mods(
     game_slug: str = Query(..., description="Game slug like 'squad', 'mordhau'"),
     q: str = Query("", description="Search query"),
     page: int = Query(1, ge=1),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Search mods on mod.io for a specific game"""
     if game_slug not in MODIO_GAMES:
@@ -2420,7 +2420,7 @@ async def modio_search_mods(
 async def modio_get_mod(
     game_slug: str,
     mod_id: int,
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Get details for a mod.io mod"""
     if game_slug not in MODIO_GAMES:
@@ -2463,7 +2463,7 @@ async def modio_install_mod(
 
 
 @router.get("/supported-games")
-async def get_supported_games(current_user=Depends(get_current_user)):
+async def get_supported_games(current_user=Depends(require_auth)):
     """Get list of games with mod support from all sources"""
     games = []
     seen_slugs = set()
@@ -2570,7 +2570,7 @@ async def install_bepinex(
 # ============================================================================
 
 @router.get("/curseforge/games")
-async def get_curseforge_games(current_user=Depends(get_current_user)):
+async def get_curseforge_games(current_user=Depends(require_auth)):
     """Get list of games supported on CurseForge"""
     games = []
     for slug, config in CURSEFORGE_GAMES.items():
@@ -2590,7 +2590,7 @@ async def curseforge_search_mods(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
     sort_field: int = Query(2, description="Sort field: 1=Featured, 2=Popularity, 3=LastUpdated, 4=Name, 5=Author, 6=TotalDownloads"),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Search mods on CurseForge for a specific game"""
     if game_slug not in CURSEFORGE_GAMES:
@@ -2616,7 +2616,7 @@ async def curseforge_search_mods(
 @router.get("/curseforge/mod/{mod_id}")
 async def curseforge_get_mod(
     mod_id: int,
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Get detailed information about a specific CurseForge mod"""
     mod = await get_curseforge_mod(mod_id)
@@ -2631,7 +2631,7 @@ async def curseforge_get_mod_files(
     game_version: str = Query(None, description="Filter by game version"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Get files available for a CurseForge mod"""
     files = await get_curseforge_mod_files(mod_id)
@@ -2702,7 +2702,7 @@ async def curseforge_install_mod(
 @router.get("/curseforge/categories/{game_slug}")
 async def curseforge_get_categories(
     game_slug: str,
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_auth)
 ):
     """Get mod categories for a CurseForge game"""
     if game_slug not in CURSEFORGE_GAMES:

@@ -9,7 +9,8 @@ from database import get_db
 from models import PlayerAction, User
 from auth import require_auth, require_moderator
 from runtime_adapter import get_runtime_manager_or_docker
-from config import SERVERS_ROOT
+from config import (SERVERS_ROOT, sanitize_player_names,
+                     online_from_log_lines, read_log_tail_lines)
 import os, json, re, gzip, datetime as _dt
 
 router = APIRouter(prefix="/players", tags=["player_management"])
@@ -121,24 +122,10 @@ def _docker_logs_online_fallback(server_name: str) -> tuple[list[str], str]:
         # But to avoid recursion, call the low-level log scan here.
         try:
             c = dm._get_container_any(cid)  # type: ignore[attr-defined]
-            log_output = c.logs(tail=400, timestamps=False).decode(errors="ignore")
+            log_output = c.logs(tail=800, timestamps=False).decode(errors="ignore")
             lines = log_output.splitlines()
-            online_set: dict[str, bool] = {}
-            joined_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
-            left_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out|lost connection)", re.IGNORECASE)
-            stop_re = re.compile(r"(Stopping the server|Stopping server|Server closed|Closing Server)", re.IGNORECASE)
-            for line in lines:
-                if stop_re.search(line):
-                    online_set.clear()
-                    continue
-                jm = joined_re.search(line)
-                if jm:
-                    online_set[jm.group(1)] = True
-                    continue
-                lm = left_re.search(line)
-                if lm:
-                    online_set.pop(lm.group(1), None)
-            names = _filter_client_players([n for n, v in online_set.items() if v])
+            names, _ = online_from_log_lines(lines)
+            names = _filter_client_players(names)
             if names:
                 return names, "docker_logs"
         except Exception as e:
@@ -304,8 +291,13 @@ def _collect_history(server_name: str, limit_files: int = 6, limit_lines: int = 
 
 
 def _filter_client_players(players: list[str]) -> list[str]:
-    """Filter out 'Client' entries from the player list."""
-    return [p for p in players if isinstance(p, str) and p.lower() not in ("client", "")]
+    """Validate + dedupe player names (drops 'Client', UUID garbage, dupes).
+
+    Delegates to config.sanitize_player_names — the single choke point so no
+    roster path can leak parser artifacts (e.g. UUID fragments) into the UI
+    or inflate the online count.
+    """
+    return sanitize_player_names(players)
 
 
 def _roster_online_from_disk(server_name: str) -> tuple[list[str], str]:
@@ -362,16 +354,30 @@ def _roster_online_from_disk(server_name: str) -> tuple[list[str], str]:
         except Exception as e:
             logger.debug(f"server.properties parse failed for {server_name}: {e}")
 
-    # 2) Join/leave tracking across recent logs (newest first)
-    joined_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
-    left_re = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out|lost connection)", re.IGNORECASE)
-    stop_re = re.compile(r"Stopping the server|Stopping server|Server closed|Closing Server", re.IGNORECASE)
-
-    candidates = []
+    # 2) Join/leave tracking. latest.log fully describes the current session,
+    # so it is scanned first; rotated logs are consulted only when latest.log
+    # is missing/empty, and a stop line ends the search (older files are
+    # previous sessions and must never resurrect as "online"). Tail reads keep
+    # huge logs cheap; online_from_log_lines() also sanitizes names.
     latest = base / "logs" / "latest.log"
-    if latest.exists():
-        candidates.append(latest)
+    try:
+        if latest.exists():
+            names, _ = online_from_log_lines(read_log_tail_lines(latest))
+            names = _filter_client_players(names)
+            if names:
+                return names, "log_parse"
+            # Non-empty latest.log with nobody online = fresh boot / all left.
+            # Only consult rotated logs when it is empty.
+            try:
+                if latest.stat().st_size > 0:
+                    return [], ""
+            except OSError:
+                pass
+    except Exception as e:
+        logger.debug(f"latest.log scan failed for {server_name}: {e}")
+
     logs_dir = base / "logs"
+    candidates = []
     if logs_dir.is_dir():
         try:
             candidates.extend(
@@ -380,40 +386,31 @@ def _roster_online_from_disk(server_name: str) -> tuple[list[str], str]:
             )
         except OSError:
             pass
-    candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+    try:
+        candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+    except Exception:
+        pass
 
-    online: dict[str, bool] = {}
     try:
         for p in candidates[:6]:
             try:
                 if p.suffix == ".gz":
                     import gzip
                     with gzip.open(p, "rt", encoding="utf-8", errors="ignore") as f:
-                        lines = f.readlines()
+                        lines = f.read().splitlines()
                 else:
-                    with open(p, "r", encoding="utf-8", errors="ignore") as f:
-                        lines = f.readlines()
+                    lines = read_log_tail_lines(p)
             except OSError:
                 continue
-            for line in reversed(lines):
-                if stop_re.search(line):
-                    online.clear()
-                    continue
-                jm = joined_re.search(line)
-                if jm:
-                    online[jm.group(1)] = True
-                    continue
-                lm = left_re.search(line)
-                if lm:
-                    online.pop(lm.group(1), None)
-            if online:
-                break  # newest log with activity wins
+            names, hit_stop = online_from_log_lines(lines)
+            names = _filter_client_players(names)
+            if names:
+                return names, "log_parse"
+            if hit_stop:
+                break  # older files are previous sessions — stop looking
     except Exception as e:
         logger.debug(f"log scan failed for {server_name}: {e}")
 
-    names = _filter_client_players([n for n, ok in online.items() if ok])
-    if names:
-        return names, "log_parse"
     # Filesystem logs empty -> try Docker container logs directly
     try:
         d_names, d_src = _docker_logs_online_fallback(server_name)
@@ -507,6 +504,12 @@ def get_roster(server_name: str, current_user: User = Depends(require_auth)):
             logger.warning(f"roster disk fallback failed for {server_name}: {e}")
             if probe_failed:
                 method = "mcstatus-failed"
+
+    # The badge must match the tiles: when names resolved, count IS the list
+    # length. A stale/inflated probe count with fewer names is exactly the
+    # "says 2 with 1 online" complaint. Empty list keeps the reported count.
+    if online_names:
+        count = len(online_names)
 
     # Offline history from usercache.json + rotated logs (works even when the
     # live query fails, e.g. RCON disabled and mcstatus unreachable).

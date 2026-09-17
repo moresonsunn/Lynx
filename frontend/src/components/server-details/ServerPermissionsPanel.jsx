@@ -17,12 +17,12 @@ export default function ServerPermissionsPanel({ serverName }) {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [selectedPerm, setSelectedPerm] = useState('manage');
+  const [selectedPerm, setSelectedPerm] = useState('view');
   const [search, setSearch] = useState('');
 
   async function loadPermissions() {
     try {
-      const r = await fetch(`${API}/api/permissions/servers/${encodeURIComponent(serverName)}`, {
+      const r = await fetch(`${API}/permissions/servers/${encodeURIComponent(serverName)}`, {
         headers: authHeaders(),
       });
       if (r.ok) {
@@ -52,7 +52,7 @@ export default function ServerPermissionsPanel({ serverName }) {
   async function grantPermission() {
     if (!selectedUserId) return;
     try {
-      await fetch(`${API}/api/permissions`, {
+      await fetch(`${API}/permissions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
@@ -70,7 +70,7 @@ export default function ServerPermissionsPanel({ serverName }) {
   async function revokePermission(permId) {
     if (!confirm('Remove this user\'s access to this server?')) return;
     try {
-      await fetch(`${API}/api/permissions/${permId}`, {
+      await fetch(`${API}/permissions/${permId}`, {
         method: 'DELETE',
         headers: authHeaders(),
       });

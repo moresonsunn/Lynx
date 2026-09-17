@@ -48,7 +48,11 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
         // tolerate object shapes ({name, uuid}) from older builds too.
         const toPlayer = (p) => (typeof p === 'string' ? { name: p } : { name: p && p.name, uuid: p && p.uuid });
         const toOffline = (o) => (typeof o === 'string' ? { name: o } : { name: o && o.name, last_seen: o && o.last_seen });
-        const isBad = (name) => !name || String(name).toLowerCase() === 'client' || String(name).trim() === '';
+        // Mirror of backend sanitize_player_names: UUID-looking fragments are
+        // parser garbage, never players (real names never look like that).
+        const isUuidish = (n) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(n)
+          || (/^[0-9a-fA-F-]{4,36}$/.test(n) && n.includes('-'));
+        const isBad = (name) => !name || String(name).toLowerCase() === 'client' || String(name).trim() === '' || isUuidish(String(name).trim());
         const rawPlayers = Array.isArray(d.players)
           ? d.players
           : (Array.isArray(d.online) ? d.online : []);

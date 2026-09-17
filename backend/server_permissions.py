@@ -18,7 +18,7 @@ from database import get_db
 from auth import require_auth, require_admin
 from models import User, ServerPermission
 
-router = APIRouter(prefix="/api/permissions", tags=["permissions"])
+router = APIRouter(prefix="/permissions", tags=["permissions"])
 
 PERMISSION_LEVELS = {"view": 0, "operate": 1, "manage": 2}
 
@@ -109,7 +109,7 @@ def require_server_permission(required: str = "view", param_name: str = "contain
 class GrantRequest(BaseModel):
     user_id: int
     server_name: str
-    permission: str = "manage"  # view | operate | manage
+    permission: str = "view"  # view | operate | manage (default least-privilege)
 
 
 class GrantResponse(BaseModel):

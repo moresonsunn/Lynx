@@ -42,13 +42,17 @@ const PlayersWidget = ({ serverName, serverId }) => {
       const data = await response.json();
 
       // Roster sends plain name strings; tolerate {name, uuid} objects too.
+      // UUID-looking fragments are parser garbage, never players.
+      const isUuidish = (n) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(n)
+        || (/^[0-9a-fA-F-]{4,36}$/.test(n) && n.includes('-'));
       const toPlayer = (p) => (typeof p === 'string' ? { name: p } : { name: p && p.name, uuid: p && p.uuid });
       const filtered = (Array.isArray(data.players) ? data.players : [])
         .map(toPlayer)
-        .filter(p => p.name && p.name.toLowerCase() !== 'client');
+        .filter(p => p.name && p.name.toLowerCase() !== 'client' && !isUuidish(String(p.name).trim()));
 
       setPlayers(filtered);
-      setOnline(typeof data.count === 'number' && data.count > 0 ? Math.max(data.count, filtered.length) : filtered.length);
+      // Badge must match the tiles: trust the resolved list, not a stale count.
+      setOnline(filtered.length > 0 ? filtered.length : (typeof data.count === 'number' ? data.count : 0));
       setMax(data.max || 0);
       setError(null);
     } catch (err) {

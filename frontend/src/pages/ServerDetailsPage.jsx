@@ -4,6 +4,7 @@ import { useTranslation } from '../i18n';
 import { useServerById, useServerStats, useServerInfo, useGlobalActions } from '../context/GlobalDataContext';
 import { API, authHeaders } from '../context/AppContext';
 import { useFetch } from '../lib/useFetch';
+import { useServerAccess } from '../hooks/useServerAccess';
 import {
   FaServer,
   FaPlay,
@@ -389,6 +390,7 @@ export default function ServerDetailsPage() {
   const actions = useGlobalActions();
 
   const server = useServerById(serverId);
+  const access = useServerAccess(server?.name);
 
   const [activeTab, setActiveTab] = useState(urlTab);
   const [filesEditing, setFilesEditing] = useState(false);
@@ -616,9 +618,9 @@ export default function ServerDetailsPage() {
               </div>
             </div>
 
-            {/* Action buttons */}
+            {/* Action buttons (gated by server grant level; backend enforces with 403) */}
             <div className="flex items-center gap-2">
-              {isRunning ? (
+              {access.canOperate && (isRunning ? (
                 <>
                   <button
                     onClick={() => handleAction('restart')}
@@ -646,7 +648,8 @@ export default function ServerDetailsPage() {
                   <FaPlay />
                   {t('servers.start')}
                 </button>
-              )}
+              ))}
+              {access.canManage && (
               <button
                 onClick={() => setShowDeleteModal(true)}
                 disabled={!!actionLoading}
@@ -654,7 +657,9 @@ export default function ServerDetailsPage() {
               >
                 <FaTrash />
               </button>
+              )}
               {/* Settings gear icon */}
+              {access.canManage && (
               <button
                 onClick={() => setShowSettingsModal(true)}
                 className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
@@ -662,6 +667,7 @@ export default function ServerDetailsPage() {
               >
                 <FaCog className="text-lg" />
               </button>
+              )}
             </div>
           </div>
 
@@ -710,8 +716,10 @@ export default function ServerDetailsPage() {
           const tasks = Array.isArray(schedulesData) ? schedulesData : schedulesData?.tasks || [];
           // playerData.online is the string[] from roster; tolerate future object shapes
           const toName = (p) => (typeof p === 'string' ? p : (p && p.name) || '');
+          const isUuidish = (n) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(n)
+            || (/^[0-9a-fA-F-]{4,36}$/.test(n) && n.includes('-'));
           const rawOnline = Array.isArray(playerData?.online) ? playerData.online : (Array.isArray(playerData?.players) ? playerData.players : []);
-          const onlinePlayers = rawOnline.map(toName).filter(name => name && name.toLowerCase() !== 'client' && name.trim() !== '');
+          const onlinePlayers = rawOnline.map(toName).filter(name => name && name.toLowerCase() !== 'client' && name.trim() !== '' && !isUuidish(name.trim()));
           const onlineCount = typeof playerData?.count === 'number' ? playerData.count : onlinePlayers.length;
           const maxPlayers = playerData?.max || 0;
           const connectPort = server.host_port || typeVersionData?.host_port;
@@ -1163,6 +1171,7 @@ export default function ServerDetailsPage() {
             <TerminalPanel
               serverId={server.id}
               resetToken={logReset}
+              canSend={access.canOperate}
             />
           </div>
         )}
@@ -1274,7 +1283,13 @@ export default function ServerDetailsPage() {
         )}
 
         {activeTab === 'permissions' && (
-          <ServerPermissionsPanel serverName={server.name} />
+          access.canManage ? (
+            <ServerPermissionsPanel serverName={server.name} />
+          ) : (
+            <div className="text-center py-8 text-white/30">
+              <p className="text-sm">Managing server access requires the Manage permission.</p>
+            </div>
+          )
         )}
       </div>
 

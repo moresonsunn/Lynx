@@ -6,7 +6,7 @@ import { authHeaders } from '../context/AppContext';
 import { loadMuteConfig, saveMuteConfig, defaultMuteRegexes, defaultMutePatterns } from '../lib/consoleFilters';
 import { ansiToHtml } from '../lib/ansiToHtml';
 
-export default function TerminalPanel({ containerId, serverId, resetToken = 0 }) {
+export default function TerminalPanel({ containerId, serverId, resetToken = 0, canSend = true }) {
   const { t } = useTranslation();
   const container = containerId || serverId;
   const [cmd, setCmd] = useState('');
@@ -120,6 +120,7 @@ export default function TerminalPanel({ containerId, serverId, resetToken = 0 })
   }, [filteredLogs]);
 
   function send() {
+    if (!canSend) return;
     if (!cmd.trim()) return;
     fetch(`${API}/servers/${container}/command`, {
       method: 'POST',
@@ -184,12 +185,14 @@ export default function TerminalPanel({ containerId, serverId, resetToken = 0 })
           value={cmd}
           onChange={(e) => setCmd(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && send()}
-          className="flex-1 rounded-md bg-white/5 border border-white/10 px-4 py-3 text-base"
-          placeholder={t('console.commandPlaceholder')}
+          disabled={!canSend}
+          className="flex-1 rounded-md bg-white/5 border border-white/10 px-4 py-3 text-base disabled:opacity-40"
+          placeholder={canSend ? t('console.commandPlaceholder') : 'View-only access — console commands disabled'}
         />
         <button
           onClick={send}
-          className="inline-flex items-center gap-2 rounded-md bg-brand-500 hover:bg-brand-400 px-4 py-3 font-semibold text-base"
+          disabled={!canSend}
+          className="inline-flex items-center gap-2 rounded-md bg-brand-500 hover:bg-brand-400 px-4 py-3 font-semibold text-base disabled:opacity-40"
         >
           <FaTerminal /> Send
         </button>

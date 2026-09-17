@@ -1197,7 +1197,11 @@ def configs_list(name: str, current_user: User = Depends(require_server_permissi
         found = ["server.properties", "bukkit.yml", "spigot.yml"]
     return {"configs": sorted(set(found))}
 @app.get("/api/servers/{name}/config-bundle")
-def get_server_config_bundle(name: str, container_id: str | None = Query(None)):
+def get_server_config_bundle(
+    name: str,
+    container_id: str | None = Query(None),
+    current_user: User = Depends(require_server_permission("view", param_name="name")),
+):
     """Return a bundle of server.properties (parsed) and EULA state.
     This reduces multiple round-trips for the Config panel.
     """

@@ -83,6 +83,127 @@ _NEOFORGE_MC_MAP = {
 _MISSING = (None, "", "unknown", "custom")
 
 
+# ---------------------------------------------------------------------------
+# Player-name sanitizing + log online-state tracking.
+#
+# Bug history: the Players panel intermittently listed UUID-looking fragments
+# (e.g. "514-d378f0c0d4ab") as online players and inflated the count ("2"
+# with 1 human online). Real Java usernames never contain '-'; Bedrock names
+# are free-form but essentially never all-hex-with-dashes, so anything shaped
+# like a UUID (full or fragment) is parser garbage, never a player.
+# ---------------------------------------------------------------------------
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
+_UUID_FULL_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+_UUID_FRAG_RE = re.compile(r"^(?=.*-)[0-9a-fA-F-]{4,36}$")
+
+_JOINED_RE = re.compile(r"([A-Za-z0-9_\-]{2,16}) (joined the game|logged in)", re.IGNORECASE)
+_LEFT_RE = re.compile(r"([A-Za-z0-9_\-]{2,16}) (left the game|logged out|lost connection)", re.IGNORECASE)
+_STOP_RE = re.compile(r"Stopping the server|Stopping server|Server closed|Closing Server", re.IGNORECASE)
+
+
+def is_plausible_player_name(name) -> bool:
+    """True for anything that could be a real player name."""
+    if not isinstance(name, str):
+        return False
+    name = name.strip()
+    if not name or len(name) > 32:
+        return False
+    if name.lower() == "client":
+        return False
+    if _UUID_FULL_RE.match(name) or _UUID_FRAG_RE.match(name):
+        return False
+    return True
+
+
+def sanitize_player_names(names) -> list:
+    """Validate + case-insensitive dedupe, preserving first-seen order/casing.
+
+    Single choke point for every roster path (live probes, RCON parses,
+    log scans, disk fallbacks) so parser garbage can never reach the UI.
+    """
+    out: list = []
+    seen = set()
+    try:
+        iterable = list(names or [])
+    except TypeError:
+        return out
+    for entry in iterable:
+        if not isinstance(entry, str):
+            continue
+        name = entry.strip()
+        key = name.lower()
+        if not name or key in seen:
+            continue
+        if not is_plausible_player_name(name):
+            _logger.debug(f"roster: dropping implausible player entry {name!r}")
+            continue
+        seen.add(key)
+        out.append(name)
+    return out
+
+
+def read_log_tail_lines(path, max_bytes: int = 2 * 1024 * 1024) -> list:
+    """Read the tail of a (potentially huge) log file, oldest-first.
+
+    latest.log can exceed 50MB on busy servers; read_text() on every 3s
+    roster poll stalled the worker. 2MB covers many hours of log output.
+    """
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - max_bytes))
+            chunk = f.read().decode("utf-8", errors="ignore")
+        lines = chunk.splitlines()
+        if size > max_bytes and lines:
+            lines = lines[1:]  # drop partial first line
+        return lines
+    except Exception:
+        return []
+
+
+def online_from_log_lines(lines, max_scan: int = 30000) -> tuple:
+    """Derive currently-online players from log lines.
+
+    Scans NEWEST-first with a settled set: the first (i.e. most recent)
+    event per player decides — join → online, leave → offline. A stop line
+    ends the current session, so anything older (previous sessions, rotated
+    logs) is ignored instead of being resurrected as online (the old
+    forward-scan + clear() re-added stale joins after clearing).
+
+    Returns (names_in_first_seen_order, hit_stop).
+    """
+    online: dict = {}
+    settled = set()
+    hit_stop = False
+    try:
+        total = len(lines)
+        start = max(0, total - max_scan)
+        for line in reversed(lines[start:]):
+            if _STOP_RE.search(line):
+                hit_stop = True
+                break
+            lm = _LEFT_RE.search(line)
+            if lm:
+                settled.add(lm.group(1).lower())
+                online.pop(lm.group(1).lower(), None)
+                continue
+            jm = _JOINED_RE.search(line)
+            if jm:
+                key = jm.group(1).lower()
+                if key not in settled:
+                    online[key] = jm.group(1)
+                    settled.add(key)
+    except Exception:
+        pass
+    return sanitize_player_names(list(online.values())), hit_stop
+
+
 def _detect_from_jars(server_dir: Path) -> dict:
     """Detect type/version/loader from server jar filenames (no logs needed)."""
     out: dict = {}

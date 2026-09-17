@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from database import get_db
 from auth import require_auth, require_moderator
+from server_permissions import require_server_permission
 from models import User
 from file_manager import upload_file as fm_upload_file, delete_path as fm_delete_path
 from runtime_adapter import get_runtime_manager_or_docker
@@ -53,7 +54,7 @@ async def list_plugins(
 async def upload_plugin(
     server_name: str,
     file: UploadFile = File(...),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(require_server_permission("manage")),
 ):
     """Upload a plugin JAR into the plugins directory."""
     if file is None or not getattr(file, "filename", None):
@@ -158,7 +159,7 @@ class PluginInstallRequest(BaseModel):
 async def install_plugin(
     server_name: str,
     payload: PluginInstallRequest,
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(require_server_permission("manage")),
 ):
     """Install a plugin by downloading from URL."""
     # Validate server exists

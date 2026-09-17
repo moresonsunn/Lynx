@@ -9,6 +9,7 @@ from typing import List
 
 from database import get_db
 from auth import require_auth, require_moderator
+from server_permissions import require_server_permission
 from models import User
 from config import get_server_dir
 
@@ -69,7 +70,7 @@ def list_worlds(
 async def download_world(
     server_name: str,
     world: str = Query("world"),
-    current_user: User = Depends(require_auth)
+    current_user: User = Depends(require_server_permission("view"))
 ):
     server_dir = get_server_dir(server_name)
     world_dir = (server_dir / world).resolve()
@@ -88,7 +89,7 @@ async def upload_world(
     server_name: str,
     file: UploadFile = File(...),
     world_name: str = Query("world"),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(require_server_permission("manage")),
 ):
     if file is None or not getattr(file, "filename", None):
         raise HTTPException(status_code=400, detail="No file provided")
