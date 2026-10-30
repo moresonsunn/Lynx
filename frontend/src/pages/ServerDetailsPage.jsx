@@ -5,6 +5,8 @@ import { useServerById, useServerStats, useServerInfo, useGlobalActions } from '
 import { API, authHeaders } from '../context/AppContext';
 import { useFetch } from '../lib/useFetch';
 import { useServerAccess } from '../hooks/useServerAccess';
+import { defaultMuteRegexes } from '../lib/consoleFilters';
+import { ansiToHtml } from '../lib/ansiToHtml';
 import {
   FaServer,
   FaPlay,
@@ -32,8 +34,11 @@ import {
   FaMicrochip,
   FaChartArea,
   FaUserShield,
+  FaChevronDown,
+  FaExpandAlt,
+  FaPause,
+  FaSlidersH,
 } from 'react-icons/fa';
-
 
 import TerminalPanel from '../components/TerminalPanel';
 import BackupsPanel from '../components/server-details/BackupsPanel';
@@ -54,7 +59,6 @@ import ServerPermissionsPanel from '../components/server-details/ServerPermissio
 import ConfirmModal from '../components/ConfirmModal';
 import RamSlider from '../components/RamSlider';
 import CpuSlider from '../components/CpuSlider';
-
 
 function formatUptime(seconds) {
   if (!seconds || seconds < 0) return '0s';
@@ -93,12 +97,145 @@ function formatDate(dateStr) {
   }
 }
 
-function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTabChange, onClose }) {
-  const { t } = useTranslation();
+/**
+ * Read-only Live Console Feed for the Server Overview tab.
+ * Polls recent logs and renders colored output without command execution.
+ */
+function LiveConsolePreview({ serverId, isRunning, resetToken = 0, onOpenConsole }) {
+  const [rawLogs, setRawLogs] = useState('');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (!serverId) return;
+    let active = true;
+    let timer = null;
+    let ctrl = null;
+
+    async function pollLogs() {
+      if (!active) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(pollLogs, 3500);
+        return;
+      }
+      try {
+        ctrl = new AbortController();
+        const timeout = setTimeout(() => { try { ctrl.abort(); } catch {} }, 10000);
+        const r = await fetch(`${API}/servers/${serverId}/logs?tail=80`, {
+          headers: authHeaders(),
+          signal: ctrl.signal,
+        });
+        clearTimeout(timeout);
+        const d = await r.json();
+        if (active && d && typeof d.logs === 'string') {
+          setRawLogs(d.logs);
+        }
+      } catch (e) {
+        if (active && e && e.name !== 'AbortError') {
+          // keep previous logs on transient error
+        }
+      } finally {
+        if (active) timer = setTimeout(pollLogs, 3000);
+      }
+    }
+
+    pollLogs();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      try { ctrl && ctrl.abort(); } catch {}
+    };
+  }, [serverId, resetToken]);
+
+  const filteredLogs = useMemo(() => {
+    if (!rawLogs) return '';
+    const lines = rawLogs.split(/\r?\n/);
+    const kept = lines.filter(line => !defaultMuteRegexes.some(rx => rx.test(line)));
+    return kept.slice(-60).join('\n');
+  }, [rawLogs]);
+
+  const renderedHtml = useMemo(() => {
+    if (!filteredLogs) return '';
+    return ansiToHtml(filteredLogs);
+  }, [filteredLogs]);
+
+  const lineCount = useMemo(() => {
+    if (!filteredLogs) return 0;
+    return filteredLogs.split('\n').filter(Boolean).length;
+  }, [filteredLogs]);
+
+  useEffect(() => {
+    if (autoScroll && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [filteredLogs, autoScroll]);
+
+  return (
+    <div className="glassmorphism rounded-xl p-5 border border-white/10">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-brand-500/15 border border-brand-500/30 flex items-center justify-center text-brand-400">
+            <FaTerminal className="text-xs" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold text-white uppercase tracking-wider">
+                Live Console Activity
+              </h3>
+              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                isRunning
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-white/10 text-white/50'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-white/40'}`} />
+                {isRunning ? 'Live Stream' : 'Offline'}
+              </span>
+              <span className="hidden sm:inline text-[11px] text-white/35">
+                Read-only preview ({lineCount} lines)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAutoScroll(v => !v)}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors border ${
+              autoScroll
+                ? 'bg-white/10 text-white border-white/15'
+                : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+            }`}
+            title={autoScroll ? 'Pause auto-scroll' : 'Resume auto-scroll'}
+          >
+            <FaPause className="text-[10px]" />
+            <span className="hidden sm:inline">{autoScroll ? 'Auto-Scroll' : 'Paused'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenConsole}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 border border-brand-500/30 flex items-center gap-1.5 transition-colors"
+          >
+            <FaExpandAlt className="text-[10px]" />
+            <span>Open Console →</span>
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="text-xs text-white/75 whitespace-pre-wrap bg-black/50 border border-white/10 p-3.5 rounded-lg h-52 overflow-y-auto font-mono leading-relaxed select-text"
+        dangerouslySetInnerHTML={{
+          __html: renderedHtml || '<span class="text-white/35">Waiting for console output...</span>',
+        }}
+      />
+    </div>
+  );
+}
+
+function SettingsModalContent({ server, serverId, typeVersionData, isSteam }) {
   const serverType = (typeVersionData?.server_type || server?.type || '').toLowerCase();
-  const isModdedServer = ['fabric', 'forge', 'neoforge'].includes(serverType);
-  const isPluginServer = ['paper', 'purpur', 'spigot', 'bukkit'].includes(serverType);
-  const isHybridServer = ['mohist', 'magma', 'banner', 'catserver', 'spongeforge'].includes(serverType);
 
   const [ramMax, setRamMax] = useState('4G');
   const [ramMin, setRamMin] = useState('2G');
@@ -258,125 +395,45 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onTa
           )}
         </div>
       )}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Server Info */}
-        <div className="glassmorphism rounded-xl p-4">
-          <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <FaInfoCircle className="text-blue-400" />
-            Server Info
-          </h4>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-white/50">Type</span>
-              <span className="text-white font-medium">{isSteam ? `Steam · ${server.steam_game || server.type}` : serverType}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-white/50">Version</span>
-              <span className="text-white font-medium">{typeVersionData?.server_version || server.version || 'Unknown'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-white/50">Status</span>
-              <span className={`flex items-center gap-2 ${server.status === 'running' ? 'text-green-300' : 'text-yellow-300'}`}>
-                <span className={`w-2 h-2 rounded-full ${server.status === 'running' ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
-                {server.status}
-              </span>
-            </div>
-            {server.host_port && (
-              <div className="flex justify-between">
-                <span className="text-white/50">Port</span>
-                <span className="text-white font-mono">{server.host_port}</span>
-              </div>
-            )}
-            {typeVersionData?.java_version && (
-              <div className="flex justify-between">
-                <span className="text-white/50">Java</span>
-                <span className="text-white font-medium">Java {typeVersionData.java_version}</span>
-              </div>
-            )}
-            {typeVersionData?.loader_version && (
-              <div className="flex justify-between">
-                <span className="text-white/50">Loader</span>
-                <span className="text-white font-medium">{typeVersionData.loader_version}</span>
-              </div>
-            )}
+      <div className="glassmorphism rounded-xl p-4">
+        <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <FaInfoCircle className="text-blue-400" />
+          Runtime & Container Info
+        </h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-white/50">Type</span>
+            <span className="text-white font-medium">{isSteam ? `Steam · ${server.steam_game || server.type}` : (serverType || 'Minecraft')}</span>
           </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="glassmorphism rounded-xl p-4">
-          <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <FaCog className="text-brand-400" />
-            Quick Actions
-          </h4>
-          <div className="space-y-2">
-            <button
-              onClick={() => { onTabChange('files'); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-            >
-              <FaFolder className="text-white/40" />
-              <span>File Manager</span>
-            </button>
-            <button
-              onClick={() => { onTabChange('config'); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-            >
-              <FaCog className="text-white/40" />
-              <span>Configuration</span>
-            </button>
-            <button
-              onClick={() => { onTabChange('backup'); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-            >
-              <FaDownload className="text-white/40" />
-              <span>Backups</span>
-            </button>
-            <button
-              onClick={() => { onTabChange('schedule'); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-            >
-              <FaClock className="text-white/40" />
-              <span>Scheduled Tasks</span>
-            </button>
-            {(isModdedServer || isHybridServer) && (
-              <button
-                onClick={() => { onTabChange('mods'); onClose(); }}
-                className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              >
-                <FaCube className="text-white/40" />
-                <span>Mods</span>
-              </button>
-            )}
-            {(isPluginServer || isHybridServer) && (
-              <button
-                onClick={() => { onTabChange('plugins'); onClose(); }}
-                className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              >
-                <FaPlug className="text-white/40" />
-                <span>Plugins</span>
-              </button>
-            )}
-            <button
-              onClick={() => { onTabChange('players'); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-            >
-              <FaUsers className="text-white/40" />
-              <span>Players</span>
-            </button>
-            <button
-              onClick={() => { onTabChange('worlds'); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-            >
-              <FaHdd className="text-white/40" />
-              <span>Worlds</span>
-            </button>
-            <button
-              onClick={() => { onTabChange('graphs'); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-left text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-            >
-              <FaChartArea className="text-white/40" />
-              <span>Resource Graphs</span>
-            </button>
+          <div className="flex justify-between">
+            <span className="text-white/50">Version</span>
+            <span className="text-white font-medium">{typeVersionData?.server_version || server.version || 'Unknown'}</span>
           </div>
+          <div className="flex justify-between">
+            <span className="text-white/50">Status</span>
+            <span className={`flex items-center gap-2 ${server.status === 'running' ? 'text-green-300' : 'text-yellow-300'}`}>
+              <span className={`w-2 h-2 rounded-full ${server.status === 'running' ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
+              {server.status}
+            </span>
+          </div>
+          {server.host_port && (
+            <div className="flex justify-between">
+              <span className="text-white/50">Port</span>
+              <span className="text-white font-mono">{server.host_port}</span>
+            </div>
+          )}
+          {typeVersionData?.java_version && (
+            <div className="flex justify-between">
+              <span className="text-white/50">Java</span>
+              <span className="text-white font-medium">Java {typeVersionData.java_version}</span>
+            </div>
+          )}
+          {typeVersionData?.loader_version && (
+            <div className="flex justify-between">
+              <span className="text-white/50">Loader</span>
+              <span className="text-white font-medium">{typeVersionData.loader_version}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -403,17 +460,30 @@ export default function ServerDetailsPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef(null);
 
   const stats = useServerStats(serverId);
-
 
   useEffect(() => {
     setActiveTab(urlTab);
   }, [urlTab]);
 
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) {
+        setMoreMenuOpen(false);
+      }
+    }
+    if (moreMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [moreMenuOpen]);
 
   const handleTabChange = useCallback((newTab) => {
     setActiveTab(newTab);
+    setMoreMenuOpen(false);
     navigate(`/servers/${serverId}/${newTab}`, { replace: true });
   }, [navigate, serverId]);
 
@@ -427,7 +497,6 @@ export default function ServerDetailsPage() {
       .join(' ');
   }, []);
 
-
   const preloadedInfo = useServerInfo(serverId);
   const { data: fetchedInfo } = useFetch(
     !preloadedInfo && serverId ? `${API}/servers/${serverId}/info` : null,
@@ -437,7 +506,6 @@ export default function ServerDetailsPage() {
   const runtimeKind = (typeVersionData?.server_kind || server?.server_kind || '').toLowerCase();
   const isSteam = runtimeKind === 'steam';
 
-  // Additional data for overview — lazy / cached to avoid 4× parallel blocking on mount
   const overviewActive = activeTab === 'overview';
   const { data: playerData } = useFetch(
     overviewActive && server?.name ? `${API}/players/${server.name}/roster` : null,
@@ -456,48 +524,101 @@ export default function ServerDetailsPage() {
     [server?.name, overviewActive]
   );
 
-
-  const tabs = useMemo(() => {
+  // Build Primary Tabs + Categorized Secondary ("Tools & More") Tabs
+  const { primaryTabs, secondaryGroups, allTabs } = useMemo(() => {
     const serverType = (typeVersionData?.server_type || server?.type || '').toLowerCase();
-    const isModdedServer = ['fabric', 'forge', 'neoforge'].includes(serverType);
+    const isModdedServer = ['fabric', 'forge', 'neoforge', 'quilt'].includes(serverType);
     const isPluginServer = ['paper', 'purpur', 'spigot', 'bukkit'].includes(serverType);
-    // Hybrid servers support BOTH mods and plugins
     const isHybridServer = ['mohist', 'magma', 'banner', 'catserver', 'spongeforge'].includes(serverType);
 
-    const base = [
-      { id: 'overview', label: t('tabs.overview'), icon: FaServer },
+    if (isSteam) {
+      const pTabs = [
+        { id: 'overview', label: t('tabs.overview') || 'Overview', icon: FaServer },
+        { id: 'console', label: t('tabs.console') || 'Console', icon: FaTerminal },
+        { id: 'files', label: t('tabs.files') || 'Files', icon: FaFolder },
+        { id: 'settings', label: 'Game Settings', icon: FaCog },
+        { id: 'mods', label: 'Workshop / Mods', icon: FaCube },
+      ];
+      const sGroups = [
+        {
+          title: 'Automation & Backups',
+          items: [
+            { id: 'backup', label: 'Backups', icon: FaDownload, desc: 'Snapshots & restore points' },
+            { id: 'schedule', label: 'Scheduled Tasks', icon: FaClock, desc: 'Automated restarts & jobs' },
+          ],
+        },
+        {
+          title: 'Monitoring & Access',
+          items: [
+            { id: 'graphs', label: 'Resource Graphs', icon: FaChartArea, desc: 'CPU, RAM & network history' },
+            ...(access.canManage ? [{ id: 'permissions', label: 'Server Access', icon: FaUserShield, desc: 'Per-user server permissions' }] : []),
+          ],
+        },
+      ];
+      const flat = [...pTabs, ...sGroups.flatMap(g => g.items)];
+      return { primaryTabs: pTabs, secondaryGroups: sGroups, allTabs: flat };
+    }
+
+    const pTabs = [
+      { id: 'overview', label: t('tabs.overview') || 'Overview', icon: FaServer },
       { id: 'console', label: t('tabs.console') || 'Console', icon: FaTerminal },
-      { id: 'files', label: t('tabs.files'), icon: FaFolder },
-      { id: 'config', label: t('tabs.config'), icon: FaCog },
+      { id: 'players', label: 'Players', icon: FaUsers },
+      { id: 'files', label: t('tabs.files') || 'Files', icon: FaFolder },
+      { id: 'config', label: t('tabs.config') || 'Config', icon: FaCog },
     ];
 
-    // Add Mods tab for Fabric/Forge/NeoForge
+    const contentItems = [];
     if (isModdedServer || isHybridServer) {
-      base.push({ id: 'mods', label: 'Mods', icon: FaCube });
-      base.push({ id: 'mod-manager', label: 'Mod Manager', icon: FaPuzzlePiece });
-      base.push({ id: 'client-mod-filter', label: 'Client Mod Filter', icon: FaShieldAlt });
+      contentItems.push(
+        { id: 'mods', label: 'Installed Mods', icon: FaCube, desc: 'View & toggle server mods' },
+        { id: 'mod-manager', label: 'Mod Browser', icon: FaPuzzlePiece, desc: 'Install from Modrinth / CurseForge' },
+        { id: 'client-mod-filter', label: 'Client Mod Filter', icon: FaShieldAlt, desc: 'Auto-filter client-only mods' },
+      );
+    } else {
+      // Allow Client Mod Filter & Mod Manager on any Minecraft server (e.g. modpack imports)
+      contentItems.push(
+        { id: 'mods', label: 'Mods', icon: FaCube, desc: 'Manage server mods folder' },
+        { id: 'client-mod-filter', label: 'Client Mod Filter', icon: FaShieldAlt, desc: 'Scan & remove client-only mods' },
+      );
     }
 
-    // Add Plugins tab for Paper/Purpur/Spigot and hybrid servers
     if (isPluginServer || isHybridServer) {
-      base.push({ id: 'plugins', label: 'Plugins', icon: FaPlug });
+      contentItems.push(
+        { id: 'plugins', label: 'Plugins', icon: FaPlug, desc: 'Manage Bukkit/Paper plugins' },
+      );
     }
 
-    if (isSteam) {
-      const allowed = new Set(['overview', 'console', 'files', 'mods', 'backup', 'schedule', 'graphs', 'permissions', 'settings']);
-      const steamBase = base.filter(tab => allowed.has(tab.id));
-      const filesIdx = steamBase.findIndex(t => t.id === 'files');
-      if (filesIdx !== -1) {
-        steamBase.splice(filesIdx + 1, 0, { id: 'settings', label: 'Settings', icon: FaCog });
-        if (!steamBase.find(t => t.id === 'mods')) {
-          steamBase.splice(filesIdx + 2, 0, { id: 'mods', label: 'Mods', icon: FaCube });
-        }
-      }
-      return steamBase;
-    }
-    return base;
-  }, [isSteam, t, typeVersionData, server]);
+    const sGroups = [
+      {
+        title: 'World & Automation',
+        items: [
+          { id: 'worlds', label: 'Worlds', icon: FaHdd, desc: 'Manage worlds, seeds & uploads' },
+          { id: 'backup', label: 'Backups', icon: FaDownload, desc: 'Create & restore backups' },
+          { id: 'schedule', label: 'Scheduled Tasks', icon: FaCalendarAlt, desc: 'Cron jobs & auto-restarts' },
+        ],
+      },
+      {
+        title: 'Mods & Extensions',
+        items: contentItems,
+      },
+      {
+        title: 'Analytics & Security',
+        items: [
+          { id: 'graphs', label: 'Resource Graphs', icon: FaChartArea, desc: 'Live & historical metrics' },
+          ...(access.canManage ? [{ id: 'permissions', label: 'Server Access', icon: FaUserShield, desc: 'Grant user roles on this server' }] : []),
+        ],
+      },
+    ].filter(g => g.items.length > 0);
 
+    const flat = [...pTabs, ...sGroups.flatMap(g => g.items)];
+    return { primaryTabs: pTabs, secondaryGroups: sGroups, allTabs: flat };
+  }, [isSteam, t, typeVersionData, server, access.canManage]);
+
+  const activeSecondaryTab = useMemo(() => {
+    const isPrimary = primaryTabs.some(pt => pt.id === activeTab);
+    if (isPrimary) return null;
+    return allTabs.find(tItem => tItem.id === activeTab) || null;
+  }, [primaryTabs, allTabs, activeTab]);
 
   const handleAction = useCallback(async (action) => {
     if (!serverId || actionLoading) return;
@@ -558,14 +679,12 @@ export default function ServerDetailsPage() {
   const handleEditStart = useCallback((filePath, content) => {
     setEditPath(filePath);
     setEditContent(content);
-    // Remember the directory this file is in so we restore it after editing
     const parts = filePath.split('/');
     parts.pop();
     setFilesPath(parts.length ? parts.join('/') : '.');
     setIsEditing(true);
     setFilesEditing(true);
   }, []);
-
 
   if (!server) {
     return (
@@ -596,129 +715,212 @@ export default function ServerDetailsPage() {
   }
 
   const isRunning = server.status === 'running';
+  const rawType = typeVersionData?.server_type || server.type;
   const displayType = isSteam
     ? `Steam · ${prettify(typeVersionData?.steam_game || server?.steam_game || server?.type || 'Dedicated')}`
-    : prettify(typeVersionData?.server_type || server.type || 'Minecraft');
-  const displayVersion = typeVersionData?.server_version || server.version || 'Unknown';
+    : (rawType && rawType.toLowerCase() !== 'unknown' ? prettify(rawType) : 'Minecraft');
+  const rawVersion = typeVersionData?.server_version || server.version;
+  const displayVersion = rawVersion && rawVersion.toLowerCase() !== 'unknown' ? rawVersion : 'Dedicated Server';
 
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <div className="border-b border-white/10 bg-ink/80 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4">
+      <div className="border-b border-white/10 bg-ink/80 backdrop-blur relative z-30">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4">
           <button
             onClick={() => navigate('/servers')}
-            className="flex items-center gap-2 text-white/60 hover:text-white text-sm mb-4"
+            className="flex items-center gap-2 text-white/60 hover:text-white text-sm mb-3 transition-colors"
           >
-            <FaArrowLeft /> {t('servers.backToServers')}
+            <FaArrowLeft className="text-xs" /> {t('servers.backToServers')}
           </button>
 
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-brand-500/90 ring-4 ring-brand-500/20 flex items-center justify-center text-2xl text-white">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-500 to-indigo-600 ring-4 ring-brand-500/20 flex items-center justify-center text-xl text-white flex-shrink-0 shadow-lg">
                 <FaServer />
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">{server.name}</h1>
-                <div className="flex items-center gap-3 text-sm text-white/60 mt-1">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl font-bold text-white truncate">{server.name}</h1>
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    isRunning
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                    {server.status}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5 text-xs sm:text-sm text-white/60 mt-1 flex-wrap">
                   <span>{displayType}</span>
                   <span>•</span>
                   <span>{displayVersion}</span>
-                  <span className={`px-2 py-0.5 rounded text-xs ${isRunning ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'
-                    }`}>
-                    {server.status}
-                  </span>
+                  {stats && !stats.error && isRunning && (
+                    <>
+                      <span className="hidden sm:inline">•</span>
+                      <span className="text-white/75 font-mono text-xs">
+                        CPU {Math.min(Math.round(stats.cpu_percent), 100)}%
+                      </span>
+                      <span className="text-white/75 font-mono text-xs">
+                        RAM {Math.round(stats.memory_usage_mb)}/{Math.round(stats.memory_limit_mb)} MB
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Action buttons (power needs operate grant; edit/manage gated; backend 403s) */}
-            <div className="flex items-center gap-2">
+            {/* Action buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
               {access.canOperate && (isRunning ? (
                 <>
                   <button
                     onClick={() => handleAction('restart')}
                     disabled={!!actionLoading}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded flex items-center gap-2 disabled:opacity-50"
+                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
                   >
                     <FaSync className={actionLoading === 'restart' ? 'animate-spin' : ''} />
-                    {t('servers.restart')}
+                    <span>{t('servers.restart')}</span>
                   </button>
                   <button
                     onClick={() => handleAction('stop')}
                     disabled={!!actionLoading}
-                    className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded flex items-center gap-2 disabled:opacity-50"
+                    className="px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
                   >
                     <FaStop />
-                    {t('servers.stop')}
+                    <span>{t('servers.stop')}</span>
                   </button>
                 </>
               ) : (
                 <button
                   onClick={() => handleAction('start')}
                   disabled={!!actionLoading}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded flex items-center gap-2 disabled:opacity-50"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
                 >
                   <FaPlay />
-                  {t('servers.start')}
+                  <span>{t('servers.start')}</span>
                 </button>
               ))}
               {access.canManage && (
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                disabled={!!actionLoading}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded flex items-center gap-2 disabled:opacity-50"
-              >
-                <FaTrash />
-              </button>
+                <button
+                  onClick={() => setShowSettingsModal(true)}
+                  className="px-3 py-2 text-white/75 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                  title="Hardware & Runtime Allocation (RAM / CPU)"
+                >
+                  <FaSlidersH className="text-sm text-brand-400" />
+                  <span className="hidden lg:inline">Resources</span>
+                </button>
               )}
-              {/* Settings gear icon */}
               {access.canManage && (
-              <button
-                onClick={() => setShowSettingsModal(true)}
-                className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                title={t('common.settings') || 'Settings'}
-              >
-                <FaCog className="text-lg" />
-              </button>
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  disabled={!!actionLoading}
+                  className="p-2.5 bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 rounded-lg flex items-center justify-center disabled:opacity-50 transition-colors"
+                  title={t('servers.deleteServer')}
+                >
+                  <FaTrash className="text-sm" />
+                </button>
               )}
             </div>
           </div>
 
-          {/* Stats bar */}
-          {stats && !stats.error && isRunning && (
-            <div className="flex items-center gap-4 mt-4 text-sm text-white/70">
-              {stats.uptime_seconds > 0 && (
-                <span>Uptime: {formatUptime(stats.uptime_seconds)}</span>
+          {/* Responsive Navigation Bar: Core Tabs + "Tools & More" Dropdown */}
+          <div className="flex items-center justify-between gap-2 mt-5">
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar select-none">
+              {primaryTabs.map(tab => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => handleTabChange(tab.id)}
+                    className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
+                      isActive
+                        ? 'bg-white/10 text-white border-brand-500'
+                        : 'border-transparent text-white/60 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <tab.icon className={`text-xs ${isActive ? 'text-brand-400' : ''}`} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+
+              {/* Tools & More Dropdown Trigger */}
+              {secondaryGroups.length > 0 && (
+                <div className="relative" ref={moreMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setMoreMenuOpen(v => !v)}
+                    className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
+                      activeSecondaryTab
+                        ? 'bg-brand-500/20 text-white border-brand-500'
+                        : moreMenuOpen
+                          ? 'bg-white/10 text-white border-white/30'
+                          : 'border-transparent text-white/65 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    {activeSecondaryTab ? (
+                      <>
+                        <activeSecondaryTab.icon className="text-xs text-brand-400" />
+                        <span>{activeSecondaryTab.label}</span>
+                      </>
+                    ) : (
+                      <>
+                        <FaPuzzlePiece className="text-xs text-brand-400" />
+                        <span>Tools & More</span>
+                      </>
+                    )}
+                    <FaChevronDown className={`text-[10px] transition-transform duration-200 ${moreMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
               )}
-              <span>CPU: {Math.min(Math.round(stats.cpu_percent), 100)}%</span>
-              <span>RAM: {Math.round(stats.memory_usage_mb)}/{Math.round(stats.memory_limit_mb)} MB</span>
+            </div>
+          </div>
+
+          {/* Categorized Tools Dropdown / Drawer Panel */}
+          {moreMenuOpen && secondaryGroups.length > 0 && (
+            <div
+              ref={moreMenuRef}
+              className="mt-1 mb-3 p-4 rounded-2xl bg-[#141827]/95 border border-white/15 shadow-2xl backdrop-blur-xl animate-fade-in"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {secondaryGroups.map(group => (
+                  <div key={group.title} className="space-y-1.5">
+                    <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                      {group.title}
+                    </div>
+                    {group.items.map(item => {
+                      const active = activeTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleTabChange(item.id)}
+                          className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition-all ${
+                            active
+                              ? 'bg-brand-500/20 border border-brand-500/40 text-white'
+                              : 'hover:bg-white/5 text-white/75 hover:text-white border border-transparent'
+                          }`}
+                        >
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                            active ? 'bg-brand-500 text-white' : 'bg-white/10 text-brand-400'
+                          }`}>
+                            <item.icon className="text-xs" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{item.label}</div>
+                            {item.desc && (
+                              <div className="text-[11px] text-white/45 truncate">{item.desc}</div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
-
-{/* Tabs */}
-            {(() => {
-              const primaryTabIds = ['overview', 'console', 'files', 'config'];
-              const primaryTabs = tabs.filter(t => primaryTabIds.includes(t.id));
-
-              return (
-                <div className="flex gap-1 mt-4 overflow-x-auto pb-1 select-none">
-                  {primaryTabs.map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => handleTabChange(tab.id)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm transition-colors whitespace-nowrap ${activeTab === tab.id
-                        ? 'bg-white/10 text-white border-b-2 border-brand-500'
-                        : 'text-white/60 hover:text-white hover:bg-white/5'
-                        }`}
-                    >
-                      <tab.icon className="text-xs" />
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              );
-            })()}
         </div>
       </div>
 
@@ -728,7 +930,6 @@ export default function ServerDetailsPage() {
           const backups = Array.isArray(backupData) ? backupData : backupData?.backups || [];
           const worlds = Array.isArray(worldsData) ? worldsData : worldsData?.worlds || [];
           const tasks = Array.isArray(schedulesData) ? schedulesData : schedulesData?.tasks || [];
-          // playerData.online is the string[] from roster; tolerate future object shapes
           const toName = (p) => (typeof p === 'string' ? p : (p && p.name) || '');
           const isUuidish = (n) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(n)
             || (/^[0-9a-fA-F-]{4,36}$/.test(n) && n.includes('-'));
@@ -737,446 +938,445 @@ export default function ServerDetailsPage() {
           const onlineCount = typeof playerData?.count === 'number' ? playerData.count : onlinePlayers.length;
           const maxPlayers = playerData?.max || 0;
           const connectPort = server.host_port || typeVersionData?.host_port;
-          // LAN IP from the backend (host address players on the local network
-          // reach); falls back to localhost when detection is unavailable.
           const connectHost = typeVersionData?.lan_ip || server?.lan_ip || 'localhost';
           const connectAddr = `${connectHost}:${connectPort}`;
           const steamPorts = typeVersionData?.steam_ports || server?.steam_ports || [];
           const gamePortInfo = typeVersionData?.game_port || server?.game_port;
           const portSummary = typeVersionData?.port_summary || server?.port_summary || [];
 
+          const quickTools = secondaryGroups.flatMap(g => g.items);
+
           return (
-          <div className="space-y-5">
-            {/* Quick Connect Banner */}
-            {connectPort && (
-              <div className="glassmorphism rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-brand-500/20 flex items-center justify-center flex-shrink-0">
-                    <FaGlobe className="text-brand-400 text-xl" />
+            <div className="space-y-5">
+              {/* Quick Connect Banner */}
+              {connectPort && (
+                <div className="glassmorphism rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-brand-500/20 flex items-center justify-center flex-shrink-0">
+                      <FaGlobe className="text-brand-400 text-xl" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider">Quick Connect</h3>
+                      <p className="text-white font-mono text-lg mt-0.5">{connectAddr}</p>
+                      {isSteam && portSummary.length > 1 && (
+                        <p className="text-white/40 text-xs mt-1 font-mono">
+                          All ports: {portSummary.join(', ')}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider">Quick Connect</h3>
-                    <p className="text-white font-mono text-lg mt-0.5">{connectAddr}</p>
-                    {isSteam && portSummary.length > 1 && (
-                      <p className="text-white/40 text-xs mt-1 font-mono">
-                        All ports: {portSummary.join(', ')}
-                      </p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(connectAddr);
+                      setCopiedAddress(true);
+                      setTimeout(() => setCopiedAddress(false), 2000);
+                    }}
+                    className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all text-sm ${
+                      copiedAddress
+                        ? 'bg-green-500/20 text-green-300'
+                        : 'bg-white/10 hover:bg-white/20 text-white'
+                    }`}
+                  >
+                    <FaCopy className="text-xs" />
+                    {copiedAddress ? 'Copied!' : 'Copy Address'}
+                  </button>
+                </div>
+              )}
+
+              {/* Quick Tools Strip — Mobile-friendly 1-click access to all tools */}
+              {quickTools.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                  {quickTools.slice(0, 6).map(tool => (
+                    <button
+                      key={tool.id}
+                      type="button"
+                      onClick={() => handleTabChange(tool.id)}
+                      className="glassmorphism hover:bg-white/10 border border-white/10 hover:border-brand-500/40 rounded-xl p-3 flex items-center gap-2.5 text-left transition-all group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-brand-500/15 group-hover:bg-brand-500 text-brand-400 group-hover:text-white flex items-center justify-center flex-shrink-0 transition-colors">
+                        <tool.icon className="text-xs" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-white truncate">{tool.label}</div>
+                        <div className="text-[10px] text-white/40 truncate">{tool.desc || 'Open tool'}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Live Read-Only Console Preview */}
+              <LiveConsolePreview
+                serverId={server.id}
+                isRunning={isRunning}
+                resetToken={logReset}
+                onOpenConsole={() => handleTabChange('console')}
+              />
+
+              {/* Server Info + Resources */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Server Info */}
+                <div className="glassmorphism rounded-xl p-5">
+                  <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <FaInfoCircle className="text-blue-400" />
+                    {t('servers.serverInfo')}
+                  </h3>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/50">{t('common.type')}</span>
+                      <span className="text-white font-medium">{displayType}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/50">{t('common.version')}</span>
+                      <span className="text-white font-medium">{displayVersion}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/50">{t('common.status')}</span>
+                      <span className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
+                        <span className={isRunning ? 'text-green-300' : 'text-yellow-300'}>{server.status}</span>
+                      </span>
+                    </div>
+                    {connectPort && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-white/50">{isSteam ? 'Game Port' : t('servers.port')}</span>
+                        <span className="text-white font-mono">{connectPort}{gamePortInfo?.protocol ? `/${gamePortInfo.protocol}` : ''}</span>
+                      </div>
+                    )}
+                    {isSteam && steamPorts.length > 1 && (
+                      <div className="flex justify-between items-start">
+                        <span className="text-white/50">All Ports</span>
+                        <div className="text-right">
+                          {steamPorts.map((sp, i) => (
+                            <span key={i} className="text-white/70 font-mono text-xs block">
+                              {sp.host_port || sp.container_port}/{sp.protocol}
+                              {gamePortInfo && sp.container_port === gamePortInfo.container_port && sp.protocol === gamePortInfo.protocol
+                                ? ' (game)' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/50">Server ID</span>
+                      <span className="text-white/60 font-mono text-xs">{serverId.substring(0, 12)}</span>
+                    </div>
+                    {!isSteam && typeVersionData?.java_version && String(typeVersionData.java_version).toLowerCase() !== 'unknown' && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-white/50">Java</span>
+                        <span className="text-white font-medium">Java {typeVersionData.java_version}</span>
+                      </div>
+                    )}
+                    {typeVersionData?.loader_version && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-white/50">Loader</span>
+                        <span className="text-white font-medium">{typeVersionData.loader_version}</span>
+                      </div>
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(connectAddr);
-                    setCopiedAddress(true);
-                    setTimeout(() => setCopiedAddress(false), 2000);
-                  }}
-                  className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all text-sm ${
-                    copiedAddress
-                      ? 'bg-green-500/20 text-green-300'
-                      : 'bg-white/10 hover:bg-white/20 text-white'
-                  }`}
-                >
-                  <FaCopy className="text-xs" />
-                  {copiedAddress ? 'Copied!' : 'Copy Address'}
-                </button>
-              </div>
-            )}
 
-            {/* Server Info + Resources */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Server Info — Enhanced */}
-              <div className="glassmorphism rounded-xl p-5">
-                <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <FaInfoCircle className="text-blue-400" />
-                  {t('servers.serverInfo')}
-                </h3>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/50">{t('common.type')}</span>
-                    <span className="text-white font-medium">{displayType}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/50">{t('common.version')}</span>
-                    <span className="text-white font-medium">{displayVersion}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/50">{t('common.status')}</span>
-                    <span className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
-                      <span className={isRunning ? 'text-green-300' : 'text-yellow-300'}>{server.status}</span>
-                    </span>
-                  </div>
-                  {connectPort && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/50">{isSteam ? 'Game Port' : t('servers.port')}</span>
-                      <span className="text-white font-mono">{connectPort}{gamePortInfo?.protocol ? `/${gamePortInfo.protocol}` : ''}</span>
-                    </div>
-                  )}
-                  {isSteam && steamPorts.length > 1 && (
-                    <div className="flex justify-between items-start">
-                      <span className="text-white/50">All Ports</span>
-                      <div className="text-right">
-                        {steamPorts.map((sp, i) => (
-                          <span key={i} className="text-white/70 font-mono text-xs block">
-                            {sp.host_port || sp.container_port}/{sp.protocol}
-                            {gamePortInfo && sp.container_port === gamePortInfo.container_port && sp.protocol === gamePortInfo.protocol
-                              ? ' (game)' : ''}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/50">Server ID</span>
-                    <span className="text-white/60 font-mono text-xs">{serverId.substring(0, 12)}</span>
-                  </div>
-                  {!isSteam && typeVersionData?.java_version && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/50">Java</span>
-                      <span className="text-white font-medium">Java {typeVersionData.java_version}</span>
-                    </div>
-                  )}
-                  {typeVersionData?.loader_version && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/50">Loader</span>
-                      <span className="text-white font-medium">{typeVersionData.loader_version}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Resources — Enhanced with progress bars */}
-              <div className="glassmorphism rounded-xl p-5">
-                <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <FaMicrochip className="text-purple-400" />
-                  {t('servers.resources')}
-                </h3>
-                {stats && !stats.error && isRunning ? (
-                  <div className="space-y-4 text-sm">
-                    {/* CPU */}
-                    <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-white/50">{t('servers.cpuUsage')}</span>
-                        <span className={`font-medium ${
-                          stats.cpu_percent > 80 ? 'text-red-400' : stats.cpu_percent > 50 ? 'text-yellow-400' : 'text-green-400'
-                        }`}>
-                          {Math.min(Math.round(stats.cpu_percent), 100)}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-white/10 rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full transition-all duration-500 ${
-                            stats.cpu_percent > 80 ? 'bg-red-500' : stats.cpu_percent > 50 ? 'bg-yellow-500' : 'bg-green-500'
-                          }`}
-                          style={{ width: `${Math.min(stats.cpu_percent, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                    {/* Memory */}
-                    <div>
-                      {(() => {
-                        const memPct = stats.memory_limit_mb > 0
-                          ? Math.round((stats.memory_usage_mb / stats.memory_limit_mb) * 100)
-                          : 0;
-                        return (
-                          <>
-                            <div className="flex justify-between items-center mb-1.5">
-                              <span className="text-white/50">{t('servers.memory')}</span>
-                              <span className={`font-medium ${
-                                memPct > 85 ? 'text-red-400' : memPct > 60 ? 'text-yellow-400' : 'text-green-400'
-                              }`}>
-                                {Math.round(stats.memory_usage_mb)} / {Math.round(stats.memory_limit_mb)} MB
-                              </span>
-                            </div>
-                            <div className="w-full bg-white/10 rounded-full h-2">
-                              <div
-                                className={`h-2 rounded-full transition-all duration-500 ${
-                                  memPct > 85 ? 'bg-red-500' : memPct > 60 ? 'bg-yellow-500' : 'bg-green-500'
-                                }`}
-                                style={{ width: `${Math.min(memPct, 100)}%` }}
-                              />
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                    {/* Network I/O */}
-                    {(stats.network_rx_mb !== undefined || stats.network_tx_mb !== undefined) && (
-                      <div className="flex justify-between items-center pt-1">
-                        <span className="text-white/50 flex items-center gap-1.5">
-                          <FaNetworkWired className="text-xs" /> Network
-                        </span>
-                        <span className="text-white font-mono text-xs">
-                          ↓ {(stats.network_rx_mb || 0).toFixed(1)} MB&nbsp;&nbsp;↑ {(stats.network_tx_mb || 0).toFixed(1)} MB
-                        </span>
-                      </div>
-                    )}
-                    {/* Uptime */}
-                    {stats.uptime_seconds > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-white/50">{t('servers.uptime')}</span>
-                        <span className="text-white font-medium">{formatUptime(stats.uptime_seconds)}</span>
-                      </div>
-                    )}
-                    {/* Restart count */}
-                    {stats.restart_count > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-white/50">Restarts</span>
-                        <span className="text-yellow-400 font-medium">{stats.restart_count}</span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-white/30">
-                    <FaMicrochip className="text-2xl mb-2" />
-                    <span className="text-sm">{isRunning ? t('servers.noStatsAvailable') : 'Server is offline'}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Players + Worlds / Storage */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Online Players */}
-              {!isSteam && (
+                {/* Resources */}
                 <div className="glassmorphism rounded-xl p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
-                      <FaGamepad className="text-green-400" />
-                      Players Online
+                      <FaMicrochip className="text-purple-400" />
+                      {t('servers.resources')}
                     </h3>
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-300">
-                      {onlineCount}{maxPlayers > 0 ? ` / ${maxPlayers}` : ''}
-                    </span>
+                    {access.canManage && (
+                      <button
+                        type="button"
+                        onClick={() => setShowSettingsModal(true)}
+                        className="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                      >
+                        Adjust limits →
+                      </button>
+                    )}
                   </div>
-                  {onlinePlayers.length > 0 ? (
-                    <div className="space-y-2">
-                      {onlinePlayers.slice(0, 8).map((name, i) => (
-                        <div key={i} className="flex items-center gap-2.5 text-sm">
-                          <img
-                            src={`https://mc-heads.net/avatar/${encodeURIComponent(name)}/24`}
-                            alt={name}
-                            className="w-6 h-6 rounded flex-shrink-0"
-                            onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-                          />
-                          <span
-                            className="w-6 h-6 rounded bg-brand-600 items-center justify-center text-[10px] font-bold text-white flex-shrink-0 hidden"
-                          >
-                            {name.slice(0, 1).toUpperCase()}
+                  {stats && !stats.error && isRunning ? (
+                    <div className="space-y-4 text-sm">
+                      <div>
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-white/50">{t('servers.cpuUsage')}</span>
+                          <span className={`font-medium ${
+                            stats.cpu_percent > 80 ? 'text-red-400' : stats.cpu_percent > 50 ? 'text-yellow-400' : 'text-green-400'
+                          }`}>
+                            {Math.min(Math.round(stats.cpu_percent), 100)}%
                           </span>
-                          <span className="text-white">{name}</span>
+                        </div>
+                        <div className="w-full bg-white/10 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full transition-all duration-500 ${
+                              stats.cpu_percent > 80 ? 'bg-red-500' : stats.cpu_percent > 50 ? 'bg-yellow-500' : 'bg-green-500'
+                            }`}
+                            style={{ width: `${Math.min(stats.cpu_percent, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        {(() => {
+                          const memPct = stats.memory_limit_mb > 0
+                            ? Math.round((stats.memory_usage_mb / stats.memory_limit_mb) * 100)
+                            : 0;
+                          return (
+                            <>
+                              <div className="flex justify-between items-center mb-1.5">
+                                <span className="text-white/50">{t('servers.memory')}</span>
+                                <span className={`font-medium ${
+                                  memPct > 85 ? 'text-red-400' : memPct > 60 ? 'text-yellow-400' : 'text-green-400'
+                                }`}>
+                                  {Math.round(stats.memory_usage_mb)} / {Math.round(stats.memory_limit_mb)} MB
+                                </span>
+                              </div>
+                              <div className="w-full bg-white/10 rounded-full h-2">
+                                <div
+                                  className={`h-2 rounded-full transition-all duration-500 ${
+                                    memPct > 85 ? 'bg-red-500' : memPct > 60 ? 'bg-yellow-500' : 'bg-green-500'
+                                  }`}
+                                  style={{ width: `${Math.min(memPct, 100)}%` }}
+                                />
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                      {(stats.network_rx_mb !== undefined || stats.network_tx_mb !== undefined) && (
+                        <div className="flex justify-between items-center pt-1">
+                          <span className="text-white/50 flex items-center gap-1.5">
+                            <FaNetworkWired className="text-xs" /> Network
+                          </span>
+                          <span className="text-white font-sans font-medium text-xs tabular-nums">
+                            ↓ {(stats.network_rx_mb || 0).toFixed(1)} MB &nbsp; ↑ {(stats.network_tx_mb || 0).toFixed(1)} MB
+                          </span>
+                        </div>
+                      )}
+                      {stats.uptime_seconds > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-white/50">{t('servers.uptime')}</span>
+                          <span className="text-white font-medium">{formatUptime(stats.uptime_seconds)}</span>
+                        </div>
+                      )}
+                      {stats.restart_count > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-white/50">Restarts</span>
+                          <span className="text-yellow-400 font-medium">{stats.restart_count}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-8 text-white/30">
+                      <FaMicrochip className="text-2xl mb-2" />
+                      <span className="text-sm">{isRunning ? t('servers.noStatsAvailable') : 'Server is offline'}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Players + Worlds / Storage */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {!isSteam && (
+                  <div className="glassmorphism rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
+                        <FaGamepad className="text-green-400" />
+                        Players Online
+                      </h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-300">
+                        {onlineCount}{maxPlayers > 0 ? ` / ${maxPlayers}` : ''}
+                      </span>
+                    </div>
+                    {onlinePlayers.length > 0 ? (
+                      <div className="space-y-2">
+                        {onlinePlayers.slice(0, 8).map((name, i) => (
+                          <div key={i} className="flex items-center gap-2.5 text-sm">
+                            <img
+                              src={`https://mc-heads.net/avatar/${encodeURIComponent(name)}/24`}
+                              alt={name}
+                              className="w-6 h-6 rounded flex-shrink-0"
+                              onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                            />
+                            <span
+                              className="w-6 h-6 rounded bg-brand-600 items-center justify-center text-[10px] font-bold text-white flex-shrink-0 hidden"
+                            >
+                              {name.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="text-white">{name}</span>
+                          </div>
+                        ))}
+                        {onlinePlayers.length > 8 && (
+                          <p className="text-white/40 text-xs">+{onlinePlayers.length - 8} more</p>
+                        )}
+                        <button
+                          onClick={() => handleTabChange('players')}
+                          className="text-brand-400 hover:text-brand-300 text-xs mt-2 transition-colors"
+                        >
+                          View all players →
+                        </button>
+                      </div>
+                    ) : onlineCount > 0 ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3 py-2">
+                          <div className="flex -space-x-1.5">
+                            {Array.from({ length: Math.min(onlineCount, 5) }).map((_, i) => (
+                              <div key={i} className="w-6 h-6 rounded-full bg-green-500/30 border-2 border-[#1a1a2e] flex items-center justify-center">
+                                <FaUsers className="text-green-400 text-[8px]" />
+                              </div>
+                            ))}
+                          </div>
+                          <span className="text-white text-sm font-medium">
+                            {onlineCount} player{onlineCount !== 1 ? 's' : ''} online
+                          </span>
+                        </div>
+                        <p className="text-white/40 text-xs">Player names unavailable — enable RCON for detailed info</p>
+                        <button
+                          onClick={() => handleTabChange('players')}
+                          className="text-brand-400 hover:text-brand-300 text-xs mt-1 transition-colors"
+                        >
+                          View players tab →
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-8 text-white/30">
+                        <FaUsers className="text-2xl mb-2" />
+                        <span className="text-sm">{isRunning ? 'No players online' : 'Server is offline'}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Storage / Worlds */}
+                <div className={`glassmorphism rounded-xl p-5 ${isSteam ? 'md:col-span-2' : ''}`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
+                      <FaHdd className="text-orange-400" />
+                      {isSteam ? 'Storage' : 'Worlds'}
+                    </h3>
+                    {worlds.length > 0 && (
+                      <span className="text-xs text-white/40">
+                        {worlds.length} world{worlds.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  {worlds.length > 0 ? (
+                    <div className="space-y-1">
+                      {worlds.slice(0, 5).map((world, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-white/5 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <FaFolder className="text-white/30 text-xs" />
+                            <span className="text-white">{world.name}</span>
+                          </div>
+                          <span className="text-white/60 text-xs font-sans tabular-nums">{formatBytes(world.size)}</span>
                         </div>
                       ))}
-                      {onlinePlayers.length > 8 && (
-                        <p className="text-white/40 text-xs">+{onlinePlayers.length - 8} more</p>
+                      {!isSteam && (
+                        <button
+                          onClick={() => handleTabChange('worlds')}
+                          className="text-brand-400 hover:text-brand-300 text-xs mt-2 transition-colors"
+                        >
+                          Manage worlds →
+                        </button>
                       )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-8 text-white/30">
+                      <FaHdd className="text-2xl mb-2" />
+                      <span className="text-sm">No world data available</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Backups + Scheduled Tasks */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="glassmorphism rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
+                      <FaDownload className="text-cyan-400" />
+                      Recent Backups
+                    </h3>
+                    {backups.length > 0 && (
+                      <span className="text-xs text-white/40">{backups.length} total</span>
+                    )}
+                  </div>
+                  {backups.length > 0 ? (
+                    <div className="space-y-1">
+                      {backups.slice(0, 3).map((backup, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-white/5 last:border-0">
+                          <span className="text-white truncate max-w-[55%]">{backup.name}</span>
+                          <div className="flex items-center gap-3 text-xs text-white/40 tabular-nums">
+                            <span>{formatBytes(backup.size)}</span>
+                            {formatDate(backup.modified) && <span>{formatDate(backup.modified)}</span>}
+                          </div>
+                        </div>
+                      ))}
                       <button
-                        onClick={() => handleTabChange('players')}
+                        onClick={() => handleTabChange('backup')}
                         className="text-brand-400 hover:text-brand-300 text-xs mt-2 transition-colors"
                       >
-                        View all players →
-                      </button>
-                    </div>
-                  ) : onlineCount > 0 ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3 py-2">
-                        <div className="flex -space-x-1.5">
-                          {Array.from({ length: Math.min(onlineCount, 5) }).map((_, i) => (
-                            <div key={i} className="w-6 h-6 rounded-full bg-green-500/30 border-2 border-[#1a1a2e] flex items-center justify-center">
-                              <FaUsers className="text-green-400 text-[8px]" />
-                            </div>
-                          ))}
-                        </div>
-                        <span className="text-white text-sm font-medium">
-                          {onlineCount} player{onlineCount !== 1 ? 's' : ''} online
-                        </span>
-                      </div>
-                      <p className="text-white/40 text-xs">Player names unavailable — enable RCON for detailed info</p>
-                      <button
-                        onClick={() => handleTabChange('players')}
-                        className="text-brand-400 hover:text-brand-300 text-xs mt-1 transition-colors"
-                      >
-                        View players tab →
+                        Manage backups →
                       </button>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-8 text-white/30">
-                      <FaUsers className="text-2xl mb-2" />
-                      <span className="text-sm">{isRunning ? 'No players online' : 'Server is offline'}</span>
+                      <FaDownload className="text-2xl mb-2" />
+                      <span className="text-sm">No backups yet</span>
+                      <button
+                        onClick={() => handleTabChange('backup')}
+                        className="text-brand-400 hover:text-brand-300 text-xs mt-3 transition-colors"
+                      >
+                        Create first backup →
+                      </button>
                     </div>
                   )}
                 </div>
-              )}
 
-              {/* Storage / Worlds */}
-              <div className={`glassmorphism rounded-xl p-5 ${isSteam ? 'md:col-span-2' : ''}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
-                    <FaHdd className="text-orange-400" />
-                    {isSteam ? 'Storage' : 'Worlds'}
-                  </h3>
-                  {worlds.length > 0 && (
-                    <span className="text-xs text-white/40">
-                      {worlds.length} world{worlds.length !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-                {worlds.length > 0 ? (
-                  <div className="space-y-1">
-                    {worlds.slice(0, 5).map((world, i) => (
-                      <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-white/5 last:border-0">
-                        <div className="flex items-center gap-2">
-                          <FaFolder className="text-white/30 text-xs" />
-                          <span className="text-white">{world.name}</span>
-                        </div>
-                        <span className="text-white/50 text-xs font-mono">{formatBytes(world.size)}</span>
-                      </div>
-                    ))}
-                    {!isSteam && (
-                      <button
-                        onClick={() => handleTabChange('worlds')}
-                        className="text-brand-400 hover:text-brand-300 text-xs mt-2 transition-colors"
-                      >
-                        Manage worlds →
-                      </button>
+                <div className="glassmorphism rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
+                      <FaCalendarAlt className="text-indigo-400" />
+                      Scheduled Tasks
+                    </h3>
+                    {tasks.length > 0 && (
+                      <span className="text-xs text-white/40">
+                        {tasks.filter(tk => tk.enabled !== false).length} active
+                      </span>
                     )}
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-white/30">
-                    <FaHdd className="text-2xl mb-2" />
-                    <span className="text-sm">No world data available</span>
-                  </div>
-                )}
+                  {tasks.length > 0 ? (
+                    <div className="space-y-1">
+                      {tasks.slice(0, 4).map((task, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-white/5 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              task.enabled !== false ? 'bg-green-400' : 'bg-white/20'
+                            }`} />
+                            <span className="text-white">{task.name || task.action}</span>
+                          </div>
+                          <span className="text-white/40 text-xs font-mono">{task.schedule || task.cron || ''}</span>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => handleTabChange('schedule')}
+                        className="text-brand-400 hover:text-brand-300 text-xs mt-2 transition-colors"
+                      >
+                        Manage schedules →
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-8 text-white/30">
+                      <FaCalendarAlt className="text-2xl mb-2" />
+                      <span className="text-sm">No scheduled tasks</span>
+                      <button
+                        onClick={() => handleTabChange('schedule')}
+                        className="text-brand-400 hover:text-brand-300 text-xs mt-3 transition-colors"
+                      >
+                        Create a schedule →
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-
-            {/* Backups + Scheduled Tasks */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Recent Backups */}
-              <div className="glassmorphism rounded-xl p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
-                    <FaDownload className="text-cyan-400" />
-                    Recent Backups
-                  </h3>
-                  {backups.length > 0 && (
-                    <span className="text-xs text-white/40">{backups.length} total</span>
-                  )}
-                </div>
-                {backups.length > 0 ? (
-                  <div className="space-y-1">
-                    {backups.slice(0, 3).map((backup, i) => (
-                      <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-white/5 last:border-0">
-                        <span className="text-white truncate max-w-[55%]">{backup.name}</span>
-                        <div className="flex items-center gap-3 text-xs text-white/40">
-                          <span>{formatBytes(backup.size)}</span>
-                          {formatDate(backup.modified) && <span>{formatDate(backup.modified)}</span>}
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => handleTabChange('backup')}
-                      className="text-brand-400 hover:text-brand-300 text-xs mt-2 transition-colors"
-                    >
-                      Manage backups →
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-white/30">
-                    <FaDownload className="text-2xl mb-2" />
-                    <span className="text-sm">No backups yet</span>
-                    <button
-                      onClick={() => handleTabChange('backup')}
-                      className="text-brand-400 hover:text-brand-300 text-xs mt-3 transition-colors"
-                    >
-                      Create first backup →
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Scheduled Tasks */}
-              <div className="glassmorphism rounded-xl p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
-                    <FaCalendarAlt className="text-indigo-400" />
-                    Scheduled Tasks
-                  </h3>
-                  {tasks.length > 0 && (
-                    <span className="text-xs text-white/40">
-                      {tasks.filter(tk => tk.enabled !== false).length} active
-                    </span>
-                  )}
-                </div>
-                {tasks.length > 0 ? (
-                  <div className="space-y-1">
-                    {tasks.slice(0, 4).map((task, i) => (
-                      <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-white/5 last:border-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                            task.enabled !== false ? 'bg-green-400' : 'bg-white/20'
-                          }`} />
-                          <span className="text-white">{task.name || task.action}</span>
-                        </div>
-                        <span className="text-white/40 text-xs font-mono">{task.schedule || task.cron || ''}</span>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => handleTabChange('schedule')}
-                      className="text-brand-400 hover:text-brand-300 text-xs mt-2 transition-colors"
-                    >
-                      Manage schedules →
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-white/30">
-                    <FaCalendarAlt className="text-2xl mb-2" />
-                    <span className="text-sm">No scheduled tasks</span>
-                    <button
-                      onClick={() => handleTabChange('schedule')}
-                      className="text-brand-400 hover:text-brand-300 text-xs mt-3 transition-colors"
-                    >
-                      Create a schedule →
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Runtime Configuration (Minecraft only) */}
-            {!isSteam && typeVersionData && (typeVersionData.java_version || typeVersionData.java_opts) && (
-              <div className="glassmorphism rounded-xl p-5">
-                <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <FaShieldAlt className="text-yellow-400" />
-                  Runtime Configuration
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
-                  {typeVersionData.java_version && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/50">Java Version</span>
-                      <span className="text-white font-mono">Java {typeVersionData.java_version}</span>
-                    </div>
-                  )}
-                  {typeVersionData.java_path && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/50">Java Path</span>
-                      <span className="text-white/60 font-mono text-xs truncate max-w-[200px]" title={typeVersionData.java_path}>
-                        {typeVersionData.java_path}
-                      </span>
-                    </div>
-                  )}
-                  {typeVersionData.java_opts && (
-                    <div className="sm:col-span-2">
-                      <span className="text-white/50 text-sm">JVM Arguments</span>
-                      <div className="mt-1.5 p-3 bg-white/5 rounded-lg font-mono text-xs text-white/70 break-all leading-relaxed">
-                        {typeVersionData.java_opts}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
           );
         })()}
 
@@ -1215,37 +1415,23 @@ export default function ServerDetailsPage() {
         )}
 
         {activeTab === 'config' && (
-          <ConfigPanel
-            server={server}
-          />
+          <ConfigPanel server={server} />
         )}
 
         {activeTab === 'players' && (
-          <PlayersPanel
-            serverName={server.name}
-            serverId={server.id}
-          />
+          <PlayersPanel serverName={server.name} serverId={server.id} />
         )}
 
         {activeTab === 'worlds' && (
-          <WorldsPanel
-            serverName={server.name}
-            serverId={server.id}
-          />
+          <WorldsPanel serverName={server.name} serverId={server.id} />
         )}
 
         {activeTab === 'backup' && (
-          <BackupsPanel
-            serverName={server.name}
-            serverId={server.id}
-          />
+          <BackupsPanel serverName={server.name} serverId={server.id} />
         )}
 
         {activeTab === 'schedule' && (
-          <SchedulePanel
-            serverName={server.name}
-            serverId={server.id}
-          />
+          <SchedulePanel serverName={server.name} serverId={server.id} />
         )}
 
         {activeTab === 'settings' && isSteam && (
@@ -1281,15 +1467,11 @@ export default function ServerDetailsPage() {
         )}
 
         {activeTab === 'mod-manager' && (
-          <ModManagerPanel
-            serverName={server.name}
-          />
+          <ModManagerPanel serverName={server.name} />
         )}
 
         {activeTab === 'client-mod-filter' && (
-          <ClientModFilterPanel
-            serverName={server.name}
-          />
+          <ClientModFilterPanel serverName={server.name} />
         )}
 
         {activeTab === 'graphs' && (
@@ -1320,11 +1502,11 @@ export default function ServerDetailsPage() {
         isLoading={actionLoading === 'delete'}
       />
 
-      {/* Settings Modal */}
+      {/* Hardware & Runtime Allocation Modal */}
       <ConfirmModal
         isOpen={showSettingsModal}
-        title={t('common.settings') || 'Settings'}
-        message={<SettingsModalContent server={server} serverId={serverId} typeVersionData={typeVersionData} isSteam={isSteam} onTabChange={handleTabChange} onClose={() => setShowSettingsModal(false)} />}
+        title="Hardware & Runtime Allocation"
+        message={<SettingsModalContent server={server} serverId={serverId} typeVersionData={typeVersionData} isSteam={isSteam} />}
         confirmText={t('common.close') || 'Close'}
         cancelText={null}
         onConfirm={() => setShowSettingsModal(false)}

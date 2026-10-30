@@ -7,7 +7,6 @@ import { ToastProvider, useToast } from './context/ToastContext';
 import {
   FaHome,
   FaServer,
-  FaLayerGroup,
   FaUsers,
   FaCog,
   FaBars,
@@ -15,13 +14,9 @@ import {
   FaBackward,
   FaForward,
   FaSteam,
-  FaDungeon,
   FaCube,
-  FaChartBar,
   FaShieldAlt,
-  FaObjectGroup,
 } from 'react-icons/fa';
-
 
 import LoginPage from './pages/LoginPage';
 import MustChangePasswordPage from './pages/MustChangePasswordPage';
@@ -29,24 +24,17 @@ import DashboardPage from './pages/DashboardPage';
 import ServersPage from './pages/ServersPage';
 import ServerDetailsPage from './pages/ServerDetailsPage';
 import SettingsPage from './pages/SettingsPage';
-
 import UsersPage from './pages/UsersPage';
 import SteamGamesPage from './pages/SteamGamesPage';
-import HytalePage from './pages/HytalePage';
 import CreateSchedulePage from './pages/CreateSchedulePage';
-
 
 import GlobalSearchBar from './components/GlobalSearchBar';
 import NotificationCenter from './components/NotificationCenter';
 import CommandPalette from './components/CommandPalette';
-import MonitoringPage from './components/MonitoringPage';
 import SecurityPage from './pages/SecurityPage';
-import MultiServerPage from './pages/MultiServerPage';
 import PublicStatusPage from './pages/PublicStatusPage';
 
-
 const TemplatesPageLazy = React.lazy(() => import('./pages/TemplatesPage'));
-
 
 const PageLoader = () => (
   <div className="flex items-center justify-center h-screen bg-ink">
@@ -56,13 +44,11 @@ const PageLoader = () => (
 
 const APP_NAME = 'Lynx';
 
-
 function AppLayout() {
   const { currentUser, isAdmin, logout } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-
 
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
@@ -70,7 +56,6 @@ function AppLayout() {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
-
 
   useEffect(() => {
     function handleResize() {
@@ -82,29 +67,36 @@ function AppLayout() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-
   const sidebarItems = useMemo(() => {
     const items = [
-      { id: 'dashboard', path: '/', label: t('nav.dashboard'), icon: FaHome, end: true },
-      { id: 'servers', path: '/servers', label: t('nav.servers'), icon: FaServer },
-
-      { id: 'minecraft', path: '/templates', label: 'Minecraft', icon: FaCube },
-      { id: 'steam', path: '/steam', label: 'Steam', icon: FaSteam },
-      { id: 'hytale', path: '/hytale', label: 'Hytale', icon: FaDungeon },
-      { id: 'multi-server', path: '/multi-server', label: 'Multi-Server', icon: FaObjectGroup },
-      { id: 'monitoring', path: '/monitoring', label: t('nav.monitoring') || 'Monitoring', icon: FaChartBar },
-      { id: 'security', path: '/security', label: 'Security', icon: FaShieldAlt },
+      { id: 'dashboard', path: '/', label: t('nav.dashboard'), icon: FaHome, end: true, group: 'Overview' },
+      { id: 'servers', path: '/servers', label: t('nav.servers'), icon: FaServer, group: 'Overview' },
+      { id: 'minecraft', path: '/templates', label: 'Minecraft', icon: FaCube, group: 'Game Catalog' },
+      { id: 'steam', path: '/steam', label: 'Steam', icon: FaSteam, group: 'Game Catalog' },
+      { id: 'security', path: '/security', label: 'Security', icon: FaShieldAlt, group: 'Administration' },
     ];
 
     if (isAdmin) {
-      items.push({ id: 'users', path: '/users', label: t('nav.users') || 'User Management', icon: FaUsers });
+      items.push({ id: 'users', path: '/users', label: t('nav.users') || 'User Management', icon: FaUsers, group: 'Administration' });
     }
 
-    items.push({ id: 'settings', path: '/settings', label: t('nav.settings') || 'Settings', icon: FaCog });
+    items.push({ id: 'settings', path: '/settings', label: t('nav.settings') || 'Settings', icon: FaCog, group: 'Administration' });
 
     return items;
   }, [isAdmin, t]);
 
+  const groupedSidebarItems = useMemo(() => {
+    const groups = [];
+    let currentGroup = null;
+    for (const item of sidebarItems) {
+      if (!currentGroup || currentGroup.name !== item.group) {
+        currentGroup = { name: item.group, items: [] };
+        groups.push(currentGroup);
+      }
+      currentGroup.items.push(item);
+    }
+    return groups;
+  }, [sidebarItems]);
 
   const currentPageLabel = useMemo(() => {
     const currentPath = location.pathname;
@@ -122,10 +114,8 @@ function AppLayout() {
     return location.pathname;
   }, [location.pathname]);
 
-
   const handleGlobalNavigate = useCallback((target) => {
     if (!target) return;
-
 
     if (target.type === 'server' && target.id) {
       navigate(`/servers/${target.id}`);
@@ -138,71 +128,83 @@ function AppLayout() {
     }
   }, [navigate]);
 
+  const showLabels = isMobile || sidebarOpen;
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Sidebar Header */}
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-md bg-brand-500 inline-flex items-center justify-center shadow-card">
-            <FaServer className="text-white" />
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-indigo-600 inline-flex items-center justify-center shadow-card">
+            <FaServer className="text-white text-sm" />
           </div>
-          {(!isMobile && sidebarOpen) && <div className="font-semibold text-white">{APP_NAME}</div>}
+          {showLabels && <div className="font-semibold text-white tracking-tight">{APP_NAME}</div>}
         </div>
       </div>
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto">
-        <nav className="p-4">
-          <div className="space-y-2">
-            {sidebarItems.map(item => (
-              <NavLink
-                key={item.id}
-                to={item.path}
-                end={item.end}
-                onClick={() => isMobile && setSidebarOpen(false)}
-                className={({ isActive }) => `
-                  w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  ${isActive ? 'bg-brand-500 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}
-                  ${(!isMobile && !sidebarOpen) ? 'justify-center' : ''}
-                `}
-                title={(!isMobile && !sidebarOpen) ? item.label : undefined}
-              >
-                <item.icon className="text-lg flex-shrink-0" />
-                {(!isMobile && sidebarOpen) && (
-                  <div className="flex items-center justify-between w-full min-w-0">
-                    <span className="truncate">{item.label}</span>
-                  </div>
-                )}
-              </NavLink>
-            ))}
-          </div>
+        <nav className="p-3 space-y-5">
+          {groupedSidebarItems.map((group) => (
+            <div key={group.name}>
+              {showLabels && (
+                <div className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+                  {group.name}
+                </div>
+              )}
+              <div className="space-y-1">
+                {group.items.map(item => (
+                  <NavLink
+                    key={item.id}
+                    to={item.path}
+                    end={item.end}
+                    onClick={() => isMobile && setSidebarOpen(false)}
+                    className={({ isActive }) => `
+                      w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium
+                      ${isActive
+                        ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/25'
+                        : 'text-white/70 hover:text-white hover:bg-white/10'}
+                      ${!showLabels ? 'justify-center' : ''}
+                    `}
+                    title={!showLabels ? item.label : undefined}
+                  >
+                    <item.icon className="text-base flex-shrink-0" />
+                    {showLabels && (
+                      <div className="flex items-center justify-between w-full min-w-0">
+                        <span className="truncate">{item.label}</span>
+                      </div>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          ))}
         </nav>
       </div>
 
       {/* Sidebar Footer */}
       <div className="mt-auto p-4 border-t border-white/10 bg-sidebar-footer backdrop-blur supports-[backdrop-filter]:bg-sidebar-footer">
         {/* Language Switcher */}
-        <div className={`mb-3 ${(!isMobile && !sidebarOpen) ? 'flex justify-center' : ''}`}>
+        <div className={`mb-3 ${!showLabels ? 'flex justify-center' : ''}`}>
           <LanguageSwitcherCompact />
         </div>
 
         {/* User Section */}
         <div
-          className={`flex items-center gap-3 mb-3 cursor-pointer hover:bg-white/10 rounded-lg p-2 ${(!isMobile && !sidebarOpen) ? 'justify-center' : ''}`}
+          className={`flex items-center gap-3 mb-3 cursor-pointer hover:bg-white/10 rounded-lg p-2 ${!showLabels ? 'justify-center' : ''}`}
           onClick={() => { navigate('/settings'); if (isMobile) setSidebarOpen(false); }}
           role="button"
           tabIndex={0}
         >
           {currentUser && (
             <>
-              <div className="w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center flex-shrink-0">
-                <FaUsers className="text-sm text-white" />
+              <div className="w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white uppercase">
+                {(currentUser.username || 'U').slice(0, 2)}
               </div>
-              {(!isMobile && sidebarOpen) && (
+              {showLabels && (
                 <div className="text-sm min-w-0">
                   <div className="text-white font-medium truncate">{currentUser.username}</div>
-                  <div className="text-white/60 truncate">{currentUser.role}</div>
+                  <div className="text-white/50 text-xs truncate capitalize">{currentUser.role}</div>
                 </div>
               )}
             </>
@@ -212,11 +214,11 @@ function AppLayout() {
         {/* Logout Button */}
         <button
           onClick={logout}
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors ${(!isMobile && !sidebarOpen) ? 'justify-center' : ''}`}
-          title={(!isMobile && !sidebarOpen) ? 'Logout' : undefined}
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors ${!showLabels ? 'justify-center' : ''}`}
+          title={!showLabels ? 'Logout' : undefined}
         >
           <FaArrowLeft className="flex-shrink-0" />
-          {(!isMobile && sidebarOpen) && <span>Logout</span>}
+          {showLabels && <span>Logout</span>}
         </button>
       </div>
     </div>
@@ -229,7 +231,7 @@ function AppLayout() {
         if (isMobile) {
           return sidebarOpen ? (
             <div className="fixed inset-0 z-50 flex">
-              <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={() => setSidebarOpen(false)} />
               <div className="relative w-64 bg-sidebar border-r border-white/10">{sidebarContent}</div>
             </div>
           ) : null;
@@ -287,7 +289,6 @@ function AppLayout() {
   );
 }
 
-
 function ProtectedLayout() {
   const { isAuthenticated, loading, mustChangePassword } = useAuth();
   const location = useLocation();
@@ -307,7 +308,6 @@ function ProtectedLayout() {
   return <AppLayout />;
 }
 
-
 function AdminLayout() {
   const { isAuthenticated, isAdmin, loading } = useAuth();
 
@@ -325,7 +325,6 @@ function AdminLayout() {
 
   return <AppLayout />;
 }
-
 
 function LoginPageWrapper() {
   const { login, isAuthenticated } = useAuth();
@@ -371,7 +370,6 @@ function LoginPageWrapper() {
   );
 }
 
-
 function TemplatesPageWrapper() {
   const globalData = useGlobalData();
   const navigate = useNavigate();
@@ -389,7 +387,6 @@ function TemplatesPageWrapper() {
   const [versionsData, setVersionsData] = useState(null);
 
   const types = globalData?.serverTypes || [];
-
 
   useEffect(() => {
     if (!selectedType) return;
@@ -425,11 +422,9 @@ function TemplatesPageWrapper() {
         if (r.ok && !cancelled) {
           const data = await r.json();
           setLoaderVersionsData(data);
-          // Auto-select first loader version if not set
           if (data?.loader_versions?.length > 0) {
             setLoaderVersion(data.loader_versions[0]);
           }
-          // Auto-set installer version for Fabric
           if (selectedType === 'fabric' && data?.latest_installer_version) {
             setInstallerVersion(data.latest_installer_version);
           }
@@ -442,7 +437,6 @@ function TemplatesPageWrapper() {
     fetchLoaders();
     return () => { cancelled = true; };
   }, [selectedType, version]);
-
 
   const createServer = useCallback(async () => {
     const serverName = name.trim();
@@ -477,7 +471,6 @@ function TemplatesPageWrapper() {
         throw new Error(err.detail || `HTTP ${r.status}`);
       }
 
-
       const startTime = Date.now();
       const timeoutMs = 15000;
       const intervalMs = 500;
@@ -490,7 +483,6 @@ function TemplatesPageWrapper() {
             const servers = await serversRes.json();
             foundServer = Array.isArray(servers) ? servers.find(s => s && s.name === serverName) : null;
 
-
             if (globalData?.__setGlobalData) {
               globalData.__setGlobalData(cur => ({ ...cur, servers: Array.isArray(servers) ? servers : cur.servers }));
             }
@@ -501,16 +493,13 @@ function TemplatesPageWrapper() {
         await new Promise(res => setTimeout(res, intervalMs));
       }
 
-
       setName('');
 
       if (foundServer) {
         showToast('success', `Server "${serverName}" created successfully!`);
-
         navigate(`/servers/${foundServer.id}`);
       } else {
         showToast('info', `Server "${serverName}" is being created. It will appear shortly.`);
-
         if (globalData?.__refreshServers) {
           globalData.__refreshServers();
         }
@@ -553,13 +542,10 @@ function TemplatesPageWrapper() {
   );
 }
 
-
-
 function MustChangePasswordWrapper() {
   const { logout, authHeaders } = useAuth();
 
   const handleComplete = () => {
-    // Force reload to refresh auth state and redirect to dashboard
     window.location.href = '/';
   };
 
@@ -591,11 +577,8 @@ function AppRoutes() {
         <Route path="/servers/:serverId/schedules/new" element={<CreateSchedulePage />} />
         <Route path="/templates" element={<TemplatesPageWrapper />} />
         <Route path="/steam" element={<SteamGamesPage />} />
-        <Route path="/hytale" element={<HytalePage />} />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/monitoring" element={<MonitoringPage />} />
         <Route path="/security" element={<SecurityPage />} />
-        <Route path="/multi-server" element={<MultiServerPage />} />
       </Route>
 
       {/* Admin routes */}
@@ -608,7 +591,6 @@ function AppRoutes() {
     </Routes>
   );
 }
-
 
 export function AppWithRouter() {
   return (

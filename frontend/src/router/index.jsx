@@ -1,157 +1,123 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
+import { useAuth } from '../context/AppContext';
 
+import AppLayout from '../components/AppLayout';
+import LoginPage from '../pages/LoginPage';
+import MustChangePasswordPage from '../pages/MustChangePasswordPage';
+import DashboardPage from '../pages/DashboardPage';
+import ServersPage from '../pages/ServersPage';
+import ServerDetailsPage from '../pages/ServerDetailsPage';
+import TemplatesPage from '../pages/TemplatesPage';
+import UsersPage from '../pages/UsersPage';
+import SettingsPage from '../pages/SettingsPage';
+import SteamGamesPage from '../pages/SteamGamesPage';
+import CreateSchedulePage from '../pages/CreateSchedulePage';
 
-const DashboardPage = React.lazy(() => import('../pages/DashboardPage'));
-const ServersPage = React.lazy(() => import('../pages/ServersPage'));
-const ServerDetailsPage = React.lazy(() => import('../pages/ServerDetailsPage'));
-const TemplatesPage = React.lazy(() => import('../pages/TemplatesPage'));
-const UsersPage = React.lazy(() => import('../pages/UsersPage'));
-const SettingsPage = React.lazy(() => import('../pages/SettingsPage'));
-const LoginPage = React.lazy(() => import('../pages/LoginPage'));
-const MustChangePasswordPage = React.lazy(() => import('../pages/MustChangePasswordPage'));
+function ProtectedRoute() {
+  const { isAuthenticated, loading, mustChangePassword } = useAuth();
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-ink">
+        <div className="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
 
-const PageLoader = () => (
-  <div className="flex items-center justify-center h-screen bg-ink">
-    <div className="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
-  </div>
-);
-
-
-export function ProtectedRoute({ children, isAuthenticated, mustChangePassword }) {
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  
+
   if (mustChangePassword) {
     return <Navigate to="/change-password" replace />;
   }
-  
-  return children;
+
+  return <Outlet />;
 }
 
+function AdminRoute() {
+  const { isAdmin, loading } = useAuth();
 
-export function AdminRoute({ children, isAuthenticated, isAdmin }) {
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+  if (loading) {
+    return null;
   }
-  
+
   if (!isAdmin) {
     return <Navigate to="/" replace />;
   }
-  
-  return children;
+
+  return <Outlet />;
 }
 
+export const router = createBrowserRouter([
+  {
+    path: '/login',
+    element: <LoginPage />,
+  },
+  {
+    path: '/change-password',
+    element: <MustChangePasswordPage />,
+  },
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        element: <AppLayout />,
+        children: [
+          {
+            path: '/',
+            element: <DashboardPage />,
+          },
+          {
+            path: '/servers',
+            element: <ServersPage />,
+          },
+          {
+            path: '/servers/:serverId',
+            element: <ServerDetailsPage />,
+          },
+          {
+            path: '/servers/:serverId/:tab',
+            element: <ServerDetailsPage />,
+          },
+          {
+            path: '/servers/:serverId/schedules/new',
+            element: <CreateSchedulePage />,
+          },
+          {
+            path: '/templates',
+            element: <TemplatesPage />,
+          },
+          {
+            path: '/steam',
+            element: <SteamGamesPage />,
+          },
+          {
+            path: '/settings',
+            element: <SettingsPage />,
+          },
+          {
+            element: <AdminRoute />,
+            children: [
+              {
+                path: '/users',
+                element: <UsersPage />,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    path: '*',
+    element: <Navigate to="/" replace />,
+  },
+]);
 
-export function AppRouter({ 
-  isAuthenticated, 
-  isAdmin, 
-  mustChangePassword,
-  currentUser,
-  onLogout,
-  
-  ...appProps 
-}) {
-  return (
-    <BrowserRouter>
-      <React.Suspense fallback={<PageLoader />}>
-        <Routes>
-          {/* Public routes */}
-          <Route 
-            path="/login" 
-            element={
-              isAuthenticated ? (
-                <Navigate to="/" replace />
-              ) : (
-                <LoginPage {...appProps} />
-              )
-            } 
-          />
-          
-          <Route 
-            path="/change-password" 
-            element={
-              !isAuthenticated ? (
-                <Navigate to="/login" replace />
-              ) : (
-                <MustChangePasswordPage {...appProps} />
-              )
-            } 
-          />
-          
-          {/* Protected routes */}
-          <Route 
-            path="/" 
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated} mustChangePassword={mustChangePassword}>
-                <DashboardPage {...appProps} />
-              </ProtectedRoute>
-            } 
-          />
-          
-          <Route 
-            path="/servers" 
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated} mustChangePassword={mustChangePassword}>
-                <ServersPage {...appProps} />
-              </ProtectedRoute>
-            } 
-          />
-          
-          <Route 
-            path="/servers/:serverId" 
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated} mustChangePassword={mustChangePassword}>
-                <ServerDetailsPage {...appProps} />
-              </ProtectedRoute>
-            } 
-          />
-          
-          <Route 
-            path="/servers/:serverId/:tab" 
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated} mustChangePassword={mustChangePassword}>
-                <ServerDetailsPage {...appProps} />
-              </ProtectedRoute>
-            } 
-          />
-          
-          <Route 
-            path="/templates" 
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated} mustChangePassword={mustChangePassword}>
-                <TemplatesPage {...appProps} />
-              </ProtectedRoute>
-            } 
-          />
-          
-          {/* Admin-only routes */}
-          <Route 
-            path="/users" 
-            element={
-              <AdminRoute isAuthenticated={isAuthenticated} isAdmin={isAdmin}>
-                <UsersPage {...appProps} />
-              </AdminRoute>
-            } 
-          />
-          
-          <Route 
-            path="/settings" 
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated} mustChangePassword={mustChangePassword}>
-                <SettingsPage {...appProps} />
-              </ProtectedRoute>
-            } 
-          />
-          
-          {/* Catch-all redirect */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </React.Suspense>
-    </BrowserRouter>
-  );
+export function AppRouter() {
+  return <RouterProvider router={router} />;
 }
 
 export default AppRouter;

@@ -6,9 +6,6 @@ import {
   FaHome,
   FaCube,
   FaSteam,
-  FaDungeon,
-  FaObjectGroup,
-  FaChartBar,
   FaShieldAlt,
   FaUsers,
   FaCog,
@@ -22,21 +19,10 @@ const NAV_COMMANDS = [
   { id: 'nav-servers', label: 'My Servers', path: '/servers', icon: FaServer },
   { id: 'nav-minecraft', label: 'Minecraft', path: '/templates', icon: FaCube },
   { id: 'nav-steam', label: 'Steam', path: '/steam', icon: FaSteam },
-  { id: 'nav-hytale', label: 'Hytale', path: '/hytale', icon: FaDungeon },
-  { id: 'nav-multi', label: 'Multi-Server', path: '/multi-server', icon: FaObjectGroup },
-  { id: 'nav-monitoring', label: 'Monitoring', path: '/monitoring', icon: FaChartBar },
   { id: 'nav-security', label: 'Security', path: '/security', icon: FaShieldAlt },
   { id: 'nav-settings', label: 'Settings', path: '/settings', icon: FaCog },
 ];
 
-/**
- * Command palette (Ctrl/⌘+K).
- *
- * Opens on the `lynx:open-command-palette` window event (dispatched by the
- * header search bar's shortcut handler), so there is a single Ctrl+K owner and
- * no double-trigger. Lets the user fuzzy-search servers and jump to any page,
- * fully keyboard-navigable.
- */
 export default function CommandPalette() {
   const navigate = useNavigate();
   const servers = useServers();
@@ -48,14 +34,12 @@ export default function CommandPalette() {
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
-  // Toggle on the global shortcut event.
   useEffect(() => {
     const onEvt = () => setOpen((o) => !o);
     window.addEventListener('lynx:open-command-palette', onEvt);
     return () => window.removeEventListener('lynx:open-command-palette', onEvt);
   }, []);
 
-  // Reset + focus when opened.
   useEffect(() => {
     if (!open) return;
     setQuery('');
@@ -104,7 +88,6 @@ export default function CommandPalette() {
     [navigate]
   );
 
-  // Keyboard navigation while open.
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => {
@@ -126,7 +109,6 @@ export default function CommandPalette() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, items, highlight, activate]);
 
-  // Keep the highlighted row valid and scrolled into view.
   useEffect(() => {
     setHighlight((h) => Math.min(h, Math.max(items.length - 1, 0)));
   }, [items.length]);

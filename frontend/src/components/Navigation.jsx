@@ -1,193 +1,186 @@
-import React from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { useTranslation } from '../i18n';
+import React, { useMemo } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AppContext';
+import { useTranslation, LanguageSwitcherCompact } from '../i18n';
 import {
   FaHome,
   FaServer,
-  FaLayerGroup,
   FaUsers,
   FaCog,
   FaBars,
-  FaTimes,
+  FaArrowLeft,
+  FaBackward,
+  FaForward,
+  FaSteam,
+  FaCube,
+  FaShieldAlt,
 } from 'react-icons/fa';
+import GlobalSearchBar from './GlobalSearchBar';
+import NotificationCenter from './NotificationCenter';
+import { APP_NAME } from '../lib/api';
 
-// Sidebar navigation items configuration
-export const getNavItems = (isAdmin) => {
-  const items = [
-    { id: 'dashboard', path: '/', label: 'nav.dashboard', icon: FaHome },
-    { id: 'servers', path: '/servers', label: 'nav.servers', icon: FaServer },
-    { id: 'templates', path: '/templates', label: 'nav.templates', icon: FaLayerGroup },
-  ];
-  
-  if (isAdmin) {
-    items.push({ id: 'users', path: '/users', label: 'nav.users', icon: FaUsers });
-  }
-  
-  items.push({ id: 'settings', path: '/settings', label: 'nav.settings', icon: FaCog });
-  
-  return items;
-};
-
-// Navigation hook for programmatic navigation
-export function useAppNavigation() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  
-  return {
-    navigateTo: (path) => navigate(path),
-    navigateToServer: (serverId, tab = 'overview') => navigate(`/servers/${serverId}/${tab}`),
-    navigateToServers: () => navigate('/servers'),
-    navigateToDashboard: () => navigate('/'),
-    navigateToSettings: () => navigate('/settings'),
-    navigateToTemplates: () => navigate('/templates'),
-    navigateToUsers: () => navigate('/users'),
-    currentPath: location.pathname,
-    isActive: (path) => location.pathname === path || 
-      (path !== '/' && location.pathname.startsWith(path)),
-  };
-}
-
-// Sidebar component
-export function Sidebar({ 
-  isOpen, 
-  onToggle, 
-  isAdmin, 
-  isMobile, 
-  currentUser,
-  onLogout,
-}) {
+export function Sidebar({ isOpen, isMobile, onClose }) {
+  const { currentUser, isAdmin, logout } = useAuth();
   const { t } = useTranslation();
-  const navItems = getNavItems(isAdmin);
-  
-  return (
-    <>
-      {/* Mobile overlay */}
-      {isMobile && isOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40"
-          onClick={onToggle}
-        />
-      )}
-      
-      {/* Sidebar */}
-      <aside 
-        className={`
-          fixed top-0 left-0 h-full bg-ink-dark border-r border-white/10 
-          transition-transform duration-300 ease-in-out z-50
-          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-          ${isMobile ? 'w-64' : 'w-64'}
-        `}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
-          <h1 className="text-xl font-bold text-white">Lynx</h1>
-          {isMobile && (
-            <button 
-              onClick={onToggle}
-              className="p-2 text-white/70 hover:text-white"
-            >
-              <FaTimes />
-            </button>
+  const navigate = useNavigate();
+
+  const sidebarItems = useMemo(() => {
+    const items = [
+      { id: 'dashboard', path: '/', label: t('nav.dashboard'), icon: FaHome, end: true },
+      { id: 'servers', path: '/servers', label: t('nav.servers'), icon: FaServer },
+      { id: 'minecraft', path: '/templates', label: 'Minecraft', icon: FaCube },
+      { id: 'steam', path: '/steam', label: 'Steam', icon: FaSteam },
+      { id: 'security', path: '/security', label: 'Security', icon: FaShieldAlt },
+    ];
+
+    if (isAdmin) {
+      items.push({ id: 'users', path: '/users', label: t('nav.users'), icon: FaUsers });
+    }
+
+    items.push({ id: 'settings', path: '/settings', label: t('nav.settings'), icon: FaCog });
+
+    return items;
+  }, [isAdmin, t]);
+
+  const content = (
+    <div className="flex flex-col h-full">
+      <div className="p-4 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-md bg-brand-500 inline-flex items-center justify-center shadow-card">
+            <FaServer className="text-white" />
+          </div>
+          {(!isMobile && isOpen) && <div className="font-semibold text-white">{APP_NAME}</div>}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        <nav className="p-4">
+          <div className="space-y-2">
+            {sidebarItems.map(item => (
+              <NavLink
+                key={item.id}
+                to={item.path}
+                end={item.end}
+                onClick={() => isMobile && onClose?.()}
+                className={({ isActive }) => `
+                  w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  ${isActive ? 'bg-brand-500 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}
+                  ${(!isMobile && !isOpen) ? 'justify-center' : ''}
+                `}
+                title={(!isMobile && !isOpen) ? item.label : undefined}
+              >
+                <item.icon className="text-lg flex-shrink-0" />
+                {(!isMobile && isOpen) && (
+                  <div className="flex items-center justify-between w-full min-w-0">
+                    <span className="truncate">{item.label}</span>
+                  </div>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+      </div>
+
+      <div className="mt-auto p-4 border-t border-white/10 bg-sidebar-footer backdrop-blur supports-[backdrop-filter]:bg-sidebar-footer">
+        <div className={`mb-3 ${(!isMobile && !isOpen) ? 'flex justify-center' : ''}`}>
+          <LanguageSwitcherCompact />
+        </div>
+
+        <div
+          className={`flex items-center gap-3 mb-3 cursor-pointer hover:bg-white/10 rounded-lg p-2 ${(!isMobile && !isOpen) ? 'justify-center' : ''}`}
+          onClick={() => { navigate('/settings'); if (isMobile) onClose?.(); }}
+          role="button"
+          tabIndex={0}
+        >
+          {currentUser && (
+            <>
+              <div className="w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <FaUsers className="text-sm text-white" />
+              </div>
+              {(!isMobile && isOpen) && (
+                <div className="text-sm min-w-0">
+                  <div className="text-white font-medium truncate">{currentUser.username}</div>
+                  <div className="text-white/60 truncate">{currentUser.role}</div>
+                </div>
+              )}
+            </>
           )}
         </div>
-        
-        {/* Navigation */}
-        <nav className="p-4 space-y-1">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.id}
-              to={item.path}
-              onClick={() => isMobile && onToggle()}
-              className={({ isActive }) => `
-                flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
-                ${isActive 
-                  ? 'bg-brand-500 text-white' 
-                  : 'text-white/70 hover:bg-white/10 hover:text-white'
-                }
-              `}
-            >
-              <item.icon className="w-5 h-5" />
-              <span>{t(item.label)}</span>
-            </NavLink>
-          ))}
-        </nav>
-        
-        {/* User section at bottom */}
-        {currentUser && (
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/10">
-            <div className="flex items-center justify-between">
-              <div className="text-sm">
-                <div className="text-white font-medium">{currentUser.username}</div>
-                <div className="text-white/50 text-xs">{currentUser.role || 'User'}</div>
-              </div>
-              <button
-                onClick={onLogout}
-                className="px-3 py-1 text-xs bg-white/10 hover:bg-white/20 rounded text-white/70 hover:text-white"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        )}
-      </aside>
-    </>
-  );
-}
 
-// Mobile header with hamburger menu
-export function MobileHeader({ onToggleSidebar }) {
-  return (
-    <header className="fixed top-0 left-0 right-0 h-14 bg-ink-dark border-b border-white/10 flex items-center px-4 z-30 md:hidden">
-      <button 
-        onClick={onToggleSidebar}
-        className="p-2 text-white/70 hover:text-white"
-      >
-        <FaBars />
-      </button>
-      <h1 className="ml-3 text-lg font-bold text-white">Lynx</h1>
-    </header>
+        <button
+          onClick={logout}
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors ${(!isMobile && !isOpen) ? 'justify-center' : ''}`}
+          title={(!isMobile && !isOpen) ? 'Logout' : undefined}
+        >
+          <FaArrowLeft className="flex-shrink-0" />
+          {(!isMobile && isOpen) && <span>Logout</span>}
+        </button>
+      </div>
+    </div>
   );
-}
 
-// Layout wrapper that includes sidebar
-export function AppLayout({ 
-  children, 
-  sidebarOpen, 
-  onToggleSidebar, 
-  isAdmin, 
-  isMobile,
-  currentUser,
-  onLogout,
-}) {
+  if (isMobile) {
+    return isOpen ? (
+      <div className="fixed inset-0 z-50 flex">
+        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+        <div className="relative w-64 bg-sidebar border-r border-white/10">{content}</div>
+      </div>
+    ) : null;
+  }
+
   return (
-    <div className="min-h-screen bg-ink">
-      {/* Mobile header */}
-      {isMobile && (
-        <MobileHeader onToggleSidebar={onToggleSidebar} />
-      )}
-      
-      {/* Sidebar */}
-      <Sidebar
-        isOpen={sidebarOpen}
-        onToggle={onToggleSidebar}
-        isAdmin={isAdmin}
-        isMobile={isMobile}
-        currentUser={currentUser}
-        onLogout={onLogout}
-      />
-      
-      {/* Main content */}
-      <main 
-        className={`
-          transition-all duration-300 min-h-screen
-          ${isMobile ? 'pt-14' : ''}
-          ${sidebarOpen && !isMobile ? 'ml-64' : 'ml-0'}
-        `}
-      >
-        {children}
-      </main>
+    <div className={`${isOpen ? 'w-64' : 'w-16'} bg-sidebar border-r border-white/10 transition-all duration-300 flex flex-col sticky top-0 h-screen`}>
+      {content}
     </div>
   );
 }
 
-export default Sidebar;
+export function TopHeader({ sidebarOpen, isMobile, onToggleSidebar, onGlobalNavigate }) {
+  const { currentUser } = useAuth();
+  const { t } = useTranslation();
+  const location = useLocation();
+
+  const currentPageLabel = useMemo(() => {
+    const path = location.pathname;
+    if (path === '/') return t('nav.dashboard');
+    if (path.startsWith('/servers')) return t('nav.servers');
+    if (path.startsWith('/templates')) return 'Minecraft';
+    if (path.startsWith('/steam')) return 'Steam';
+    if (path.startsWith('/security')) return 'Security';
+    if (path.startsWith('/users')) return t('nav.users');
+    if (path.startsWith('/settings')) return t('nav.settings');
+    return t('nav.dashboard');
+  }, [location.pathname, t]);
+
+  return (
+    <header className="border-b border-white/10 bg-topbar backdrop-blur supports-[backdrop-filter]:bg-topbar">
+      <div className="px-4 md:px-6 flex items-center justify-between h-14">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onToggleSidebar}
+            className="p-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label={
+              isMobile
+                ? (sidebarOpen ? 'Close navigation' : 'Open navigation')
+                : (sidebarOpen ? 'Collapse navigation' : 'Expand navigation')
+            }
+          >
+            {isMobile ? <FaBars /> : (sidebarOpen ? <FaBackward /> : <FaForward />)}
+          </button>
+          <h1 className="text-lg font-semibold text-white">
+            {currentPageLabel}
+          </h1>
+        </div>
+        <div className="flex items-center gap-3 flex-1 justify-end max-w-2xl">
+          <GlobalSearchBar onNavigate={onGlobalNavigate} className="w-full max-w-xs" />
+          <NotificationCenter />
+          <div className="hidden sm:block text-sm text-white/70">
+            Welcome back, {currentUser?.username || 'User'}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export default { Sidebar, TopHeader };
