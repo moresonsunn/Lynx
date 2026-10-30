@@ -1,37 +1,35 @@
-"""Robust ``mods.toml`` / ``neoforge.mods.toml`` parsing.
+"""Robust ``mods.toml`` / ``neoforge.mods.toml`` parsing compatible with Python 3.10+.
 
-Forge/NeoForge metadata is valid TOML, so we parse it with the stdlib
-``tomllib`` first. Because a small fraction of real-world files contain template
-placeholders or minor syntax slips, we fall back to a lenient structural parser
-that understands the specific shapes we care about:
-
-* ``[[mods]]`` blocks
-* ``[[dependencies.<modid>]]`` blocks
-
-This replaces the previous ``line.split('=')`` approach which silently
-mis-parsed multi-mod jars, version strings containing ``=`` and NeoForge files.
+Forge/NeoForge metadata is valid TOML, so we parse it with ``tomllib`` (Python 3.11+)
+or ``tomli`` (Python 3.10) when available, and fall back to a comment-aware structural
+parser that understands ``[[mods]]``, ``[[mixins]]``, and ``[[dependencies.<modid>]]``.
 """
 
 from __future__ import annotations
 
 import re
-import tomllib
 from typing import Any
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ModuleNotFoundError:
+        tomllib = None  # type: ignore[assignment]
 
 
 def parse_mods_toml(content: str) -> dict[str, Any]:
-    """Parse mods.toml content into a normalized dict.
-
-    Returns a dict with keys ``mods`` (list), ``dependencies`` (dict of lists),
-    ``modLoader`` and ``loaderVersion``.
-    """
-    try:
-        data = tomllib.loads(content)
-        if isinstance(data, dict) and ("mods" in data or "dependencies" in data
-                                       or "modLoader" in data):
-            return _normalize(data)
-    except Exception:
-        pass
+    """Parse mods.toml content into a normalized dict."""
+    if tomllib is not None:
+        try:
+            data = tomllib.loads(content)
+            if isinstance(data, dict) and (
+                "mods" in data or "dependencies" in data or "modLoader" in data
+            ):
+                return _normalize(data)
+        except Exception:
+            pass
     return _lenient_parse(content)
 
 
@@ -40,7 +38,6 @@ def _normalize(data: dict) -> dict:
     if isinstance(mods, dict):
         mods = [mods]
     deps = data.get("dependencies") or {}
-    # tomllib gives dependencies as {owner: [ {..}, {..} ]}
     norm_deps: dict[str, list] = {}
     if isinstance(deps, dict):
         for owner, lst in deps.items():
@@ -51,14 +48,16 @@ def _normalize(data: dict) -> dict:
     return {
         "modLoader": data.get("modLoader"),
         "loaderVersion": data.get("loaderVersion"),
+        "clientSideOnly": data.get("clientSideOnly"),
+        "displayTest": data.get("displayTest"),
         "mods": mods,
+        "mixins": data.get("mixins") or [],
         "dependencies": norm_deps,
     }
 
 
-# ------------------------------------------------------------------- lenient
 _TABLE_RE = re.compile(r"^\s*\[\[([^\]]+)\]\]\s*$")
-_KV_RE = re.compile(r'^\s*([A-Za-z0-9_\-]+)\s*=\s*(.+?)\s*$')
+_KV_RE = re.compile(r"^\s*([A-Za-z0-9_\-]+)\s*=\s*(.+?)\s*$")
 
 
 def _coerce(value: str) -> Any:
@@ -67,19 +66,38 @@ def _coerce(value: str) -> Any:
         return v.lower() == "true"
     if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
         return v[1:-1]
-    # triple quoted / multiline start — just strip quotes best-effort
     return v.strip('"').strip("'")
 
 
 def _lenient_parse(content: str) -> dict:
-    result: dict[str, Any] = {"modLoader": None, "loaderVersion": None,
-                              "mods": [], "dependencies": {}}
+    result: dict[str, Any] = {
+        "modLoader": None,
+        "loaderVersion": None,
+        "clientSideOnly": None,
+        "displayTest": None,
+        "mods": [],
+        "mixins": [],
+        "dependencies": {},
+    }
     current: dict | None = None
-    current_kind: str | None = None
-    current_owner: str | None = None
+    in_multiline = False
+    multiline_delim = '"""'
 
     for raw_line in content.splitlines():
-        line = raw_line.split("#", 1)[0]  # strip comments (best effort)
+        if in_multiline:
+            if multiline_delim in raw_line:
+                in_multiline = False
+            continue
+
+        # Check if a multiline string starts on this line and doesn't close on this line
+        for delim in ('"""', "'''"):
+            if raw_line.count(delim) == 1:
+                in_multiline = True
+                multiline_delim = delim
+                raw_line = raw_line.split(delim, 1)[0]
+                break
+
+        line = raw_line.split("#", 1)[0]
         if not line.strip():
             continue
 
@@ -88,17 +106,16 @@ def _lenient_parse(content: str) -> dict:
             header = m.group(1).strip().lower()
             if header == "mods":
                 current = {}
-                current_kind = "mods"
                 result["mods"].append(current)
-            elif header.startswith("dependencies."):
-                owner = header.split(".", 1)[1]
+            elif header == "mixins":
                 current = {}
-                current_kind = "dependencies"
-                current_owner = owner
+                result["mixins"].append(current)
+            elif header.startswith("dependencies."):
+                owner = header.split(".", 1)[1].strip().strip("\"'")
+                current = {}
                 result["dependencies"].setdefault(owner, []).append(current)
             else:
                 current = None
-                current_kind = None
             continue
 
         kv = _KV_RE.match(line)
@@ -108,8 +125,7 @@ def _lenient_parse(content: str) -> dict:
         if current is not None:
             current[key] = value
         else:
-            # top-level key (modLoader / loaderVersion)
-            if key in ("modLoader", "loaderVersion"):
+            if key in ("modLoader", "loaderVersion", "clientSideOnly", "displayTest"):
                 result[key] = value
 
     return result

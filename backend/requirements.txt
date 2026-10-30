@@ -24,3 +24,4 @@ websockets>=10.0
 # boto3>=1.26.0  # Uncomment for AWS S3 backup support
 # google-cloud-storage  # Uncomment for Google Cloud Storage backup support
 # azure-storage-blob  # Uncomment for Azure Blob Storage backup support
+tomli>=2.0.1; python_version < "3.11"

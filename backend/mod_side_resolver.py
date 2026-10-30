@@ -365,31 +365,46 @@ def _strip_toml_comments(text: str) -> str:
 
 def _parse_toml_document(raw_text: str) -> Dict[str, Any]:
     """
-    Versucht zunächst Python 3.11+ `tomllib` und nutzt bei ungültigen/nicht-standardkonformen
-    Mod-TOML-Dateien einen strukturierten Fallback-Parser nach Kommentarbereinigung.
+    Versucht zunächst Python 3.11+ `tomllib` (bzw. `tomli` unter Python 3.10) und nutzt
+    bei ungültigen/nicht-standardkonformen Mod-TOML-Dateien oder fehlender Bibliothek
+    einen strukturierten Fallback-Parser nach Kommentarbereinigung.
     """
-    try:
-        import tomllib
-
-        return tomllib.loads(raw_text)
-    except Exception:
-        pass
+    for mod_name in ("tomllib", "tomli"):
+        try:
+            toml_mod = __import__(mod_name)
+            return toml_mod.loads(raw_text)
+        except Exception:
+            pass
 
     stripped = _strip_toml_comments(raw_text)
-    try:
-        import tomllib
+    for mod_name in ("tomllib", "tomli"):
+        try:
+            toml_mod = __import__(mod_name)
+            return toml_mod.loads(stripped)
+        except Exception:
+            pass
 
-        return tomllib.loads(stripped)
-    except Exception:
-        pass
-
-    # Strukturierter Fallback-Parser für leicht fehlerhafte mods.toml / neoforge.mods.toml
-    result: Dict[str, Any] = {"mods": [], "dependencies": {}}
+    # Strukturierter Fallback-Parser für Python 3.10 ohne tomli sowie fehlerhafte mods.toml / neoforge.mods.toml
+    result: Dict[str, Any] = {"mods": [], "mixins": [], "dependencies": {}}
     current_section = "root"
     current_dep_target = ""
     current_obj: Dict[str, Any] = result
+    in_multiline = False
+    multiline_delim = '"""'
 
     for line in stripped.splitlines():
+        if in_multiline:
+            if multiline_delim in line:
+                in_multiline = False
+            continue
+
+        for delim in ('"""', "'''"):
+            if line.count(delim) == 1:
+                in_multiline = True
+                multiline_delim = delim
+                line = line.split(delim, 1)[0]
+                break
+
         s = line.strip()
         if not s:
             continue
@@ -400,6 +415,10 @@ def _parse_toml_document(raw_text: str) -> Dict[str, Any]:
                 current_section = "mods"
                 current_obj = {}
                 result["mods"].append(current_obj)
+            elif sec_name == "mixins":
+                current_section = "mixins"
+                current_obj = {}
+                result["mixins"].append(current_obj)
             elif sec_name.startswith("dependencies."):
                 current_section = "dependencies"
                 current_dep_target = sec_name.split(".", 1)[1].strip().strip("\"'")
@@ -417,10 +436,12 @@ def _parse_toml_document(raw_text: str) -> Dict[str, Any]:
             current_obj = {}
             continue
 
-        kv_match = re.match(r"^([A-Za-z0-9_.-]+)\s*=\s*(.+)$", s)
+        kv_match = re.match(r"^([A-Za-z0-9_.-]+)\s*=\s*(.*)$", s)
         if kv_match:
             key = kv_match.group(1).strip()
             val_raw = kv_match.group(2).strip()
+            if not val_raw:
+                continue
             val: Any
             if val_raw.lower() == "true":
                 val = True
