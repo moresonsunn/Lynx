@@ -9,6 +9,7 @@ from pathlib import Path
 import logging
 from modpack_providers.modrinth import ModrinthProvider
 from modpack_providers.curseforge import CurseForgeProvider
+from modpack_providers.ftb import FTBProvider
 from integrations_store import get_integration_key
 
 log = logging.getLogger(__name__)
@@ -171,7 +172,10 @@ def _enrich_curated_templates(entries: List[Dict[str, Any]]) -> List[Dict[str, A
 
 
 def get_providers_live() -> Dict[str, Any]:
-    prov: Dict[str, Any] = {"modrinth": ModrinthProvider()}
+    prov: Dict[str, Any] = {
+        "modrinth": ModrinthProvider(),
+        "ftb": FTBProvider(),
+    }
     cf_key = get_integration_key("curseforge")
     if cf_key:
         try:
@@ -231,6 +235,7 @@ async def list_providers():
         {"id": "all", "name": "All", "configured": True, "requires_key": False},
         {"id": "modrinth", "name": "Modrinth", "configured": True, "requires_key": False},
         {"id": "curseforge", "name": "CurseForge", "configured": bool(cf_key), "requires_key": True, "error": _PROVIDER_ERRORS.get("curseforge")},
+        {"id": "ftb", "name": "Feed The Beast", "configured": True, "requires_key": False},
     ]
     return {"providers": items}
 

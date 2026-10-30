@@ -19,8 +19,12 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
   const [minRam, setMinRam] = useState('2G');
   const [maxRam, setMaxRam] = useState('4G');
   const [cpuCores, setCpuCores] = useState(null);
+  const [installMode, setInstallMode] = useState('server');
   const [installing, setInstalling] = useState(false);
   const [installProgress, setInstallProgress] = useState(null);
+  const [installStats, setInstallStats] = useState({});
+  const [excludedMods, setExcludedMods] = useState([]);
+  const [showExcludedMods, setShowExcludedMods] = useState(false);
 
   async function resolveUrl() {
     if (!url.trim()) return;
@@ -60,7 +64,9 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
   async function startInstall() {
     if (!packInfo || !serverName.trim()) return;
     setInstalling(true);
-    setInstallProgress({ step: 'starting', message: 'Starting installation...', progress: 0 });
+    setInstallStats({});
+    setExcludedMods([]);
+    setInstallProgress({ step: 'starting', message: 'Starte Installation...', progress: 0 });
     try {
       const r = await fetch(`${API}/modpacks/install`, {
         method: 'POST',
@@ -70,6 +76,7 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
           pack_id: packInfo.pack_id,
           version_id: selectedVersion || undefined,
           name: serverName.trim(),
+          install_mode: installMode || 'server',
           host_port: hostPort,
           min_ram: minRam,
           max_ram: maxRam,
@@ -97,41 +104,42 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
   }
 
   function pollInstallEvents(taskId) {
-    const interval = setInterval(async () => {
+    const es = new EventSource(`${API}/modpacks/install/events/${taskId}`);
+    es.onmessage = (event) => {
       try {
-        const r = await fetch(`${API}/modpacks/install/events/${taskId}`, { headers: authHeaders() });
-        if (!r.ok) return;
-        const data = await r.json();
-        const events = data.events || [];
-        const latestProgress = events.filter(e => e.type === 'progress').pop();
-        const done = events.find(e => e.type === 'done');
-        const error = events.find(e => e.type === 'error');
-
-        if (latestProgress) {
+        const parsed = JSON.parse(event.data);
+        if (parsed.stats) {
+          setInstallStats((prev) => ({ ...prev, ...parsed.stats }));
+        }
+        if (Array.isArray(parsed.excluded_mods) && parsed.excluded_mods.length > 0) {
+          setExcludedMods(parsed.excluded_mods);
+        }
+        if (parsed.type === 'progress') {
           setInstallProgress({
-            step: latestProgress.step,
-            message: latestProgress.message,
-            progress: latestProgress.progress || 0,
+            step: parsed.step,
+            message: parsed.message,
+            progress: parsed.progress || 0,
           });
-        }
-        if (done) {
-          clearInterval(interval);
-          setInstallProgress({ step: 'done', message: 'Installation complete!', progress: 100 });
-          showToast('success', `Modpack "${packInfo.name}" installed successfully`);
+        } else if (parsed.type === 'done') {
+          es.close();
+          setInstallProgress({ step: 'done', message: 'Installation abgeschlossen!', progress: 100 });
+          setInstalling(false);
+          showToast('success', `Modpack "${packInfo.name}" erfolgreich installiert`);
           setTimeout(() => onInstallStarted?.(), 1500);
-        }
-        if (error) {
-          clearInterval(interval);
+        } else if (parsed.type === 'error') {
+          es.close();
           setInstallProgress(null);
           setInstalling(false);
-          showToast('error', error.message || 'Installation failed');
+          showToast('error', parsed.message || 'Installation fehlgeschlagen');
         }
       } catch {
-        // Retry silently
+        // Ignore parse errors
       }
-    }, 2000);
-    // Cleanup after 10 minutes max
-    setTimeout(() => clearInterval(interval), 600000);
+    };
+    es.onerror = () => {
+      try { es.close(); } catch {}
+      setInstalling(false);
+    };
   }
 
   function handleKeyDown(e) {
@@ -224,6 +232,38 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
 
           {/* Configuration Form */}
           <div className="border-t border-white/10 p-5 space-y-4">
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 uppercase font-semibold">Installationsmodus</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  disabled={installing}
+                  onClick={() => setInstallMode('server')}
+                  className={`p-3 rounded-lg border text-left transition-all ${
+                    installMode === 'server'
+                      ? 'bg-brand-500/20 border-brand-500 text-white'
+                      : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
+                  }`}
+                >
+                  <div className="font-semibold text-sm">Dedicated Server</div>
+                  <div className="text-[11px] text-white/50">Automatisches ModSideResolver-Filtering</div>
+                </button>
+                <button
+                  type="button"
+                  disabled={installing}
+                  onClick={() => setInstallMode('client')}
+                  className={`p-3 rounded-lg border text-left transition-all ${
+                    installMode === 'client'
+                      ? 'bg-brand-500/20 border-brand-500 text-white'
+                      : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
+                  }`}
+                >
+                  <div className="font-semibold text-sm">Minecraft Client</div>
+                  <div className="text-[11px] text-white/50">Alle Client- & Server-Mods behalten</div>
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Version Select */}
               {packInfo.versions?.length > 0 && (
@@ -323,7 +363,7 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
 
             {/* Install Progress */}
             {installProgress && (
-              <div className="mt-4">
+              <div className="mt-4 space-y-3">
                 <div className="flex items-center justify-between text-sm mb-2">
                   <span className="text-white/70">{installProgress.message}</span>
                   <span className="text-white/40">{installProgress.progress}%</span>
@@ -336,6 +376,69 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
                     style={{ width: `${installProgress.progress}%` }}
                   />
                 </div>
+
+                {installMode === 'server' && Object.keys(installStats).length > 0 && (
+                  <div className="bg-black/30 border border-white/10 rounded-lg p-3 text-xs space-y-1.5">
+                    <div className="font-bold text-white">{packInfo.name} – Serverinstallation</div>
+                    <div className="grid grid-cols-2 gap-y-1 text-white/75">
+                      <div>Modpack heruntergeladen:</div>
+                      <div className="font-semibold text-white">
+                        {installStats.files_downloaded != null ? `${installStats.files_downloaded} Dateien` : 'Läuft...'}
+                      </div>
+                      <div>Mods analysiert:</div>
+                      <div className="font-semibold text-white">
+                        {installStats.mods_analyzed != null
+                          ? `${installStats.mods_analyzed} / ${installStats.total_mods || installStats.mods_analyzed}`
+                          : 'Ausstehend'}
+                      </div>
+                      <div>Client-only-Mods erkannt:</div>
+                      <div className="font-semibold text-amber-400">
+                        {installStats.client_only_count != null ? installStats.client_only_count : '–'}
+                      </div>
+                      <div>Server-Mods behalten:</div>
+                      <div className="font-semibold text-emerald-400">
+                        {installStats.server_mods_kept != null ? installStats.server_mods_kept : '–'}
+                      </div>
+                      <div>Abhängigkeiten geprüft:</div>
+                      <div className="font-semibold text-emerald-400">
+                        {installStats.dependencies_checked ? 'OK' : 'Läuft...'}
+                      </div>
+                      <div>Loader installiert:</div>
+                      <div className="font-semibold text-blue-300">
+                        {installStats.loader_installed || 'Wird vorbereitet...'}
+                      </div>
+                      <div>Server-Startvorbereitung:</div>
+                      <div className="font-semibold text-emerald-400">
+                        {installStats.validation_status || 'Läuft...'}
+                      </div>
+                    </div>
+
+                    {excludedMods.length > 0 && (
+                      <div className="pt-2 border-t border-white/10">
+                        <button
+                          type="button"
+                          onClick={() => setShowExcludedMods((v) => !v)}
+                          className="text-amber-300 hover:text-amber-200 underline font-semibold"
+                        >
+                          {showExcludedMods
+                            ? 'Ausgeschlossene Client-only-Mods ausblenden'
+                            : `Ausgeschlossene Client-only-Mods anzeigen (${excludedMods.length})`}
+                        </button>
+                        {showExcludedMods && (
+                          <div className="mt-2 max-h-36 overflow-y-auto space-y-1 bg-black/40 p-2 rounded border border-white/5">
+                            {excludedMods.map((m, idx) => (
+                              <div key={idx} className="text-[11px] border-b border-white/5 pb-1 last:border-0">
+                                <span className="font-semibold text-white">{m.mod_name || m.file_name}</span>{' '}
+                                <span className="text-white/40">({m.file_name})</span>
+                                <div className="text-amber-200/80">{m.reason || m.primary_reason}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

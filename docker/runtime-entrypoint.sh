@@ -426,11 +426,10 @@ get_known_client_patterns() {
     "canvas-renderer" "immediatelyfast" "entityculling"
     "fpsreducer" "enhancedvisuals" "visuality" "cull-less-leaves"
     "skinlayers" "ears" "figura" "emotecraft" "emotes"
-    "appleskin" "jade" "hwyla" "waila" "wthit" "emi" "rei"
     "blur" "smooth-boot" "smoothboot" "loadingscreen"
     "torohealth" "betterthirdperson" "cameraoverhaul" "citresewn"
     "shader" "dripsounds" "auditory" "extrasounds"
-    "fancymenu" "konkrete" "drippyloadingscreen"
+    "fancymenu" "drippyloadingscreen"
   )
   printf '%s\n' "${patterns[@]}"
 }
@@ -457,16 +456,17 @@ is_client_only_jar() {
       fi
       rm -f /tmp/__qmj
     fi
-    # Forge heuristic via mods.toml
-    if unzip -p "$jar" META-INF/mods.toml >/tmp/__mt 2>/dev/null; then
-      has_meta=1
-      # Strict: only treat as client-only if explicit boolean flags are present
-      if grep -Eiq '(clientsideonly|onlyclient|client_only)\s*=\s*true' /tmp/__mt; then
+    # NeoForge / Forge via neoforge.mods.toml or mods.toml (ignoring # comments)
+    for toml_entry in "META-INF/neoforge.mods.toml" "META-INF/mods.toml"; do
+      if unzip -p "$jar" "$toml_entry" >/tmp/__mt 2>/dev/null; then
+        has_meta=1
+        if sed 's/#.*//' /tmp/__mt | grep -Eiq '^[[:space:]]*(clientsideonly|onlyclient|client_only)[[:space:]]*=[[:space:]]*true'; then
+          rm -f /tmp/__mt
+          return 0
+        fi
         rm -f /tmp/__mt
-        return 0
       fi
-      rm -f /tmp/__mt
-    fi
+    done
   fi
   
   local base lower
@@ -514,6 +514,7 @@ detect_loader() {
     unzip -l "$jar" fabric.mod.json >/dev/null 2>&1 && has_fabric=1 || true
     unzip -l "$jar" quilt.mod.json  >/dev/null 2>&1 && has_quilt=1  || true
     unzip -l "$jar" META-INF/mods.toml >/dev/null 2>&1 && has_forge=1 || true
+    unzip -l "$jar" META-INF/neoforge.mods.toml >/dev/null 2>&1 && has_forge=1 || true
   fi
   if [ $has_forge -eq 1 ] && { [ $has_fabric -eq 1 ] || [ $has_quilt -eq 1 ]; }; then
     echo "both"

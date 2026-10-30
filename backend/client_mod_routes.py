@@ -81,8 +81,8 @@ async def analyze_server_mods(
 
     mods_data = [r.to_dict() for r in results]
     client_count = sum(1 for r in results if r.is_client_only)
-    server_count = sum(1 for r in results if not r.is_client_only and r.side.value != "unknown")
-    unknown_count = sum(1 for r in results if r.side.value == "unknown" and not r.is_client_only)
+    server_count = sum(1 for r in results if not r.is_client_only and r.side.value.upper() != "UNKNOWN")
+    unknown_count = sum(1 for r in results if r.side.value.upper() == "UNKNOWN" and not r.is_client_only)
 
     return {
         "total_mods": len(results),

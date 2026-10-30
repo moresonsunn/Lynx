@@ -9,9 +9,14 @@ import {
 
 const SIDE_CONFIG = {
   client: { icon: FaDesktop, color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20', label: 'Client Only', badge: 'bg-orange-500/20 text-orange-300' },
+  client_only: { icon: FaDesktop, color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20', label: 'CLIENT_ONLY', badge: 'bg-orange-500/20 text-orange-300' },
   server: { icon: FaServer, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', label: 'Server Only', badge: 'bg-blue-500/20 text-blue-300' },
+  server_only: { icon: FaServer, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', label: 'SERVER_ONLY', badge: 'bg-blue-500/20 text-blue-300' },
   both: { icon: FaCheckCircle, color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/20', label: 'Both Sides', badge: 'bg-green-500/20 text-green-300' },
-  unknown: { icon: FaQuestion, color: 'text-white/40', bg: 'bg-white/5 border-white/10', label: 'Unknown', badge: 'bg-white/10 text-white/50' },
+  both_sides_required: { icon: FaCheckCircle, color: 'text-green-400', bg: 'bg-green-500/10 border-blue-500/20', label: 'BOTH_SIDES_REQUIRED', badge: 'bg-green-500/20 text-green-300' },
+  optional_client: { icon: FaCheckCircle, color: 'text-teal-400', bg: 'bg-teal-500/10 border-teal-500/20', label: 'OPTIONAL_CLIENT', badge: 'bg-teal-500/20 text-teal-300' },
+  optional_server: { icon: FaCheckCircle, color: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/20', label: 'OPTIONAL_SERVER', badge: 'bg-cyan-500/20 text-cyan-300' },
+  unknown: { icon: FaQuestion, color: 'text-white/40', bg: 'bg-white/5 border-white/10', label: 'UNKNOWN (Kept)', badge: 'bg-white/10 text-white/50' },
 };
 
 const METHOD_LABELS = {

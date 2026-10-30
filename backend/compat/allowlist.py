@@ -92,26 +92,20 @@ def _save_overrides() -> None:
 
 def check_force_side(mod_id: str, mod_name: str = "") -> Optional[str]:
     """
-    Check if a mod is in the force_server or force_client list.
+    Check if a mod is in the force_server or force_client list by exact canonical mod_id.
     Returns 'server', 'client', or None.
     """
     allowlist = get_allowlist()
-    mod_id_lower = mod_id.lower()
-    mod_name_lower = mod_name.lower()
+    mod_id_lower = (mod_id or "").strip().lower()
+    mod_id_norm = mod_id_lower.replace("-", "_")
 
-    # Check canonical ID first
-    if mod_id_lower in allowlist.get("force_server", []):
+    force_server_set = {x.strip().lower() for x in allowlist.get("force_server", [])}
+    force_client_set = {x.strip().lower() for x in allowlist.get("force_client", [])}
+
+    if mod_id_lower in force_server_set or mod_id_norm in force_server_set:
         return "server"
-    if mod_id_lower in allowlist.get("force_client", []):
+    if mod_id_lower in force_client_set or mod_id_norm in force_client_set:
         return "client"
-
-    # Check by name (partial match)
-    for forced in allowlist.get("force_server", []):
-        if forced in mod_id_lower or (mod_name_lower and forced in mod_name_lower):
-            return "server"
-    for forced in allowlist.get("force_client", []):
-        if forced in mod_id_lower or (mod_name_lower and forced in mod_name_lower):
-            return "client"
 
     return None
 

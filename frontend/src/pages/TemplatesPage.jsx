@@ -88,6 +88,7 @@ export default function TemplatesPage({
   const [providers] = useState([
     { id: 'modrinth', name: 'Modrinth' },
     { id: 'curseforge', name: 'CurseForge' },
+    { id: 'ftb', name: 'Feed The Beast' },
   ]);
   const [provider, setProvider] = useState('modrinth');
   const [catalogQuery, setCatalogQuery] = useState('');
@@ -104,7 +105,11 @@ export default function TemplatesPage({
   const [installProvider, setInstallProvider] = useState('modrinth');
   const [installVersions, setInstallVersions] = useState([]);
   const [installVersionId, setInstallVersionId] = useState('');
+  const [installMode, setInstallMode] = useState('server');
   const [installEvents, setInstallEvents] = useState([]);
+  const [installStats, setInstallStats] = useState({});
+  const [excludedMods, setExcludedMods] = useState([]);
+  const [showExcludedMods, setShowExcludedMods] = useState(false);
   const [installWorking, setInstallWorking] = useState(false);
 
   useEffect(() => {
@@ -156,6 +161,9 @@ export default function TemplatesPage({
     setInstallPack(pack);
     setInstallOpen(true);
     setInstallEvents([]);
+    setInstallStats({});
+    setExcludedMods([]);
+    setShowExcludedMods(false);
     setInstallWorking(false);
 
     // Auto-fill suggested name
@@ -197,13 +205,16 @@ export default function TemplatesPage({
       return;
     }
     setInstallWorking(true);
-    setInstallEvents([{ type: 'progress', message: 'Submitting install task...' }]);
+    setInstallStats({});
+    setExcludedMods([]);
+    setInstallEvents([{ type: 'progress', message: 'Starte Modpack-Installation...' }]);
     try {
       const body = {
         provider: installProvider || provider || 'modrinth',
         pack_id: String(installPack.id || installPack.slug || ''),
         version_id: installVersionId ? String(installVersionId) : null,
         name: String(serverName).trim(),
+        install_mode: installMode || 'server',
         host_port: hostPort ? Number(hostPort) : null,
         min_ram: minRam,
         max_ram: maxRam,
@@ -228,6 +239,12 @@ export default function TemplatesPage({
             const next = [...prev, parsed];
             return next.length > 500 ? next.slice(-500) : next;
           });
+          if (parsed.stats) {
+            setInstallStats(prev => ({ ...prev, ...parsed.stats }));
+          }
+          if (Array.isArray(parsed.excluded_mods) && parsed.excluded_mods.length > 0) {
+            setExcludedMods(parsed.excluded_mods);
+          }
           if (parsed.type === 'done' || parsed.type === 'error') {
             es.close();
             setInstallWorking(false);
@@ -624,6 +641,40 @@ export default function TemplatesPage({
             </div>
 
             <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              <div>
+                <label className="block text-xs font-semibold text-white/50 mb-2">INSTALLATIONSMODUS</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setInstallMode('server')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      installMode === 'server'
+                        ? 'bg-brand-600/20 border-brand-500 text-white shadow'
+                        : 'bg-black/20 border-white/10 text-white/60 hover:text-white'
+                    }`}
+                  >
+                    <div className="font-bold text-sm">Dedicated Server</div>
+                    <div className="text-[11px] text-white/50 mt-0.5">
+                      Automatisches ModSideResolver-Filtering & Server-Validierung
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInstallMode('client')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      installMode === 'client'
+                        ? 'bg-brand-600/20 border-brand-500 text-white shadow'
+                        : 'bg-black/20 border-white/10 text-white/60 hover:text-white'
+                    }`}
+                  >
+                    <div className="font-bold text-sm">Minecraft Client</div>
+                    <div className="text-[11px] text-white/50 mt-0.5">
+                      Behält sämtliche Client- und Server-Mods bei
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-white/50 mb-1">VERSION</label>
@@ -678,7 +729,72 @@ export default function TemplatesPage({
                 </div>
               </div>
 
-              <div className="bg-black/30 rounded-xl p-4 border border-white/5 h-48 overflow-auto font-mono text-xs">
+              {(installWorking || Object.keys(installStats).length > 0) && installMode === 'server' && (
+                <div className="bg-black/40 border border-white/10 rounded-xl p-4 space-y-2 text-xs">
+                  <div className="font-bold text-white text-sm mb-2">
+                    {installPack?.name} – Serverinstallation
+                  </div>
+                  <div className="grid grid-cols-2 gap-y-1.5 text-white/80">
+                    <div>Modpack heruntergeladen:</div>
+                    <div className="font-semibold text-white">
+                      {installStats.files_downloaded != null ? `${installStats.files_downloaded} Dateien` : 'Läuft...'}
+                    </div>
+                    <div>Mods analysiert:</div>
+                    <div className="font-semibold text-white">
+                      {installStats.mods_analyzed != null
+                        ? `${installStats.mods_analyzed} / ${installStats.total_mods || installStats.mods_analyzed}`
+                        : 'Ausstehend'}
+                    </div>
+                    <div>Client-only-Mods erkannt:</div>
+                    <div className="font-semibold text-amber-400">
+                      {installStats.client_only_count != null ? installStats.client_only_count : '–'}
+                    </div>
+                    <div>Server-Mods behalten:</div>
+                    <div className="font-semibold text-emerald-400">
+                      {installStats.server_mods_kept != null ? installStats.server_mods_kept : '–'}
+                    </div>
+                    <div>Abhängigkeiten geprüft:</div>
+                    <div className="font-semibold text-emerald-400">
+                      {installStats.dependencies_checked ? 'OK' : 'Läuft...'}
+                    </div>
+                    <div>Loader installiert:</div>
+                    <div className="font-semibold text-blue-300">
+                      {installStats.loader_installed || 'Wird vorbereitet...'}
+                    </div>
+                    <div>Server-Startvorbereitung:</div>
+                    <div className="font-semibold text-emerald-400">
+                      {installStats.validation_status || 'Läuft...'}
+                    </div>
+                  </div>
+
+                  {excludedMods.length > 0 && (
+                    <div className="pt-2 border-t border-white/10 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowExcludedMods(v => !v)}
+                        className="text-amber-300 hover:text-amber-200 font-semibold underline text-xs"
+                      >
+                        {showExcludedMods
+                          ? 'Ausgeschlossene Client-only-Mods ausblenden'
+                          : `Ausgeschlossene Client-only-Mods anzeigen (${excludedMods.length})`}
+                      </button>
+                      {showExcludedMods && (
+                        <div className="mt-2 max-h-40 overflow-y-auto space-y-1.5 bg-black/40 p-2.5 rounded-lg border border-white/5">
+                          {excludedMods.map((m, idx) => (
+                            <div key={idx} className="text-[11px] border-b border-white/5 pb-1 last:border-0">
+                              <span className="font-semibold text-white">{m.mod_name || m.file_name}</span>{' '}
+                              <span className="text-white/40">({m.file_name})</span>
+                              <div className="text-amber-200/80">{m.reason || m.primary_reason}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="bg-black/30 rounded-xl p-4 border border-white/5 h-40 overflow-auto font-mono text-xs">
                 {installEvents.map((ev, i) => (
                   <div key={i} className={`mb-1 ${ev.type === 'error' ? 'text-red-400' : 'text-white/70'}`}>
                     {typeof ev.message === 'string' ? ev.message : JSON.stringify(ev)}
