@@ -72,7 +72,7 @@ from backup_scheduler import (
     start_backup_scheduler, stop_backup_scheduler,
 )
 from models import User
-from config import SERVERS_ROOT, APP_NAME, APP_VERSION
+from config import SERVERS_ROOT, APP_NAME, APP_VERSION, safe_child_path
 import json
 import asyncio
 import hashlib
@@ -560,7 +560,7 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
             from pathlib import Path
             import json as _json
             import re as _re
-            server_dir = (SERVERS_ROOT / req.name)
+            server_dir = safe_child_path(SERVERS_ROOT, req.name)
 
             detected_type: str | None = None
             detected_version: str | None = None
@@ -963,7 +963,7 @@ def get_server_info(container_id: str, request: Request, current_user: User = De
         try:
             from pathlib import Path
             import hashlib
-            base = (SERVERS_ROOT.resolve() / (info.get("name") or "")).resolve()
+            base = safe_child_path(SERVERS_ROOT, info.get("name") or "")
             st = base.stat() if base.exists() else None
             sig = f"{info.get('java_version','')}-{int(st.st_mtime) if st else 0}"
             etag = 'W/"info-' + hashlib.md5(sig.encode()).hexdigest() + '"'
@@ -1025,7 +1025,7 @@ async def stream_servers(request: Request, token: str | None = Query(None)):
                         last_sig = sig
                         yield f"data: {json.dumps({'type': 'servers', 'servers': servers, 'sig': sig}, default=str)}\n\n"
                 except Exception as e:
-                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Server stream update failed'})}\n\n"
                 await asyncio.sleep(2)  # was 1s -> 2s to halve load (still near-realtime)
         except asyncio.CancelledError:
             return
@@ -1141,7 +1141,7 @@ def players_list(name: str, container_id: str | None = Query(None), current_user
             if output and result.get("exit_code") == 0:
                 # Minecraft format: "There are X of a max of Y players online: player1, player2"
                 import re
-                m = re.search(r"(\d+)\s+of\s+a\s+max\s+of\s+(\d+)\s+players?\s+online", output)
+                m = re.search(r"(?<!\d)(\d+)\s+of\s+a\s+max\s+of\s+(\d+)\s+players?\s+online", output)
                 if m:
                     online = int(m.group(1))
                     max_players = int(m.group(2))
@@ -1179,7 +1179,7 @@ def configs_list(name: str, current_user: User = Depends(require_server_permissi
     """Dynamically discover config files that actually exist in the server directory."""
     found = []
     try:
-        server_dir = SERVERS_ROOT.resolve() / name
+        server_dir = safe_child_path(SERVERS_ROOT, name)
         if server_dir.is_dir():
             for pattern in _CONFIG_PATTERNS:
                 candidate = server_dir / pattern
@@ -1338,7 +1338,7 @@ def get_server_ram(container_id: str, current_user: User = Depends(require_serve
         from pathlib import Path
         from config import SERVERS_ROOT
         import json
-        meta_path = SERVERS_ROOT / container_id / "server_meta.json"
+        meta_path = safe_child_path(SERVERS_ROOT, container_id, "server_meta.json")
         meta = {}
         if meta_path.exists():
             try:
@@ -1576,6 +1576,13 @@ def public_status():
 SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/change-password",
               "/steam", "/hytale", "/monitoring", "/security", "/multi-server", "/status"]
 
+_STATIC_ROOT = (Path(__file__).resolve().parent / "static").resolve()
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 @app.get("/")
 @app.get("/login")
 @app.get("/servers")
@@ -1595,9 +1602,9 @@ SPA_ROUTES = ["/login", "/servers", "/templates", "/settings", "/users", "/chang
 @app.get("/status")
 async def spa_fallback():
     """Serve React SPA for client-side routing (explicit routes)."""
-    index_path = os.path.join("static", "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path, media_type="text/html")
+    index_path = _STATIC_ROOT / "index.html"
+    if index_path.is_file():
+        return FileResponse(str(index_path), media_type="text/html", headers=_NO_CACHE_HEADERS)
     raise HTTPException(status_code=404, detail="Frontend not found")
 
 
@@ -1611,24 +1618,37 @@ async def spa_fallback_catch_all(full_path: str):
     # Let real API / health / docs pass through to their 404
     if full_path.startswith("api/") or full_path.startswith("health") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
         raise HTTPException(status_code=404, detail="Not found")
-    # If a real file exists under ./static (js/css/img after `COPY --from=ui`), serve it
-    candidate = os.path.join("static", full_path)
-    if full_path and os.path.isfile(candidate):
-        # Guess media type from extension; FileResponse will set it
-        return FileResponse(candidate)
-    # Also allow the StaticFiles mount to handle `static/` prefix requests
+    # If a real file exists under ./static (js/css/img after `COPY --from=ui`), serve it safely
+    if full_path:
+        try:
+            candidate = (_STATIC_ROOT / full_path).resolve()
+            if str(candidate).startswith(str(_STATIC_ROOT)) and candidate.is_file():
+                return FileResponse(str(candidate))
+        except Exception:
+            pass
+    # If a browser cached an older index.html referencing main.<old_hash>.js or main.<old_hash>.css
+    # after a container rebuild, seamlessly serve the current main.*.js / main.*.css bundle.
+    if full_path.startswith("static/js/main.") and full_path.endswith(".js"):
+        js_dir = _STATIC_ROOT / "static" / "js"
+        matches = sorted(js_dir.glob("main.*.js")) if js_dir.is_dir() else []
+        if matches:
+            return FileResponse(str(matches[0]), media_type="application/javascript", headers=_NO_CACHE_HEADERS)
+    if full_path.startswith("static/css/main.") and full_path.endswith(".css"):
+        css_dir = _STATIC_ROOT / "static" / "css"
+        matches = sorted(css_dir.glob("main.*.css")) if css_dir.is_dir() else []
+        if matches:
+            return FileResponse(str(matches[0]), media_type="text/css", headers=_NO_CACHE_HEADERS)
     if full_path.startswith("static/"):
         raise HTTPException(status_code=404, detail="Not found")
     # SPA routes have no file extension — serve index.html
-    # Keep API-like 404 for unexpected dots only when not an SPA route
-    index_path = os.path.join("static", "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path, media_type="text/html")
+    index_path = _STATIC_ROOT / "index.html"
+    if index_path.is_file():
+        return FileResponse(str(index_path), media_type="text/html", headers=_NO_CACHE_HEADERS)
     raise HTTPException(status_code=404, detail="Frontend not found")
 
 # Mount the React UI at root as the last route so it doesn't shadow API endpoints
 try:
-    app.mount("/", StaticFiles(directory="static", html=True), name="ui")
+    app.mount("/", StaticFiles(directory=str(_STATIC_ROOT), html=True), name="ui")
 except Exception:
     # Static directory may not exist in some environments (e.g., dev without build)
     pass

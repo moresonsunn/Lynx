@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional, List, Dict
 from config import (SERVERS_ROOT, SERVERS_HOST_ROOT, SERVERS_VOLUME_NAME,
                      detect_server_from_files, resolve_server_dir, get_lan_ip,
-                     online_from_log_lines)
+                     online_from_log_lines, safe_child_path)
 from download_manager import prepare_server_files
 import time
 import logging
@@ -161,6 +161,7 @@ def download_file(url: str, dest: Path, min_size: int = 1024 * 100, max_retries:
     Retries up to max_retries times.
     Performs basic validation for JAR content (content-type and ZIP magic).
     """
+    dest = safe_child_path(dest.parent, dest.name)
     for attempt in range(max_retries):
         try:
             logger.info(f"Downloading {url} to {dest} (attempt {attempt+1})")
@@ -234,7 +235,7 @@ def download_file(url: str, dest: Path, min_size: int = 1024 * 100, max_retries:
             if diagnostics is not None:
                 diagnostics.append({
                     "attempt": attempt + 1,
-                    "error": str(e),
+                    "error": "Download attempt failed",
                     "url": url,
                     "success": False,
                 })
@@ -379,7 +380,8 @@ def fix_server_jar(server_dir: Path, server_type: str, version: str, loader_vers
     If not, attempts to download it directly from the official sources.
     Supports loader_version for Fabric.
     """
-    jar_path = server_dir / "server.jar"
+    server_dir = safe_child_path(server_dir.parent, server_dir.name)
+    jar_path = safe_child_path(server_dir, "server.jar")
     min_jar_size = 1024 * 100  
 
     
@@ -457,17 +459,19 @@ class DockerManager:
         self._steam_client: docker.DockerClient | None = None
 
     def _get_steam_client(self) -> docker.DockerClient | None:
-        host = (self._steam_docker_host or "").strip()
-        if not host:
-            return None
-        # Security: refuse insecure TCP connections without TLS
-        if host.startswith("tcp://") and not host.startswith("tcp://") and "tlsverify" not in host:
-            # Check if it's an insecure TCP connection (no TLS)
-            if "2375" in host or "2376" in host:
-                logger.warning(f"Refusing insecure Docker TCP connection to {host}. Use unix:// socket or enable TLS.")
-                return None
         if self._steam_client is not None:
             return self._steam_client
+        # Prefer shared Unix socket if present (/data/servers/.steam-docker.sock)
+        default_sock = Path("/data/servers/.steam-docker.sock")
+        host = (self._steam_docker_host or "").strip()
+        if default_sock.exists():
+            host = f"unix://{default_sock}"
+        if not host:
+            return None
+        # Security: refuse non-loopback unauthenticated TCP connections
+        if host.startswith("tcp://") and not (host.startswith("tcp://127.0.0.1:") or host.startswith("tcp://localhost:")):
+            logger.warning(f"Refusing non-loopback Docker TCP connection to {host}. Use unix:// socket.")
+            return None
         try:
             self._steam_client = docker.DockerClient(base_url=host)
             return self._steam_client
@@ -798,7 +802,7 @@ class DockerManager:
             logger.error(f"Error getting server type/version for container {container_id}: {e}")
             return {
                 "id": container_id,
-                "error": str(e),
+                "error": "Server type inspection failed",
                 "server_type": None,
                 "server_version": None,
                 "loader_version": None,
@@ -1088,7 +1092,7 @@ class DockerManager:
             logger.error(f"Error getting server info for container {container_id}: {e}")
             return {
                 "id": container_id,
-                "error": str(e),
+                "error": "Server info unavailable",
                 "status": "error",
             }
 
@@ -1535,7 +1539,7 @@ class DockerManager:
         and create a runtime container to run the server.
         """
         self._ensure_runtime_image()
-        server_dir: Path = SERVERS_ROOT / name
+        server_dir: Path = safe_child_path(SERVERS_ROOT, name)
         server_dir.mkdir(parents=True, exist_ok=True)
 
         
@@ -1747,7 +1751,7 @@ class DockerManager:
         Optionally accepts extra_env to override runtime env (e.g., JAVA_BIN, JAVA_OPTS).
         """
         self._ensure_runtime_image()
-        server_dir: Path = SERVERS_ROOT / name
+        server_dir: Path = safe_child_path(SERVERS_ROOT, name)
         if not server_dir.exists() or not server_dir.is_dir():
             raise RuntimeError(f"Server directory {server_dir} does not exist")
 
@@ -1789,7 +1793,7 @@ class DockerManager:
                 run_kwargs["entrypoint"] = ["/usr/local/bin/runtime-entrypoint.sh"]
 
             
-            meta_path = SERVERS_ROOT / name / "server_meta.json"
+            meta_path = safe_child_path(server_dir, "server_meta.json")
             meta = {}
             if meta_path.exists():
                 try:
@@ -2008,7 +2012,7 @@ class DockerManager:
                 if not isinstance(existing_detected_loader, str) or not existing_detected_loader.strip():
                     new_meta["detected_loader_version"] = loader_version_guess
             try:
-                (SERVERS_ROOT / name).mkdir(parents=True, exist_ok=True)
+                server_dir.mkdir(parents=True, exist_ok=True)
                 meta_path.write_text(json.dumps(new_meta), encoding="utf-8")
             except Exception:
                 pass
@@ -2045,7 +2049,7 @@ class DockerManager:
                 c_created = getattr(container, 'attrs', {}).get('Created') if hasattr(container, 'attrs') else None
                 if c_created:
                     
-                    new_meta = json.loads((SERVERS_ROOT / name / 'server_meta.json').read_text(encoding='utf-8'))
+                    new_meta = json.loads(meta_path.read_text(encoding='utf-8'))
                     new_meta.setdefault('container_created_raw', c_created)
                     from datetime import datetime, timezone
                     try:
@@ -2058,7 +2062,7 @@ class DockerManager:
                         new_meta.setdefault('container_created_ts', int(dt.timestamp()))
                     except Exception:
                         pass
-                    (SERVERS_ROOT / name / 'server_meta.json').write_text(json.dumps(new_meta), encoding='utf-8')
+                    meta_path.write_text(json.dumps(new_meta), encoding='utf-8')
             except Exception:
                 pass
             return {"id": container.id, "name": container.name, "status": container.status}
@@ -2816,7 +2820,7 @@ class DockerManager:
             container.remove(force=True)
         except Exception as e:
             logger.warning(f"Failed to remove container {container_id}: {e}")
-            return {"error": f"Failed to remove old container: {e}"}
+            return {"error": "Failed to remove old container"}
 
         # ---- Create new container with updated env ----
         run_kwargs: dict = {
@@ -2849,7 +2853,7 @@ class DockerManager:
             new_container = client.containers.run(**run_kwargs)
         except Exception as e:
             logger.error(f"Failed to recreate container {name} with updated env: {e}")
-            return {"error": f"Failed to recreate container: {e}"}
+            return {"error": "Failed to recreate container"}
 
         # If the container was running before, it's already started by containers.run
         # If it was stopped, stop it again
@@ -3066,14 +3070,14 @@ class DockerManager:
                 container.remove(force=True)
                 container_removed = True
             except Exception as rm_err:
-                remove_error = str(rm_err)
+                remove_error = "Failed to remove container"
                 logger.error(f"Failed to remove container {container_id}: {rm_err}")
         except docker.errors.NotFound:
             
             container_removed = True
             logger.info(f"Container {container_id} not found, will just remove directory")
         except Exception as e:
-            remove_error = str(e)
+            remove_error = "Failed to find container"
             logger.error(f"Error finding container {container_id}: {e}")
             
         
@@ -3082,39 +3086,23 @@ class DockerManager:
         
         removed_dir = False
         try:
-            server_dir = SERVERS_ROOT / name_hint
+            server_dir = safe_child_path(SERVERS_ROOT, name_hint)
             target_removed = False
             if server_dir.exists():
                 import shutil
-                
                 if server_dir.is_symlink():
-                    try:
-                        target = server_dir.resolve()
-                    except Exception:
-                        target = None
                     server_dir.unlink(missing_ok=True)
                     target_removed = True
-                    if target and target.exists() and target.is_dir():
-                        shutil.rmtree(target, ignore_errors=True)
-                        target_removed = not target.exists()
                 elif server_dir.is_dir():
                     shutil.rmtree(server_dir, ignore_errors=True)
                     target_removed = not server_dir.exists()
             if not target_removed:
-                
-                alt_dir = SERVERS_ROOT / str(container_id)
+                alt_dir = safe_child_path(SERVERS_ROOT, str(container_id))
                 if alt_dir.exists():
                     import shutil
                     if alt_dir.is_symlink():
-                        try:
-                            target = alt_dir.resolve()
-                        except Exception:
-                            target = None
                         alt_dir.unlink(missing_ok=True)
                         target_removed = True
-                        if target and target.exists() and target.is_dir():
-                            shutil.rmtree(target, ignore_errors=True)
-                            target_removed = target_removed or (not target.exists())
                     elif alt_dir.is_dir():
                         shutil.rmtree(alt_dir, ignore_errors=True)
                         target_removed = target_removed or (not alt_dir.exists())
@@ -3187,8 +3175,8 @@ class DockerManager:
         4. Update server_meta.json (name + previous_names).
         5. Recreate container under new name preserving settings.
         """
-        old_dir = SERVERS_ROOT / old_name
-        new_dir = SERVERS_ROOT / new_name
+        old_dir = safe_child_path(SERVERS_ROOT, old_name)
+        new_dir = safe_child_path(SERVERS_ROOT, new_name)
         if not old_dir.exists() or not old_dir.is_dir():
             raise RuntimeError(f"Server directory {old_dir} does not exist")
         if new_dir.exists():
@@ -3249,7 +3237,7 @@ class DockerManager:
                     prev.append(old_name)
                 new_meta["previous_names"] = prev
             new_meta["name"] = new_name
-            (SERVERS_ROOT / new_name / "server_meta.json").write_text(json.dumps(new_meta), encoding="utf-8")
+            safe_child_path(new_dir, "server_meta.json").write_text(json.dumps(new_meta), encoding="utf-8")
         except Exception:
             pass
 
@@ -3425,7 +3413,7 @@ class DockerManager:
 
         except Exception as e:
             logger.error(f"Fehler beim Senden des Befehls an Container {container_id}: {e}")
-            return {"exit_code": 1, "output": f"Error: {e}", "method": "error"}
+            return {"exit_code": 1, "output": "Command execution failed", "method": "error"}
 
     def get_server_stats(self, container_id: str) -> dict:
         """
@@ -3578,7 +3566,7 @@ class DockerManager:
             logger.error(f"Error getting stats for container {container_id}: {e}")
             return {
                 "id": container_id,
-                "error": f"Failed to get stats: {str(e)}",
+                "error": "Failed to get stats",
                 "cpu_percent": 0.0,
                 "memory_usage_mb": 0.0,
                 "memory_limit_mb": 0.0,
@@ -3961,8 +3949,8 @@ class DockerManager:
                 logger.error(f"Failed to recreate container {container_id} after updating Java env: {e}")
                 return {
                     "success": False,
-                    "message": f"Labels updated but recreate failed: {e}. Container restart may be required.",
-                    "error": str(e),
+                    "message": "Labels updated but recreate failed. Container restart may be required.",
+                    "error": "Container recreate failed",
                     "java_version": java_version,
                     "java_bin": f"/usr/local/bin/java{java_version}",
                     "restart_required": True,
@@ -3987,7 +3975,7 @@ class DockerManager:
                 raise ValueError("java_args too long (max 4096 characters when normalized)")
 
             
-            meta_path = SERVERS_ROOT / server_name / "server_meta.json"
+            meta_path = safe_child_path(SERVERS_ROOT, server_name, "server_meta.json")
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}") if meta_path.exists() else {}
             except Exception:
@@ -4077,7 +4065,7 @@ class DockerManager:
 
             # Update meta first so recreate persists it
             try:
-                meta_path = SERVERS_ROOT / server_name / "server_meta.json"
+                meta_path = safe_child_path(SERVERS_ROOT, server_name, "server_meta.json")
                 meta = {}
                 if meta_path.exists():
                     try:
@@ -4135,7 +4123,7 @@ class DockerManager:
 
             # Persist to meta + env overrides so recreates keep the cap
             try:
-                meta_path = SERVERS_ROOT / server_name / "server_meta.json"
+                meta_path = safe_child_path(SERVERS_ROOT, server_name, "server_meta.json")
                 meta = {}
                 if meta_path.exists():
                     try:

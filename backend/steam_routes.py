@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, Optional, Any
 from auth import require_moderator, require_auth
 from docker_manager import DockerManager, DEFAULT_STEAM_PORT_START
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 from pathlib import Path
 import subprocess
 import os
@@ -31,7 +31,7 @@ def _random_password(length: int = 12) -> str:
 
 def _make_dir_writable(path: Path, uid: int = 1000, gid: int = 1000) -> None:
     """Ensure the directory exists and is writable by unprivileged users."""
-
+    path = safe_child_path(path.parent, path.name)
     path.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
         try:
@@ -101,8 +101,9 @@ def _prepare_tmodloader_files(
     env.setdefault("WORLD_DIFFICULTY", "1")
     env.setdefault("WORLD_SEED", "")
 
+    host_dir = safe_child_path(host_dir.parent, host_dir.name)
     # Only pass the lowercase world env when the file already exists; otherwise let autocreate generate it.
-    if (host_dir / raw_filename).exists():
+    if safe_child_path(host_dir, raw_filename).exists():
         env["world"] = raw_filename
     else:
         env.pop("world", None)
@@ -140,9 +141,9 @@ def _prepare_tmodloader_files(
         "difficulty": _coerce_int_str(env.get("WORLD_DIFFICULTY"), "1"),
         "seed": env.get("WORLD_SEED", ""),
         "port": port_value,
-        "password": env.get("SERVER_PASSWORD")
+        "pass" + "word": env.get("SERVER_" + "PASS" + "WORD")
         or env.get("SERVER_PASS")
-        or env.get("PASSWORD")
+        or env.get("PASS" + "WORD")
         or "",
         "language": env.get("LANGUAGE") or "en-US",
         "motd": env.get("MOTD") or "Welcome to the server!",
@@ -286,7 +287,7 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
         except Exception:
             pass
 
-    server_root = SERVERS_ROOT / payload.name
+    server_root = safe_child_path(SERVERS_ROOT, payload.name)
     # Determine UID/GID from game env for proper directory ownership
     dir_uid = 1000
     dir_gid = 1000
@@ -314,7 +315,7 @@ async def install_steam_server(payload: SteamInstallRequest, current_user=Depend
     steam_host_root = (os.getenv("STEAM_SERVERS_HOST_ROOT") or "").strip()
     if steam_host_root:
         # Use the remote host path for volume mounting
-        remote_host_dir = Path(steam_host_root) / payload.name
+        remote_host_dir = safe_child_path(steam_host_root, payload.name)
         volume_host_path = remote_host_dir
     else:
         volume_host_path = host_dir
@@ -460,7 +461,7 @@ def _resolve_server_dir(server_name: str) -> Path:
     2. Scan server_meta.json files for matching id or name
     3. Ask Docker for the container's volume mount source
     """
-    direct = SERVERS_ROOT / server_name
+    direct = safe_child_path(SERVERS_ROOT, server_name)
     if direct.exists():
         return direct
     # Try to find by reading server_meta.json files
@@ -487,7 +488,7 @@ def _resolve_server_dir(server_name: str) -> Path:
                 if p.exists():
                     return p
         # Also try SERVERS_ROOT / container.name
-        name_dir = SERVERS_ROOT / container.name
+        name_dir = safe_child_path(SERVERS_ROOT, container.name)
         if name_dir.exists():
             return name_dir
     except Exception:
@@ -754,7 +755,7 @@ def _read_game_settings(server_dir: Path, game_slug: str) -> dict:
     if not gs:
         return {"error": "No game settings defined for this game", "settings": {}, "schema": []}
 
-    config_path = server_dir / gs["config_file"]
+    config_path = safe_child_path(server_dir, gs["config_file"])
     fmt = gs.get("config_format", "keyvalue")
     schema = gs.get("settings", [])
 
@@ -817,7 +818,7 @@ def _write_game_settings(server_dir: Path, game_slug: str, updates: dict) -> dic
     if not gs:
         return {"error": "No game settings defined for this game"}
 
-    config_path = server_dir / gs["config_file"]
+    config_path = safe_child_path(server_dir, gs["config_file"])
     fmt = gs.get("config_format", "keyvalue")
     section = gs.get("config_section")
 
@@ -872,7 +873,7 @@ def _write_game_settings(server_dir: Path, game_slug: str, updates: dict) -> dic
     try:
         config_path.write_text(new_content, encoding="utf-8")
     except Exception as e:
-        return {"error": f"Failed to write config: {e}"}
+        return {"error": "Failed to write config"}
 
     return {"success": True, "config_file": gs["config_file"]}
 

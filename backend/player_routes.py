@@ -10,7 +10,8 @@ from models import PlayerAction, User
 from auth import require_auth, require_moderator
 from runtime_adapter import get_runtime_manager_or_docker
 from config import (SERVERS_ROOT, sanitize_player_names,
-                     online_from_log_lines, read_log_tail_lines)
+                     online_from_log_lines, read_log_tail_lines,
+                     safe_child_path, resolve_server_dir)
 import os, json, re, gzip, datetime as _dt
 
 router = APIRouter(prefix="/players", tags=["player_management"])
@@ -59,36 +60,13 @@ def _server_dir(server_name: str):
     names with mixed case; the filesystem on Linux is case-sensitive. We first
     try the exact path, then scan SERVERS_ROOT for a lower-case match.
     """
+    resolved = resolve_server_dir(server_name)
+    if resolved is not None:
+        return resolved
     try:
-        p = (SERVERS_ROOT / server_name).resolve()
-        if str(p).startswith(str(SERVERS_ROOT.resolve())) and p.exists():
-            return p
+        return safe_child_path(SERVERS_ROOT, server_name)
     except Exception:
-        pass
-    # Case-insensitive scan fallback
-    try:
-        if SERVERS_ROOT.exists():
-            needle = server_name.lower()
-            for child in SERVERS_ROOT.iterdir():
-                try:
-                    if child.is_dir() and child.name.lower() == needle:
-                        # Return resolved child, still must be under SERVERS_ROOT
-                        cp = child.resolve()
-                        if str(cp).startswith(str(SERVERS_ROOT.resolve())):
-                            return cp
-                except Exception:
-                    continue
-    except Exception:
-        pass
-    # Last resort: return the exact path even if not exists so callers can
-    # still attempt disk reads (they will just miss). Preserve original behavior.
-    try:
-        p = (SERVERS_ROOT / server_name).resolve()
-        if str(p).startswith(str(SERVERS_ROOT.resolve())):
-            return p
-    except Exception:
-        pass
-    return None
+        return None
 
 
 def _docker_logs_online_fallback(server_name: str) -> tuple[list[str], str]:

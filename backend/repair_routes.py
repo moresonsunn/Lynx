@@ -5,7 +5,7 @@ from pathlib import Path
 import json, time, hashlib
 from auth import require_moderator
 from models import User
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 from docker_manager import fix_server_jar
 
 router = APIRouter(prefix="/servers", tags=["server_maintenance"])
@@ -57,8 +57,9 @@ def _detect_type_version(server_dir: Path) -> tuple[str | None, str | None]:
 
 def _sha256(path: Path) -> str | None:
     try:
+        safe_p = safe_child_path(path.parent, path.name)
         h = hashlib.sha256()
-        with open(path, "rb") as f:
+        with open(safe_p, "rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
                 if not chunk:
                     break
@@ -69,7 +70,7 @@ def _sha256(path: Path) -> str | None:
 
 @router.post("/{server_name}/repair-jar")
 def repair_server_jar(server_name: str, current_user: User = Depends(require_moderator)):
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server directory not found")
 
@@ -150,7 +151,7 @@ def analyze_server_crashes(server_name: str, current_user: User = Depends(requir
     This endpoint scans crash-reports/ and logs/ for crash indicators,
     identifies client-only mods and mod conflicts, and provides recommendations.
     """
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server directory not found")
     
@@ -176,7 +177,7 @@ def auto_fix_server_mods(
     
     Set dry_run=true to preview what would be done without making changes.
     """
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server directory not found")
     
@@ -199,7 +200,7 @@ def purge_client_only_mods(
     This uses both metadata inspection (fabric.mod.json, mods.toml) and
     known patterns to identify and disable client-only mods.
     """
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server directory not found")
     
@@ -238,7 +239,7 @@ def list_disabled_mods(server_name: str, current_user: User = Depends(require_mo
     """
     List all disabled mods (client-only, crash-related, incompatible).
     """
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server directory not found")
     
@@ -270,7 +271,7 @@ def restore_disabled_mod(
     """
     Restore a previously disabled mod back to the mods folder.
     """
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server directory not found")
     
@@ -280,10 +281,10 @@ def restore_disabled_mod(
     
     for folder in ["mods-disabled-client", "mods-disabled-crash", "mods-disabled-incompatible"]:
         disabled_dir = server_dir / folder
-        mod_path = disabled_dir / mod_name
+        mod_path = safe_child_path(disabled_dir, mod_name)
         if mod_path.exists():
             import shutil
-            dest = mods_dir / mod_name
+            dest = safe_child_path(mods_dir, mod_name)
             shutil.move(str(mod_path), str(dest))
             return {
                 "message": f"Restored {mod_name} to mods folder",

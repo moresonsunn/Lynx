@@ -1,4 +1,4 @@
-﻿"""Integration tests for auth, permissions, and user management.
+"""Integration tests for auth, permissions, and user management.
 
 Runs against the real FastAPI app with dependency-overridden DB session and
 temp SQLite storage, so it needs no Docker or running services.
@@ -15,6 +15,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 # Isolate storage before importing app modules.
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-used-in-production-0123456789")
+os.environ.setdefault("RUNTIME_MODE", "local")
 os.environ.setdefault("SERVERS_CONTAINER_ROOT", str(Path(__file__).parent / "_tmp_servers"))
 os.environ.setdefault("STATS_DB_PATH", str(Path(__file__).parent / "_tmp_stats.db"))
 os.environ.setdefault("STATS_COLLECTOR_ENABLED", "0")

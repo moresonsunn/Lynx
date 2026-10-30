@@ -354,10 +354,10 @@ def cleanup_logs(current_user: User = Depends(require_admin)):
                     if log_file.stat().st_mtime < cutoff:
                         log_file.unlink()
                         cleaned += 1
-                except Exception as e:
-                    errors.append(f"{server_dir.name}/{log_file.name}: {e}")
-    except Exception as e:
-        errors.append(f"Scan error: {e}")
+                except Exception:
+                    errors.append(f"Failed to delete {server_dir.name}/{log_file.name}")
+    except Exception:
+        errors.append("Log scan error")
     
     return {"cleaned": cleaned, "errors": errors[:20]}
 
@@ -384,10 +384,10 @@ def cleanup_backups(current_user: User = Depends(require_admin)):
                         backup_file.unlink()
                         cleaned += 1
                         freed_mb += size_mb
-                except Exception as e:
-                    errors.append(f"{backup_file.name}: {e}")
-    except Exception as e:
-        errors.append(f"Cleanup error: {e}")
+                except Exception:
+                    errors.append(f"Failed to delete {backup_file.name}")
+    except Exception:
+        errors.append("Backup cleanup error")
     
     return {"cleaned": cleaned, "freed_mb": round(freed_mb, 2), "errors": errors[:20]}
 

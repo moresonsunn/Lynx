@@ -240,10 +240,14 @@ async def upload_plugin_version(
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Save file
-    plugins_dir = Path("plugins") / plugin.name
+    from config import safe_child_path
+    import re as _re
+    if not _re.fullmatch(r"[A-Za-z0-9._-]+", str(version or "")):
+        raise HTTPException(status_code=400, detail="Invalid version")
+    plugins_dir = safe_child_path("plugins", plugin.name)
     plugins_dir.mkdir(parents=True, exist_ok=True)
     
-    file_path = plugins_dir / f"{version}.zip"
+    file_path = safe_child_path(plugins_dir, f"{version}.zip")
     
     with open(file_path, "wb") as f:
         content = await file.read()
@@ -573,10 +577,10 @@ async def reload_plugins(
                 importlib.import_module(module_name)
             
             loaded.append(inst.plugin.name)
-        except Exception as e:
+        except Exception:
             errors.append({
                 'plugin': inst.plugin.name,
-                'error': str(e)
+                'error': 'Failed to reload plugin'
             })
     
     return {

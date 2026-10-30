@@ -48,9 +48,9 @@ def backfill_timestamps(current_user: User = Depends(require_moderator)):
                         meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
                         updated += 1
                     except Exception as werr:
-                        errors.append(f"Failed to write meta for {child.name}: {werr}")
-            except Exception as derr:
-                errors.append(f"Error processing {child.name}: {derr}")
+                        errors.append(f"Failed to write meta for {child.name}")
+            except Exception:
+                errors.append(f"Error processing {child.name}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scan failed: {e}")
     return {"scanned": scanned, "updated": updated, "errors": errors[:50]}

@@ -18,7 +18,7 @@ import hashlib
 from database import get_db
 from models import ModVersion, ModConflict, ClientModpack, User
 from auth import require_auth, require_moderator
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 
 router = APIRouter(prefix="/mods-enhanced", tags=["mods_enhanced"])
 
@@ -180,7 +180,7 @@ async def scan_server_mods(
 ):
     """Scan all mods in a server and update database"""
     
-    server_path = SERVERS_ROOT / server_name
+    server_path = safe_child_path(SERVERS_ROOT, server_name)
     if not server_path.exists():
         raise HTTPException(status_code=404, detail="Server not found")
     
@@ -485,7 +485,7 @@ async def generate_client_modpack(
 ):
     """Generate a client modpack ZIP for players"""
     
-    server_path = SERVERS_ROOT / request.server_name
+    server_path = safe_child_path(SERVERS_ROOT, request.server_name)
     if not server_path.exists():
         raise HTTPException(status_code=404, detail="Server not found")
     
@@ -547,11 +547,11 @@ Mod count: {mod_count}
         """.strip())
         
         # Create ZIP archive
-        output_dir = SERVERS_ROOT.parent / "client-modpacks" / request.server_name
+        output_dir = safe_child_path(SERVERS_ROOT.parent / "client-modpacks", request.server_name)
         output_dir.mkdir(parents=True, exist_ok=True)
         
         zip_name = f"{request.server_name}-client-{request.version}.zip"
-        zip_path = output_dir / zip_name
+        zip_path = safe_child_path(output_dir, zip_name)
         
         shutil.make_archive(
             str(zip_path.with_suffix('')),

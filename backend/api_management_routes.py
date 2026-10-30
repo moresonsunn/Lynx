@@ -743,4 +743,4 @@ async def _deliver_webhook(webhook: Webhook, payload: Dict[str, Any], db: Sessio
         db.add(delivery)
         db.commit()
         
-        return {'success': False, 'error': str(e)}
+        return {'success': False, 'error': 'Webhook delivery failed'}

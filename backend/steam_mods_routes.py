@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 
 from auth import require_auth, require_moderator
+from config import SERVERS_ROOT, safe_child_path
 from database import get_db
 from integrations_store import get_integration_key as _store_key
 
@@ -28,20 +29,27 @@ logger = logging.getLogger(__name__)
 
 def _safe_extractall(zf: zipfile.ZipFile, target_dir: Path) -> None:
     """Extract ZIP with path-traversal protection (Zip Slip prevention)."""
-    resolved_target = target_dir.resolve()
+    target_dir = safe_child_path(target_dir.parent, target_dir.name)
     for member in zf.namelist():
-        member_path = (target_dir / member).resolve()
-        if not str(member_path).startswith(str(resolved_target)):
-            raise ValueError(f"Zip Slip detected – refusing to extract: {member}")
-    zf.extractall(target_dir)
+        try:
+            member_path = safe_child_path(target_dir, member)
+        except HTTPException as exc:
+            raise ValueError(f"Zip Slip detected – refusing to extract: {member}") from exc
+        if member.endswith("/"):
+            member_path.mkdir(parents=True, exist_ok=True)
+            continue
+        member_path.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(member) as src, open(member_path, "wb") as dst:
+            shutil.copyfileobj(src, dst)
 
 
 def _safe_extract_member(zf: zipfile.ZipFile, name: str, target_dir: Path) -> Path:
     """Extract a single ZIP member with path-traversal protection."""
-    resolved_target = target_dir.resolve()
-    member_path = (target_dir / name).resolve()
-    if not str(member_path).startswith(str(resolved_target)):
-        raise ValueError(f"Zip Slip detected – refusing to extract: {name}")
+    target_dir = safe_child_path(target_dir.parent, target_dir.name)
+    try:
+        member_path = safe_child_path(target_dir, name)
+    except HTTPException as exc:
+        raise ValueError(f"Zip Slip detected – refusing to extract: {name}") from exc
     member_path.parent.mkdir(parents=True, exist_ok=True)
     with zf.open(name) as src, open(member_path, "wb") as dst:
         dst.write(src.read())
@@ -838,7 +846,7 @@ def get_server_path(server_id: str) -> Path:
     from config import SERVERS_ROOT
 
     # 1. Direct match
-    direct = SERVERS_ROOT / server_id
+    direct = safe_child_path(SERVERS_ROOT, server_id)
     if direct.exists():
         return direct
 
@@ -863,7 +871,7 @@ def get_server_path(server_id: str) -> Path:
         dm = DockerManager()
         container = dm._get_container_any(server_id)
         if container and container.name:
-            name_dir = SERVERS_ROOT / container.name
+            name_dir = safe_child_path(SERVERS_ROOT, container.name)
             if name_dir.exists():
                 return name_dir
     except Exception:
@@ -933,7 +941,7 @@ def _steamcmd_workshop_download_sync(
         dm = DockerManager()
         container = dm._get_container_any(container_id)
     except Exception as e:
-        return {"ok": False, "detail": f"Container not found: {e}"}
+        return {"ok": False, "detail": "Container not found"}
 
     try:
         container.reload()
@@ -1173,7 +1181,7 @@ async def search_curseforge(game_id: int, search: str = "", page: int = 1, class
                 "page": page
             }
         except Exception as e:
-            return {"results": [], "total": 0, "error": str(e)}
+            return {"results": [], "total": 0, "error": "Mod provider request failed"}
 
 async def get_curseforge_mod(mod_id: int) -> Dict[str, Any]:
     """Get details for a specific CurseForge mod"""
@@ -1255,8 +1263,9 @@ async def download_curseforge_mod(
         if response.status_code != 200:
             raise HTTPException(500, f"Failed to download: {response.status_code}")
         
+        install_path = safe_child_path(install_path.parent, install_path.name)
         install_path.mkdir(parents=True, exist_ok=True)
-        file_path = install_path / filename
+        file_path = safe_child_path(install_path, filename)
         
         with open(file_path, "wb") as f:
             f.write(response.content)
@@ -1264,7 +1273,7 @@ async def download_curseforge_mod(
         # If it's a zip, extract it
         if filename.endswith(".zip"):
             try:
-                extract_dir = install_path / filename.replace(".zip", "")
+                extract_dir = safe_child_path(install_path, filename.replace(".zip", ""))
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 with zipfile.ZipFile(file_path, "r") as zf:
                     _safe_extractall(zf, extract_dir)
@@ -1362,7 +1371,7 @@ async def scrape_workshop(appid: int, search_text: str, page: int = 1) -> Dict[s
             
             return {"results": items, "total": len(items)}
         except Exception as e:
-            return {"results": [], "total": 0, "error": str(e)}
+            return {"results": [], "total": 0, "error": "Mod provider request failed"}
 
 async def get_workshop_item_details(workshop_id: str) -> Dict[str, Any]:
     """Get details for a specific workshop item.
@@ -1524,7 +1533,7 @@ async def search_thunderstore(community: str, search: str = "", page: int = 1) -
             "per_page": per_page
         }
     except Exception as e:
-        return {"results": [], "total": 0, "error": str(e)}
+        return {"results": [], "total": 0, "error": "Mod provider request failed"}
 
 async def get_thunderstore_package(community: str, namespace: str, name: str) -> Dict[str, Any]:
     """Get details for a specific Thunderstore package"""
@@ -1571,8 +1580,9 @@ async def download_thunderstore_mod(
             raise HTTPException(500, f"Failed to download mod: {response.status_code}")
         
         # Create temp file
-        temp_zip = install_path / f"{mod_name}.zip"
-        mod_dir = install_path / mod_name
+        install_path = safe_child_path(install_path.parent, install_path.name)
+        temp_zip = safe_child_path(install_path, f"{mod_name}.zip")
+        mod_dir = safe_child_path(install_path, mod_name)
         
         install_path.mkdir(parents=True, exist_ok=True)
         
@@ -1702,7 +1712,7 @@ async def install_workshop_mod(
         raise HTTPException(400, f"Game {request.game_slug} does not support Workshop")
 
     server_path = get_server_path(request.server_id)
-    mod_dir = server_path / config["mod_path"].lstrip("/")
+    mod_dir = safe_child_path(server_path, config["mod_path"].lstrip("/"))
     mod_dir.mkdir(parents=True, exist_ok=True)
 
     workshop_id = request.workshop_id.strip()
@@ -1718,13 +1728,24 @@ async def install_workshop_mod(
 
     # 2. Try direct download via file_url (works for some addons)
     downloaded = False
-    addon_dest = mod_dir / f"workshop-{workshop_id}"
+    addon_dest = safe_child_path(mod_dir, f"workshop-{workshop_id}")
     addon_dest.mkdir(parents=True, exist_ok=True)
 
     if file_url:
         try:
+            from urllib.parse import urlparse as _urlparse
+            import ipaddress as _ipaddress
+            import socket as _socket
+            _parsed_u = _urlparse(file_url.strip())
+            if _parsed_u.scheme not in ("https", "http") or not _parsed_u.hostname:
+                raise ValueError("Invalid Workshop file URL scheme or host")
+            for _ai in _socket.getaddrinfo(_parsed_u.hostname, None):
+                _ip = _ipaddress.ip_address(_ai[4][0])
+                if _ip.is_private or _ip.is_loopback or _ip.is_link_local or _ip.is_multicast or _ip.is_reserved or _ip.is_unspecified:
+                    raise ValueError("Workshop file URL points to non-public address")
+            safe_file_url = _parsed_u.geturl()
             async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-                resp = await client.get(file_url)
+                resp = await client.get(safe_file_url)
                 if resp.status_code == 200:
                     content = resp.content
                     # Determine if it's a zip/gma
@@ -1742,7 +1763,7 @@ async def install_workshop_mod(
                     else:
                         # Write raw file (GMA or other)
                         ext = ".gma" if content[:4] == b'GMAD' else ".bin"
-                        (addon_dest / f"{workshop_id}{ext}").write_bytes(content)
+                        safe_child_path(addon_dest, f"{workshop_id}{ext}").write_bytes(content)
                         downloaded = True
         except Exception as dl_err:
             logger.warning(f"Direct Workshop download failed for {workshop_id}: {dl_err}")
@@ -1759,7 +1780,7 @@ async def install_workshop_mod(
             if not downloaded:
                 logger.warning(f"SteamCMD fallback failed for {workshop_id}: {steamcmd_detail}")
         except Exception as cmd_err:
-            steamcmd_detail = str(cmd_err)
+            steamcmd_detail = "SteamCMD execution failed"
             logger.warning(f"SteamCMD Workshop download exception for {workshop_id}: {cmd_err}")
 
     # 4. Write a small manifest so the installed-mods list can show it
@@ -1772,7 +1793,7 @@ async def install_workshop_mod(
         "description": details.get("short_description", details.get("description", "")),
     }
     try:
-        (addon_dest / "manifest.json").write_text(_json.dumps(manifest), encoding="utf-8")
+        safe_child_path(addon_dest, "manifest.json").write_text(_json.dumps(manifest), encoding="utf-8")
     except Exception:
         pass
 
@@ -1816,7 +1837,7 @@ async def install_thunderstore_mod(
     
     # Determine install path
     server_path = get_server_path(request.server_id)
-    mod_path = server_path / config["mod_path"].lstrip("/")
+    mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"))
     
     # Install dependencies first if requested
     installed = []
@@ -1878,19 +1899,19 @@ async def list_installed_mods(
     
     if game_slug in THUNDERSTORE_GAMES:
         config = THUNDERSTORE_GAMES[game_slug]
-        mod_path = server_path / config["mod_path"].lstrip("/")
+        mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"))
     elif game_slug in WORKSHOP_GAMES:
         config = WORKSHOP_GAMES[game_slug]
-        mod_path = server_path / config["mod_path"].lstrip("/")
+        mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"))
     elif game_slug in CURSEFORGE_GAMES:
         config = CURSEFORGE_GAMES[game_slug]
-        mod_path = server_path / config["mod_path"].lstrip("/")
+        mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"))
     elif game_slug in NEXUS_GAMES:
         config = NEXUS_GAMES[game_slug]
-        mod_path = server_path / config["mod_path"].lstrip("/")
+        mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"))
     elif game_slug in MODIO_GAMES:
         config = MODIO_GAMES[game_slug]
-        mod_path = server_path / config["mod_path"].lstrip("/")
+        mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"))
     else:
         raise HTTPException(400, f"Game {game_slug} not supported for mod listing")
     
@@ -1956,7 +1977,7 @@ async def uninstall_mod(
         raise HTTPException(400, f"Game {request.game_slug} not supported")
     
     server_path = get_server_path(request.server_id)
-    mod_path = server_path / config["mod_path"].lstrip("/") / request.mod_name
+    mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"), request.mod_name)
     
     if mod_path.exists():
         if mod_path.is_dir():
@@ -1967,7 +1988,7 @@ async def uninstall_mod(
     
     # Try as file
     for ext in [".dll", ".zip", ".pak"]:
-        file_path = server_path / config["mod_path"].lstrip("/") / f"{request.mod_name}{ext}"
+        file_path = safe_child_path(server_path, config["mod_path"].lstrip("/"), f"{request.mod_name}{ext}")
         if file_path.exists():
             file_path.unlink()
             return {"success": True, "message": f"Uninstalled {request.mod_name}"}
@@ -2064,7 +2085,7 @@ async def search_nexus(domain: str, search: str = "", page: int = 1) -> Dict[str
 
             return {"results": paginated, "total": len(results), "page": page}
         except Exception as e:
-            return {"results": [], "total": 0, "error": str(e)}
+            return {"results": [], "total": 0, "error": "Mod provider request failed"}
 
 
 async def get_nexus_mod_details(domain: str, mod_id: int) -> Dict[str, Any]:
@@ -2156,8 +2177,9 @@ async def download_nexus_mod(download_url: str, install_path: Path, filename: st
         if response.status_code != 200:
             raise HTTPException(500, f"Failed to download: {response.status_code}")
 
+        install_path = safe_child_path(install_path.parent, install_path.name)
         install_path.mkdir(parents=True, exist_ok=True)
-        file_path = install_path / filename
+        file_path = safe_child_path(install_path, filename)
 
         with open(file_path, "wb") as f:
             f.write(response.content)
@@ -2165,7 +2187,7 @@ async def download_nexus_mod(download_url: str, install_path: Path, filename: st
         # Auto-extract zips
         if filename.lower().endswith(".zip"):
             try:
-                extract_dir = install_path / filename.rsplit(".", 1)[0]
+                extract_dir = safe_child_path(install_path, filename.rsplit(".", 1)[0])
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 with zipfile.ZipFile(file_path, "r") as zf:
                     _safe_extractall(zf, extract_dir)
@@ -2232,7 +2254,7 @@ async def search_modio(game_id: int, search: str = "", page: int = 1) -> Dict[st
                 "page": page
             }
         except Exception as e:
-            return {"results": [], "total": 0, "error": str(e)}
+            return {"results": [], "total": 0, "error": "Mod provider request failed"}
 
 
 async def get_modio_mod_details(game_id: int, mod_id: int) -> Dict[str, Any]:
@@ -2273,8 +2295,9 @@ async def download_modio_mod(download_url: str, install_path: Path, filename: st
         if response.status_code != 200:
             raise HTTPException(500, f"Failed to download: {response.status_code}")
 
+        install_path = safe_child_path(install_path.parent, install_path.name)
         install_path.mkdir(parents=True, exist_ok=True)
-        file_path = install_path / filename
+        file_path = safe_child_path(install_path, filename)
 
         with open(file_path, "wb") as f:
             f.write(response.content)
@@ -2282,7 +2305,7 @@ async def download_modio_mod(download_url: str, install_path: Path, filename: st
         # Auto-extract zips
         if filename.lower().endswith(".zip"):
             try:
-                extract_dir = install_path / filename.rsplit(".", 1)[0]
+                extract_dir = safe_child_path(install_path, filename.rsplit(".", 1)[0])
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 with zipfile.ZipFile(file_path, "r") as zf:
                     _safe_extractall(zf, extract_dir)
@@ -2363,7 +2386,7 @@ async def nexus_install_mod(
     config = NEXUS_GAMES[game_slug]
     domain = config["domain"]
     server_path = get_server_path(server_id)
-    mod_path = server_path / config["mod_path"].lstrip("/")
+    mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"))
 
     # Get download link (requires Premium)
     try:
@@ -2443,7 +2466,7 @@ async def modio_install_mod(
     config = MODIO_GAMES[game_slug]
     game_id = config["game_id"]
     server_path = get_server_path(server_id)
-    mod_path = server_path / config["mod_path"].lstrip("/")
+    mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"))
 
     # Get mod details including download URL
     mod = await get_modio_mod_details(game_id, mod_id)
@@ -2549,7 +2572,7 @@ async def install_bepinex(
         if response.status_code != 200:
             raise HTTPException(500, "Failed to download BepInEx")
         
-        temp_zip = server_path / "bepinex.zip"
+        temp_zip = safe_child_path(server_path, "bepinex.zip")
         with open(temp_zip, "wb") as f:
             f.write(response.content)
         
@@ -2659,7 +2682,7 @@ async def curseforge_install_mod(
     
     config = CURSEFORGE_GAMES[request.game_slug]
     server_path = get_server_path(request.server_id)
-    mod_path = server_path / config["mod_path"].lstrip("/")
+    mod_path = safe_child_path(server_path, config["mod_path"].lstrip("/"))
     
     # Create mod directory if needed
     mod_path.mkdir(parents=True, exist_ok=True)

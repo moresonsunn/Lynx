@@ -1287,14 +1287,17 @@ async def upload_avatar(
             )
         
         # Generate filename
-        filename = f"{user_id}_{uuid.uuid4().hex[:8]}.{ext}"
-        filepath = os.path.join(AVATAR_DIR, filename)
+        filename = f"{int(user_id)}_{uuid.uuid4().hex[:8]}.{ext}"
+        avatar_base = os.path.normpath(os.path.abspath(AVATAR_DIR))
+        filepath = os.path.normpath(os.path.join(avatar_base, filename))
+        if not filepath.startswith(avatar_base):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
         
         # Remove old avatar if exists
         if user.avatar_url:
-            old_filename = user.avatar_url.split("/")[-1]
-            old_path = os.path.join(AVATAR_DIR, old_filename)
-            if os.path.exists(old_path):
+            old_filename = os.path.basename(user.avatar_url.split("/")[-1])
+            old_path = os.path.normpath(os.path.join(avatar_base, old_filename))
+            if old_path.startswith(avatar_base) and os.path.exists(old_path):
                 os.remove(old_path)
         
         # Save new avatar
@@ -1338,7 +1341,13 @@ async def get_avatar(
             detail="Invalid filename"
         )
     
-    filepath = os.path.join(AVATAR_DIR, filename)
+    avatar_base = os.path.normpath(os.path.abspath(AVATAR_DIR))
+    filepath = os.path.normpath(os.path.join(avatar_base, filename))
+    if not filepath.startswith(avatar_base):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename"
+        )
     
     if not os.path.exists(filepath):
         raise HTTPException(

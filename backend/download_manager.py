@@ -3,12 +3,14 @@ import shutil
 from pathlib import Path
 import requests
 from server_providers.providers import get_provider
+from config import SERVERS_ROOT, safe_child_path
 from typing import Optional, Any, Union
 import logging, hashlib, json, time, re
 
 logger = logging.getLogger(__name__)
 
 def stream_download(url: str, dest_file: Path):
+    dest_file = safe_child_path(dest_file.parent, dest_file.name)
     logger.info(f"Downloading {url} to {dest_file}")
     dest_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -127,8 +129,9 @@ def stream_download(url: str, dest_file: Path):
 
 def _sha256(path: Path) -> Optional[str]:
     try:
+        safe_p = safe_child_path(path.parent, path.name)
         h = hashlib.sha256()
-        with open(path, 'rb') as f:
+        with open(safe_p, 'rb') as f:
             for chunk in iter(lambda: f.read(8192), b''):
                 if not chunk:
                     break
@@ -138,7 +141,8 @@ def _sha256(path: Path) -> Optional[str]:
         return None
 
 def _update_meta(dest_dir: Path, updates: dict):
-    meta_path = dest_dir / 'server_meta.json'
+    dest_dir = safe_child_path(dest_dir.parent, dest_dir.name)
+    meta_path = safe_child_path(dest_dir, 'server_meta.json')
     data = {}
     if meta_path.exists():
         try:
@@ -157,6 +161,7 @@ def _update_meta(dest_dir: Path, updates: dict):
         logger.warning(f'Failed writing server_meta.json: {e}')
 
 def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_version: Optional[str] = None, installer_version: Optional[str] = None):
+    dest_dir = safe_child_path(dest_dir.parent, dest_dir.name)
     logger.info(f"Preparing {server_type} server v{version} in {dest_dir}")
     provider: Any = get_provider(server_type)
     
@@ -211,10 +216,13 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
             build_number = str(purpur_build)
         else:
             
-            if server_type.lower() in ('paper','purpur'):
-                m = re.search(rf"{server_type.lower()}-{re.escape(version)}-(\d+)\.jar", url.lower())
-                if m:
-                    build_number = m.group(1)
+            if server_type.lower() in ('paper', 'purpur'):
+                expected_prefix = f"{server_type.lower()}-{version.lower()}-"
+                url_lower = url.lower()
+                if expected_prefix in url_lower:
+                    m = re.search(r"-(\d+)\.jar", url_lower)
+                    if m:
+                        build_number = m.group(1)
         
         if server_type in ("forge", "neoforge"):
             installer_name = "forge-installer.jar" if server_type == "forge" else "neoforge-installer.jar"

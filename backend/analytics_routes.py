@@ -16,7 +16,7 @@ from database import get_db
 from models import ServerMetrics, PerformanceAlert, CrashReport, User
 from auth import require_auth, require_moderator
 from runtime_adapter import get_runtime_manager_or_docker
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -138,7 +138,7 @@ def _collect_disk_stats(server_name: str) -> Dict[str, Any]:
     """Collect disk usage statistics"""
     try:
         import shutil
-        server_path = SERVERS_ROOT / server_name
+        server_path = safe_child_path(SERVERS_ROOT, server_name)
         if not server_path.exists():
             return {}
         
@@ -422,7 +422,7 @@ async def detect_crashes(
     """Scan logs for crash indicators and create crash reports"""
     
     try:
-        server_path = SERVERS_ROOT / server_name
+        server_path = safe_child_path(SERVERS_ROOT, server_name)
         if not server_path.exists():
             raise HTTPException(status_code=404, detail="Server not found")
         

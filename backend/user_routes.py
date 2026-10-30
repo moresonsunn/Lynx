@@ -228,8 +228,8 @@ async def bulk_user_action(
             elif action == "delete":
                 db.delete(user)
                 results.append(f"Deleted {user.username}")
-        except Exception as e:
-            results.append(f"Failed to {action} {user.username}: {str(e)}")
+        except Exception:
+            results.append(f"Failed to {action} {user.username}")
     
     db.commit()
     

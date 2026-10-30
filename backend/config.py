@@ -41,13 +41,48 @@ APP_VERSION = os.environ.get("APP_VERSION", "dev")
 
 def normalize_server_name(name: str) -> str:
     """Normalize server name for filesystem safety."""
-    return re.sub(r'[^a-zA-Z0-9 \-_.]', '', name).strip()
+    cleaned = re.sub(r'[^a-zA-Z0-9 \-_.]', '', str(name or '')).strip()
+    if cleaned in ("", ".", ".."):
+        return ""
+    return cleaned
+
+
+def safe_child_path(
+    base_dir: Path | str,
+    rel_path: str | Path = "",
+    sub_path: str | Path = "",
+    *extra_parts: str | Path,
+) -> Path:
+    """Safely join and normalize child path(s) within base_dir, preventing path traversal."""
+    base_norm = os.path.normpath(os.path.abspath(str(base_dir)))
+    rel_str = str(rel_path or "").lstrip("/\\")
+    if sub_path:
+        rel_str = os.path.join(rel_str, str(sub_path).lstrip("/\\"))
+    for part in extra_parts:
+        if part:
+            rel_str = os.path.join(rel_str, str(part).lstrip("/\\"))
+    if not rel_str or rel_str == ".":
+        return Path(base_norm)
+    fullpath = os.path.normpath(os.path.join(base_norm, rel_str))
+    if not fullpath.startswith(base_norm):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    base_prefix = base_norm if base_norm.endswith(os.sep) else base_norm + os.sep
+    if fullpath != base_norm and not fullpath.startswith(base_prefix):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    return Path(fullpath)
+
+
+def get_server_dir_path(server_name: str) -> Path:
+    """Get validated server directory path within SERVERS_ROOT (may or may not exist yet)."""
+    normalized = normalize_server_name(server_name)
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Invalid server name")
+    return safe_child_path(SERVERS_ROOT, normalized)
 
 
 def get_server_dir(server_name: str) -> Path:
     """Get validated server directory path."""
-    normalized = normalize_server_name(server_name)
-    server_dir = (SERVERS_ROOT / normalized).resolve()
+    server_dir = get_server_dir_path(server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
     return server_dir
@@ -56,11 +91,14 @@ def get_server_dir(server_name: str) -> Path:
 def resolve_server_dir(server_name: str) -> Path | None:
     """Best-effort server directory without raising (exact, then case-insensitive)."""
     try:
-        p = (SERVERS_ROOT / server_name)
+        normalized = normalize_server_name(server_name)
+        if not normalized:
+            return None
+        p = safe_child_path(SERVERS_ROOT, normalized)
         if p.is_dir():
             return p
         if SERVERS_ROOT.is_dir():
-            needle = server_name.lower()
+            needle = normalized.lower()
             for child in SERVERS_ROOT.iterdir():
                 try:
                     if child.is_dir() and child.name.lower() == needle:

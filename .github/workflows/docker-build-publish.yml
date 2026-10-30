@@ -18,6 +18,9 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+
 env:
   REGISTRY: docker.io
   IMAGE_NAME: moresonsun/lynx
@@ -30,6 +33,8 @@ jobs:
   build:
     name: Build and Push Multi-Arch
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -82,6 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: always() # Läuft immer, auch wenn build fehlschlägt
+    permissions: {}
     steps:
       - name: Send success notification to Discord
         if: success()

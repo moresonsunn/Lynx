@@ -107,7 +107,7 @@ def get_connection_pool_status():
             "total_connections": pool.size() + pool.overflow()
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": "Database pool status unavailable"}
 
 def health_check_db():
     """Quick database health check."""
@@ -221,7 +221,7 @@ def init_db():
                 role="admin",
                 full_name="Administrator"
             )
-            print(f"Default admin user created: username=admin, password={initial_password}")
+            print("Default admin user created: username=admin (please rotate the default password immediately)")
         else:
             print("Default admin user already exists")
     except Exception as e:

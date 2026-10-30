@@ -13,6 +13,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-used-in-production-0123456789")
+os.environ.setdefault("RUNTIME_MODE", "local")
 os.environ.setdefault("SERVERS_CONTAINER_ROOT", str(Path(__file__).parent / "_tmp_servers"))
 os.environ.setdefault("STATS_DB_PATH", str(Path(__file__).parent / "_tmp_stats.db"))
 os.environ.setdefault("STATS_COLLECTOR_ENABLED", "0")

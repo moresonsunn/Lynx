@@ -609,16 +609,16 @@ async def stream_events(
                     try:
                         stats = dm.get_server_stats(container_id)
                         payload = {"type": "resources", "container_id": container_id, "data": stats}
-                    except Exception as e:
-                        payload = {"type": "error", "message": f"Stats unavailable: {e}"}
+                    except Exception:
+                        payload = {"type": "error", "message": "Stats unavailable"}
                 else:
                     try:
                         servers = dm.list_servers()
                         total = len(servers)
                         running = len([s for s in servers if s.get("status") == "running"])
                         payload = {"type": "system", "total_servers": total, "running_servers": running}
-                    except Exception as e:
-                        payload = {"type": "error", "message": f"Server list unavailable: {e}"}
+                    except Exception:
+                        payload = {"type": "error", "message": "Server list unavailable"}
 
                 yield f"data: {json.dumps(payload, default=str)}\n\n"
                 await asyncio.sleep(2)

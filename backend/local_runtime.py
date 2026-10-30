@@ -10,7 +10,7 @@ from typing import Optional, Dict, List, Any
 import re
 import psutil
 
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 from download_manager import prepare_server_files
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ def _apply_cpu_affinity(pid: int, cores: int | None) -> bool:
 
 class LocalRuntimeManager:
     def _server_dir(self, name: str) -> Path:
-        return SERVERS_ROOT / name
+        return safe_child_path(SERVERS_ROOT, name)
 
     def _pid_file(self, name: str) -> Path:
         return self._server_dir(name) / ".server.pid"

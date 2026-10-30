@@ -21,7 +21,7 @@ import json
 from database import get_db
 from models import BackupConfig, BackupHistory, User
 from auth import require_auth, require_moderator
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 
 router = APIRouter(prefix="/backup-advanced", tags=["backup_advanced"])
 
@@ -171,8 +171,9 @@ async def get_backup_config(
 
 def _calculate_checksum(file_path: Path) -> str:
     """Calculate SHA256 checksum of a file"""
+    safe_fp = safe_child_path(file_path.parent, file_path.name)
     sha256 = hashlib.sha256()
-    with open(file_path, 'rb') as f:
+    with open(safe_fp, 'rb') as f:
         for chunk in iter(lambda: f.read(8192), b''):
             sha256.update(chunk)
     return sha256.hexdigest()
@@ -341,7 +342,7 @@ async def create_advanced_backup(
 ):
     """Create an advanced backup with configured settings"""
     
-    server_path = SERVERS_ROOT / server_name
+    server_path = safe_child_path(SERVERS_ROOT, server_name)
     if not server_path.exists():
         raise HTTPException(status_code=404, detail="Server not found")
     
@@ -360,13 +361,13 @@ async def create_advanced_backup(
     backup_type = request.backup_type or config.backup_type
     
     # Prepare backup path
-    backup_dir = SERVERS_ROOT.parent / "backups" / server_name
+    backup_dir = safe_child_path(SERVERS_ROOT.parent / "backups", server_name)
     backup_dir.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     ext = {'gzip': '.tar.gz', 'bzip2': '.tar.bz2', 'xz': '.tar.xz', 'zip': '.zip'}[config.compression_format]
     backup_filename = f"{server_name}-{backup_type}-{timestamp}{ext}"
-    backup_path = backup_dir / backup_filename
+    backup_path = safe_child_path(backup_dir, backup_filename)
     
     # Record start time
     start_time = datetime.utcnow()

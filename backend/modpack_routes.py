@@ -19,7 +19,7 @@ import logging
 from auth import require_moderator
 from models import User
 from runtime_adapter import get_runtime_manager_or_docker
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 from mod_side_resolver import ModSideResolver
 from client_mod_detector import (
     load_client_only_config,
@@ -32,6 +32,45 @@ from client_mod_detector import (
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/modpacks", tags=["modpacks"])
+
+def _host_matches(host: str, *domains: str) -> bool:
+    """Safely check whether a parsed URL hostname equals or is a subdomain of one of the allowed domains."""
+    h = (host or "").strip().lower().split(":", 1)[0].rstrip(".")
+    for d in domains:
+        dom = d.strip().lower().rstrip(".")
+        if h == dom or h.endswith("." + dom):
+            return True
+    return False
+
+
+def _validate_public_http_url(raw_url: str) -> str:
+    """Validate that raw_url is an HTTP(S) URL resolving only to public (non-private/non-loopback) IP addresses."""
+    import ipaddress
+    import socket
+    parsed = urlparse((raw_url or "").strip())
+    if parsed.scheme not in ("https", "http"):
+        raise ValueError("Only http:// and https:// URLs are allowed")
+    hostname = (parsed.hostname or "").strip()
+    if not hostname:
+        raise ValueError("URL is missing a valid hostname")
+    try:
+        addr_infos = socket.getaddrinfo(hostname, None)
+    except Exception as exc:
+        raise ValueError(f"Could not resolve hostname {hostname}: {exc}")
+    for info in addr_infos:
+        ip_str = info[4][0]
+        ip_obj = ipaddress.ip_address(ip_str)
+        if (
+            ip_obj.is_private
+            or ip_obj.is_loopback
+            or ip_obj.is_link_local
+            or ip_obj.is_multicast
+            or ip_obj.is_reserved
+            or ip_obj.is_unspecified
+        ):
+            raise ValueError(f"Refusing connection to non-public address for {hostname}")
+    return parsed.geturl()
+
 
 _install_tasks = {}
 _install_lock = threading.Lock()
@@ -110,6 +149,7 @@ def _extract_modpack_metadata(base: Path) -> Dict[str, Any]:
     return metadata
 
 def _download_to(path: Path, url: str, headers: dict | None = None, timeout: int = 120):
+    path = safe_child_path(path.parent, path.name)
     with requests.get(url, stream=True, timeout=timeout, headers=headers or {}) as r:
         r.raise_for_status()
         with open(path, "wb") as f:
@@ -505,7 +545,7 @@ async def import_server_pack(
     dm = get_docker_manager()
 
     servers_root = SERVERS_ROOT
-    target_dir = servers_root / payload.server_name
+    target_dir = safe_child_path(servers_root, payload.server_name)
     if target_dir.exists():
         raise HTTPException(status_code=400, detail="Server directory already exists")
 
@@ -523,7 +563,7 @@ async def import_server_pack(
         }
         host = (u.netloc or "").lower()
         path = (u.path or "")
-        if "curseforge.com" in host and "/download/" in path:
+        if _host_matches(host, "curseforge.com") and "/download/" in path:
             # Expect .../download/<fileId>
             try:
                 file_id = path.rstrip("/").split("/")[-1]
@@ -560,6 +600,7 @@ async def import_server_pack(
     try:
         # Resolve and download
         download_url, headers = resolve_download_url(str(payload.server_pack_url))
+        download_url = _validate_public_http_url(download_url)
         with requests.get(download_url, stream=True, timeout=60, headers=headers) as r:
             if r.status_code == 403 and "curseforge" in download_url:
                 # If direct URL still forbidden, provide clearer guidance
@@ -673,7 +714,7 @@ async def import_server_pack_upload(
 
     dm = get_docker_manager()
     servers_root = SERVERS_ROOT
-    target_dir = servers_root / server_name
+    target_dir = safe_child_path(servers_root, server_name)
     if target_dir.exists():
         raise HTTPException(status_code=400, detail="Server directory already exists")
 
@@ -689,13 +730,6 @@ async def import_server_pack_upload(
         extract_dir = tmpdir / "extracted"
         extract_dir.mkdir(parents=True, exist_ok=True)
 
-        def is_within(base: Path, target: Path) -> bool:
-            try:
-                target.resolve().relative_to(base.resolve())
-                return True
-            except Exception:
-                return False
-
         with zipfile.ZipFile(zip_path, 'r') as z:
             for member in z.infolist():
                 # Skip directories explicitly handled
@@ -703,10 +737,8 @@ async def import_server_pack_upload(
                 if name.endswith('/'):
                     continue
                 # Prevent absolute paths or traversal
-                dest_path = extract_dir / name
+                dest_path = safe_child_path(extract_dir, name)
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
-                if not is_within(extract_dir, dest_path):
-                    raise HTTPException(status_code=400, detail="Zip contains invalid paths")
                 with z.open(member) as src, open(dest_path, 'wb') as dst:
                     shutil.copyfileobj(src, dst)
 
@@ -886,7 +918,7 @@ async def resolve_modpack_url(
     path_parts = [p for p in parsed.path.strip("/").split("/") if p]
 
     # ── Feed The Beast (FTB) ───────────────────────────────────────
-    if "feed-the-beast.com" in host or "ftb.team" in host:
+    if _host_matches(host, "feed-the-beast.com", "ftb.team"):
         slug_or_id = path_parts[-1] if path_parts else ""
         if not slug_or_id:
             raise HTTPException(400, "Could not extract FTB modpack ID or slug from URL")
@@ -920,7 +952,7 @@ async def resolve_modpack_url(
             raise HTTPException(400, f"Failed to resolve FTB modpack: {e}")
 
     # ── Modrinth ───────────────────────────────────────────────────
-    if "modrinth.com" in host:
+    if _host_matches(host, "modrinth.com"):
         # URL format: https://modrinth.com/modpack/<slug>
         slug = None
         for i, part in enumerate(path_parts):
@@ -964,7 +996,7 @@ async def resolve_modpack_url(
             raise HTTPException(400, f"Failed to resolve Modrinth modpack: {e}")
 
     # ── CurseForge ─────────────────────────────────────────────────
-    if "curseforge.com" in host:
+    if _host_matches(host, "curseforge.com"):
         # URL format: https://www.curseforge.com/minecraft/modpacks/<slug>
         slug = None
         for i, part in enumerate(path_parts):
@@ -1061,7 +1093,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                 raise RuntimeError("No versions available for this pack")
 
             servers_root = SERVERS_ROOT
-            target_dir = servers_root / req.name
+            target_dir = safe_child_path(servers_root, req.name)
             target_dir.mkdir(parents=True, exist_ok=True)
             tmpdir = Path(tempfile.mkdtemp(prefix="modpack_install_"))
 
@@ -1096,7 +1128,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                         continue
                     rel_path = str(f_entry.get("path") or "./").lstrip("./").lstrip("/")
                     f_name = str(f_entry.get("name") or Path(f_url).name)
-                    dest_file = target_dir / rel_path / f_name
+                    dest_file = safe_child_path(target_dir, rel_path, f_name)
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
                     try:
                         _download_to(dest_file, f_url, timeout=120)
@@ -1154,7 +1186,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                     },
                 )
 
-                artifact_path = tmpdir / filename
+                artifact_path = safe_child_path(tmpdir, filename)
                 with requests.get(url, stream=True, timeout=180) as r:
                     r.raise_for_status()
                     with open(artifact_path, "wb") as f:
@@ -1230,7 +1262,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                             downloads = entry.get("downloads") or []
                             if not rel_p or not downloads:
                                 continue
-                            dest_p = target_dir / rel_p
+                            dest_p = safe_child_path(target_dir, rel_p)
                             dest_p.parent.mkdir(parents=True, exist_ok=True)
                             try:
                                 _download_to(dest_p, downloads[0], timeout=120)
@@ -1318,7 +1350,7 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                                     dl = data.get("downloadUrl")
                                     out_name = data.get("fileName") or f"{proj}-{fid}.jar"
                                     if dl:
-                                        _download_to(mods_dir / out_name, dl, timeout=120)
+                                        _download_to(safe_child_path(mods_dir, out_name), dl, timeout=120)
                                         files_downloaded_count += 1
                                     done += 1
                                     pct = 38 + int((done / max(total, 1)) * 14)
@@ -1516,13 +1548,13 @@ async def update_modpack(server_name: str, provider: str, pack_id: str, version_
         raise HTTPException(status_code=400, detail="No downloadable file for version")
 
     servers_root = SERVERS_ROOT
-    target_dir = servers_root / server_name
+    target_dir = safe_child_path(servers_root, server_name)
     if not target_dir.exists():
         raise HTTPException(status_code=400, detail="Server directory does not exist")
 
     tmpdir = Path(tempfile.mkdtemp(prefix="mrpack_update_"))
     try:
-        mrpack_path = tmpdir / (mr.get("filename") or "pack.mrpack")
+        mrpack_path = safe_child_path(tmpdir, mr.get("filename") or "pack.mrpack")
         with requests.get(mr["url"], stream=True, timeout=60) as r:
             r.raise_for_status()
             with open(mrpack_path, "wb") as f:
@@ -1535,7 +1567,7 @@ async def update_modpack(server_name: str, provider: str, pack_id: str, version_
             names = z.namelist()
             for name in names:
                 if name.startswith("overrides/") and not name.endswith("/"):
-                    dest = target_dir / name[len("overrides/"):]
+                    dest = safe_child_path(target_dir, name[len("overrides/"):])
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     with z.open(name) as src, open(dest, 'wb') as dst:
                         shutil.copyfileobj(src, dst)
@@ -1556,7 +1588,7 @@ async def update_modpack(server_name: str, provider: str, pack_id: str, version_
                 downloads = entry.get("downloads") or []
                 if not path or not downloads:
                     continue
-                dest = target_dir / path
+                dest = safe_child_path(target_dir, path)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 url0 = downloads[0]
                 try:

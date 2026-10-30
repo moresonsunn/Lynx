@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 from typing import Optional
 
-from config import SERVERS_ROOT, get_server_dir
+from config import SERVERS_ROOT, get_server_dir, safe_child_path
 from models import User
 from server_permissions import require_server_permission
 from file_manager import (
@@ -65,12 +65,10 @@ class UnzipRequest(BaseModel):
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
-def _resolve_within_server(name: str, rel: str) -> Path:
+def _resolve_within_server(name: str, rel: str) -> tuple[Path, Path]:
     """Resolve *rel* under the server dir, rejecting path traversal."""
-    server_dir = get_server_dir(name).resolve()
-    target = (server_dir / rel).resolve()
-    if not str(target).startswith(str(server_dir)):
-        raise HTTPException(status_code=400, detail="Invalid path")
+    server_dir = get_server_dir(name)
+    target = safe_child_path(server_dir, rel)
     return server_dir, target
 
 
@@ -89,10 +87,8 @@ def _etag_response(request: Request, etag: Optional[str]):
 @router.post("/servers/{name}/mkdir")
 def mkdir_path(name: str, req: MkdirRequest, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     try:
-        base = SERVERS_ROOT.resolve() / name
-        target = (base / req.path).resolve()
-        if not str(target).startswith(str(base)):
-            raise HTTPException(status_code=400, detail="Invalid path")
+        base = safe_child_path(SERVERS_ROOT, name)
+        target = safe_child_path(base, req.path)
         target.mkdir(parents=True, exist_ok=True)
         return {"ok": True}
     except HTTPException:

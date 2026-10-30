@@ -17,7 +17,7 @@ from database import get_db
 from models import PlayerProfile, TemporaryBan, PlayerSession, User
 from auth import require_auth, require_moderator
 from runtime_adapter import get_runtime_manager_or_docker
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 
 router = APIRouter(prefix="/player-enhanced", tags=["player_enhanced"])
 
@@ -151,7 +151,7 @@ async def sync_player_profiles(
 ):
     """Sync player profiles from server files (usercache.json, logs)"""
     
-    server_path = SERVERS_ROOT / server_name
+    server_path = safe_child_path(SERVERS_ROOT, server_name)
     if not server_path.exists():
         raise HTTPException(status_code=404, detail="Server not found")
     
@@ -314,8 +314,8 @@ async def bulk_whitelist(
                 )
                 db.add(profile)
         
-        except Exception as e:
-            failed.append({'player': player_name, 'error': str(e)})
+        except Exception:
+            failed.append({'player': player_name, 'error': 'Failed to add player to whitelist'})
     
     db.commit()
     
@@ -524,11 +524,11 @@ async def execute_rcon_command(
             "output": output
         }
     
-    except Exception as e:
+    except Exception:
         return {
             "command": request.command,
             "success": False,
-            "error": str(e)
+            "error": "Failed to execute command"
         }
 
 

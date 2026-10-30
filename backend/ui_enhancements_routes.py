@@ -16,7 +16,7 @@ from database import get_db
 from models import User, AuditLog
 from auth import require_auth, require_moderator
 from runtime_adapter import get_runtime_manager_or_docker
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 
 router = APIRouter(prefix="/ui-enhancements", tags=["ui_enhancements"])
 
@@ -124,7 +124,7 @@ async def search_files(
 ):
     """Search for files within a server directory"""
     
-    server_path = SERVERS_ROOT / request.server_name
+    server_path = safe_child_path(SERVERS_ROOT, request.server_name)
     if not server_path.exists():
         raise HTTPException(status_code=404, detail="Server not found")
     
@@ -170,15 +170,11 @@ async def drag_drop_upload(
 ):
     """Handle multiple file uploads (drag-and-drop support)"""
     
-    server_path = SERVERS_ROOT / server_name
+    server_path = safe_child_path(SERVERS_ROOT, server_name)
     if not server_path.exists():
         raise HTTPException(status_code=404, detail="Server not found")
     
-    target_dir = (server_path / target_path).resolve()
-    
-    # Security check
-    if not str(target_dir).startswith(str(server_path)):
-        raise HTTPException(status_code=400, detail="Invalid target path")
+    target_dir = safe_child_path(server_path, target_path)
     
     target_dir.mkdir(parents=True, exist_ok=True)
     
@@ -187,7 +183,8 @@ async def drag_drop_upload(
     
     for file in files:
         try:
-            file_path = target_dir / file.filename
+            safe_fname = Path(file.filename or "uploaded").name
+            file_path = safe_child_path(target_dir, safe_fname)
             
             # Write file
             content = await file.read()
@@ -199,10 +196,10 @@ async def drag_drop_upload(
                 'path': str(file_path.relative_to(server_path))
             })
         
-        except Exception as e:
+        except Exception:
             failed.append({
                 'filename': file.filename,
-                'error': str(e)
+                'error': 'File upload failed'
             })
     
     return {

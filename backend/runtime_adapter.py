@@ -10,7 +10,7 @@ import psutil
 from local_runtime import LocalRuntimeManager, MINECRAFT_PORT
 from config import (SERVERS_ROOT, detect_server_from_files, resolve_server_dir,
                      get_lan_ip, sanitize_player_names, online_from_log_lines,
-                     read_log_tail_lines)
+                     read_log_tail_lines, safe_child_path)
 
 
 _RAM_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMGTP]?)(?:I?B)?\s*$", re.IGNORECASE)
@@ -164,7 +164,7 @@ class LocalAdapter:
             
             try:
                 if name:
-                    meta_path = (SERVERS_ROOT / str(name) / "server_meta.json")
+                    meta_path = safe_child_path(SERVERS_ROOT, str(name), "server_meta.json")
                     if meta_path.exists():
                         meta = json.loads(meta_path.read_text(encoding="utf-8"))
                         lbl = it.get("labels") or {}
@@ -346,7 +346,7 @@ class LocalAdapter:
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
             return self._get_docker().get_server_stats(steam_id)
-        p = (SERVERS_ROOT / container_id).resolve()
+        p = safe_child_path(SERVERS_ROOT, container_id)
         pid = None
         try:
             pid_txt = (p / ".server.pid").read_text().strip()
@@ -531,7 +531,7 @@ class LocalAdapter:
 
         # Strategy 2: RCON (read port/password from server.properties)
         try:
-            server_dir = SERVERS_ROOT / container_id
+            server_dir = safe_child_path(SERVERS_ROOT, container_id)
             props_file = server_dir / "server.properties"
             if props_file.exists():
                 props_text = props_file.read_text(encoding="utf-8", errors="ignore")
@@ -582,7 +582,7 @@ class LocalAdapter:
         # settled-state scan: newest event per player decides, stop lines end
         # the session so stale joins can't resurrect).
         try:
-            server_dir = SERVERS_ROOT / container_id
+            server_dir = safe_child_path(SERVERS_ROOT, container_id)
             log_file = server_dir / "logs" / "latest.log"
             if log_file.exists():
                 names_log, _ = online_from_log_lines(read_log_tail_lines(log_file))
@@ -605,7 +605,7 @@ class LocalAdapter:
             info = self._get_docker().get_server_info(steam_id)
             info.setdefault("server_kind", "steam")
             return info
-        p = (SERVERS_ROOT / container_id).resolve()
+        p = safe_child_path(SERVERS_ROOT, container_id)
         exists = p.exists()
         meta: Dict[str, Any] = {}
         try:
@@ -688,7 +688,7 @@ class LocalAdapter:
             
             
             try:
-                meta_path = (SERVERS_ROOT / container_id / "server_meta.json")
+                meta_path = safe_child_path(SERVERS_ROOT, container_id, "server_meta.json")
                 meta = {}
                 if meta_path.exists():
                     meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}")
@@ -729,7 +729,7 @@ class LocalAdapter:
                 "result": result,
             }
         except Exception as e:
-            return {"success": False, "error": str(e), "id": container_id}
+            return {"success": False, "error": "Runtime operation failed", "id": container_id}
 
     def update_server_java_args(self, container_id: str, java_args: str) -> Dict:
         """Persist custom Java arguments (JAVA_OPTS) for local runtime and restart the server."""
@@ -738,7 +738,7 @@ class LocalAdapter:
             if len(normalized) > 4096:
                 raise ValueError("java_args too long (max 4096 characters when normalized)")
 
-            meta_path = (SERVERS_ROOT / container_id / "server_meta.json")
+            meta_path = safe_child_path(SERVERS_ROOT, container_id, "server_meta.json")
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8") or "{}") if meta_path.exists() else {}
             except Exception:
@@ -777,21 +777,21 @@ class LocalAdapter:
                 "result": result,
             }
         except Exception as e:
-            return {"success": False, "error": str(e), "id": container_id}
+            return {"success": False, "error": "Runtime operation failed", "id": container_id}
 
     def update_server_ram(self, container_id: str, min_ram: str | None = None, max_ram: str | None = None) -> Dict:
         """Update RAM allocation for local runtime via restart."""
         try:
             return self.local.update_server_ram(container_id, min_ram, max_ram)
         except Exception as e:
-            return {"success": False, "error": str(e), "id": container_id}
+            return {"success": False, "error": "Runtime operation failed", "id": container_id}
 
     def update_server_cpu(self, container_id: str, cpu_cores=None) -> Dict:
         """Update CPU core cap for local runtime — live, no restart."""
         try:
             return self.local.update_server_cpu(container_id, cpu_cores)
         except Exception as e:
-            return {"success": False, "error": str(e), "id": container_id}
+            return {"success": False, "error": "Runtime operation failed", "id": container_id}
 
     
     def get_server_logs(self, container_id: str, tail: int = 200) -> Dict:
@@ -803,7 +803,7 @@ class LocalAdapter:
                 return logs
             except Exception:
                 return {"id": container_id, "logs": ""}
-        log_path = (SERVERS_ROOT / container_id / "server.stdout.log").resolve()
+        log_path = safe_child_path(SERVERS_ROOT, container_id, "server.stdout.log")
         try:
             if not log_path.exists():
                 return {"id": container_id, "logs": ""}
@@ -833,7 +833,7 @@ class LocalAdapter:
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
             return self._get_docker().send_command(steam_id, command)
-        fifo_path = (SERVERS_ROOT / container_id / "console.in").resolve()
+        fifo_path = safe_child_path(SERVERS_ROOT, container_id, "console.in")
         try:
             if not fifo_path.exists():
                 return {"id": container_id, "ok": False, "error": "Console pipe not available"}
@@ -844,7 +844,7 @@ class LocalAdapter:
                 f.write(data + "\n")
             return {"id": container_id, "ok": True}
         except Exception as e:
-            return {"id": container_id, "ok": False, "error": str(e)}
+            return {"id": container_id, "ok": False, "error": "Failed to send command"}
 
     
     def rename_server(self, old_name: str, new_name: str) -> Dict:
@@ -856,8 +856,8 @@ class LocalAdapter:
         - Update server_meta.json (name + previous_names)
         - Recreate the local server process preserving RAM and env_overrides
         """
-        old_dir = (SERVERS_ROOT / old_name).resolve()
-        new_dir = (SERVERS_ROOT / new_name).resolve()
+        old_dir = safe_child_path(SERVERS_ROOT, old_name)
+        new_dir = safe_child_path(SERVERS_ROOT, new_name)
         if not old_dir.exists() or not old_dir.is_dir():
             return {"ok": False, "error": f"Server directory {old_dir} not found"}
         if new_dir.exists():
@@ -915,7 +915,7 @@ class LocalAdapter:
                 extra_env=env_overrides or None,
             )
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": "Failed to recreate server"}
 
         return {"ok": True, "old_name": old_name, "new_name": new_name, "result": result}
 

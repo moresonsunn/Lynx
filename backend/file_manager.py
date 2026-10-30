@@ -3,7 +3,7 @@ from typing import List
 import os
 import time
 from fastapi import HTTPException, UploadFile
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 import zipfile
 import re
 from typing import Optional
@@ -13,17 +13,14 @@ import shutil
 
 
 def _server_path(name: str) -> Path:
-    server_dir = (SERVERS_ROOT / name).resolve()
+    server_dir = safe_child_path(SERVERS_ROOT, name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
     return server_dir
 
 
 def _safe_join(base: Path, rel: str) -> Path:
-    target = (base / rel).resolve()
-    if not str(target).startswith(str(base)):
-        raise HTTPException(status_code=400, detail="Invalid path")
-    return target
+    return safe_child_path(base, rel)
 
 
 _DIR_CACHE_TTL = 3.0
@@ -294,11 +291,7 @@ def unzip_path(name: str, rel: str, dest_rel: str | None = None) -> str:
 
     def _safe_extract(zipf: zipfile.ZipFile, path: Path):
         for member in zipf.infolist():
-            member_path = path / member.filename
-            
-            resolved = member_path.resolve()
-            if not str(resolved).startswith(str(path.resolve())):
-                raise HTTPException(status_code=400, detail="Unsafe zip entry path")
+            resolved = safe_child_path(path, member.filename)
             if member.is_dir():
                 resolved.mkdir(parents=True, exist_ok=True)
             else:

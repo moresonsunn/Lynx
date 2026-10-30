@@ -11,7 +11,7 @@ from pathlib import Path
 
 from auth import require_auth, require_moderator
 from models import User
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 
 router = APIRouter(prefix="/client-mods", tags=["client_mods"])
 
@@ -53,7 +53,7 @@ async def analyze_server_mods(
     """
     from client_mod_filter import analyze_mods_directory
 
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
@@ -110,7 +110,7 @@ async def compat_report(
     """
     from client_mod_filter import graded_compat_report
 
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
@@ -144,7 +144,7 @@ async def filter_server_mods(
     """
     from client_mod_filter import filter_client_mods, analyze_mod, disable_mod
 
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
@@ -161,7 +161,7 @@ async def filter_server_mods(
         results = []
         moved = 0
         for fn in req.filenames:
-            jar_path = mods_dir / fn
+            jar_path = safe_child_path(mods_dir, fn)
             if not jar_path.exists():
                 results.append({"filename": fn, "action": "not_found"})
                 continue
@@ -203,7 +203,7 @@ async def restore_disabled_mod(
     """Restore a disabled client mod back to the active mods directory."""
     from client_mod_filter import restore_mod
 
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
@@ -223,7 +223,7 @@ async def manually_disable_mod(
     """Manually disable a specific mod (move to mods-disabled-client/)."""
     from client_mod_filter import disable_mod
 
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
@@ -242,7 +242,7 @@ async def get_disabled_mods(
     """List all disabled client mods for a server."""
     from client_mod_filter import list_disabled_mods
 
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
@@ -258,7 +258,7 @@ async def add_whitelist_pattern(
     """Add a pattern to the server's whitelist (mods matching this won't be filtered)."""
     from client_mod_filter import add_to_whitelist
 
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
@@ -278,7 +278,7 @@ async def remove_whitelist_pattern(
     """Remove a pattern from the server's whitelist."""
     from client_mod_filter import remove_from_whitelist
 
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
@@ -295,7 +295,7 @@ async def get_whitelist(
     current_user: User = Depends(require_auth),
 ):
     """Get the current whitelist patterns for a server."""
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
@@ -318,7 +318,7 @@ async def restore_all_disabled_mods(
     """Restore ALL disabled client mods back to the active mods directory."""
     from client_mod_filter import restore_mod, list_disabled_mods
 
-    server_dir = SERVERS_ROOT / server_name
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 

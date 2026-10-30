@@ -16,7 +16,7 @@ from database import get_db
 from models import ServerGroup, ServerGroupMember, BulkOperation, ServerClone, User
 from auth import require_auth, require_moderator
 from runtime_adapter import get_runtime_manager_or_docker
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 
 router = APIRouter(prefix="/multi-server", tags=["multi_server"])
 
@@ -193,7 +193,7 @@ async def add_servers_to_group(
     added = []
     for server_name in request.server_names:
         # Check if server exists
-        server_path = SERVERS_ROOT / server_name
+        server_path = safe_child_path(SERVERS_ROOT, server_name)
         if not server_path.exists():
             continue
         
@@ -414,8 +414,8 @@ async def _execute_clone(
         clone.status = "running"
         db.commit()
         
-        source_path = SERVERS_ROOT / source_server
-        target_path = SERVERS_ROOT / target_server
+        source_path = safe_child_path(SERVERS_ROOT, source_server)
+        target_path = safe_child_path(SERVERS_ROOT, target_server)
         
         if not source_path.exists():
             raise Exception("Source server not found")
@@ -499,12 +499,12 @@ async def clone_server(
     """Clone a server to a new server"""
     
     # Validate source server exists
-    source_path = SERVERS_ROOT / request.source_server
+    source_path = safe_child_path(SERVERS_ROOT, request.source_server)
     if not source_path.exists():
         raise HTTPException(status_code=404, detail="Source server not found")
     
     # Validate target doesn't exist
-    target_path = SERVERS_ROOT / request.target_server
+    target_path = safe_child_path(SERVERS_ROOT, request.target_server)
     if target_path.exists():
         raise HTTPException(status_code=400, detail="Target server already exists")
     
@@ -561,14 +561,14 @@ async def sync_files(
 ):
     """Sync files/folders from one server to multiple servers"""
     
-    source_path = SERVERS_ROOT / request.source_server
+    source_path = safe_child_path(SERVERS_ROOT, request.source_server)
     if not source_path.exists():
         raise HTTPException(status_code=404, detail="Source server not found")
     
     results = {}
     
     for target_server in request.target_servers:
-        target_path = SERVERS_ROOT / target_server
+        target_path = safe_child_path(SERVERS_ROOT, target_server)
         if not target_path.exists():
             results[target_server] = {"status": "error", "message": "Server not found"}
             continue
@@ -578,8 +578,8 @@ async def sync_files(
         
         for rel_path in request.paths:
             try:
-                src = source_path / rel_path
-                dst = target_path / rel_path
+                src = safe_child_path(source_path, rel_path)
+                dst = safe_child_path(target_path, rel_path)
                 
                 if src.is_file():
                     dst.parent.mkdir(parents=True, exist_ok=True)

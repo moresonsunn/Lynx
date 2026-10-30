@@ -17,7 +17,7 @@ import difflib
 from database import get_db
 from models import User
 from auth import require_auth, require_moderator
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 
 router = APIRouter(prefix="/config-management", tags=["config_management"])
 
@@ -312,7 +312,7 @@ async def get_server_properties(
 ):
     """Get server.properties with schema for visual editing"""
     
-    server_path = SERVERS_ROOT / server_name
+    server_path = safe_child_path(SERVERS_ROOT, server_name)
     props_file = server_path / "server.properties"
     
     if not props_file.exists():
@@ -375,7 +375,7 @@ async def update_server_properties(
 ):
     """Update server.properties with validation"""
     
-    server_path = SERVERS_ROOT / server_name
+    server_path = safe_child_path(SERVERS_ROOT, server_name)
     props_file = server_path / "server.properties"
     
     if not props_file.exists():
@@ -508,7 +508,7 @@ async def apply_config_template(
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
     
-    server_path = SERVERS_ROOT / server_name
+    server_path = safe_child_path(SERVERS_ROOT, server_name)
     props_file = server_path / "server.properties"
     
     if not props_file.exists():
@@ -549,8 +549,8 @@ async def compare_configs(
 ):
     """Compare server.properties between two servers"""
     
-    server_a_path = SERVERS_ROOT / request.server_a / "server.properties"
-    server_b_path = SERVERS_ROOT / request.server_b / "server.properties"
+    server_a_path = safe_child_path(SERVERS_ROOT, request.server_a, "server.properties")
+    server_b_path = safe_child_path(SERVERS_ROOT, request.server_b, "server.properties")
     
     if not server_a_path.exists() or not server_b_path.exists():
         raise HTTPException(status_code=404, detail="One or both servers not found")
@@ -679,7 +679,7 @@ async def validate_config(
 ):
     """Validate server configuration"""
     
-    server_path = SERVERS_ROOT / server_name
+    server_path = safe_child_path(SERVERS_ROOT, server_name)
     props_file = server_path / "server.properties"
     
     if not props_file.exists():

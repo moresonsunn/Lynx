@@ -107,7 +107,7 @@ async def test_curseforge_connectivity(current_user: User = Depends(require_admi
                 info["sample_count"] = None
         return info
     except Exception as e:
-        return {"configured": True, "ok": False, "status": None, "error": str(e)}
+        return {"configured": True, "ok": False, "status": None, "error": "Integration request failed"}
 
 
 @router.get("/curseforge-info")

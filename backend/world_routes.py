@@ -11,7 +11,7 @@ from database import get_db
 from auth import require_auth, require_moderator
 from server_permissions import require_server_permission
 from models import User
-from config import get_server_dir
+from config import get_server_dir, safe_child_path
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
 
@@ -73,13 +73,13 @@ async def download_world(
     current_user: User = Depends(require_server_permission("view"))
 ):
     server_dir = get_server_dir(server_name)
-    world_dir = (server_dir / world).resolve()
-    if not str(world_dir).startswith(str(server_dir)) or not world_dir.exists():
+    world_dir = safe_child_path(server_dir, world)
+    if not world_dir.exists():
         raise HTTPException(status_code=404, detail="World not found")
 
     ts = time.strftime("%Y%m%d-%H%M%S")
     tmpdir = Path(tempfile.mkdtemp(prefix="worlddl_"))
-    archive_base = tmpdir / f"{server_name}-{world}-{ts}"
+    archive_base = safe_child_path(tmpdir, f"{server_name}-{world}-{ts}")
     archive_path = shutil.make_archive(str(archive_base), 'zip', root_dir=str(world_dir))
     return FileResponse(archive_path, filename=f"{server_name}-{world}-{ts}.zip")
 
@@ -93,7 +93,7 @@ async def upload_world(
 ):
     if file is None or not getattr(file, "filename", None):
         raise HTTPException(status_code=400, detail="No file provided")
-    fname = file.filename or "upload.zip"
+    fname = Path(file.filename or "upload.zip").name
     low = fname.lower()
     if not (low.endswith('.zip') or low.endswith('.tar') or low.endswith('.tar.gz')):
         raise HTTPException(status_code=400, detail="Only .zip/.tar(.gz) archives are allowed")
@@ -103,14 +103,12 @@ async def upload_world(
         raise HTTPException(status_code=400, detail="Invalid world name")
 
     server_dir = get_server_dir(server_name)
-    target_dir = (server_dir / world_name).resolve()
-    if not str(target_dir).startswith(str(server_dir)):
-        raise HTTPException(status_code=400, detail="Invalid target path")
+    target_dir = safe_child_path(server_dir, world_name)
     target_dir.mkdir(parents=True, exist_ok=True)
     
     
     tmpdir = Path(tempfile.mkdtemp(prefix="worldup_"))
-    tmpfile = tmpdir / fname
+    tmpfile = safe_child_path(tmpdir, fname)
     with tmpfile.open('wb') as f:
         f.write(file.file.read())
 
@@ -134,15 +132,15 @@ async def backup_world(
     current_user: User = Depends(require_moderator),
 ):
     server_dir = get_server_dir(server_name)
-    world_dir = (server_dir / world).resolve()
-    if not str(world_dir).startswith(str(server_dir)) or not world_dir.exists():
+    world_dir = safe_child_path(server_dir, world)
+    if not world_dir.exists():
         raise HTTPException(status_code=404, detail="World not found")
 
     ts = time.strftime("%Y%m%d-%H%M%S")
     from config import SERVERS_ROOT
-    backups_root = SERVERS_ROOT.parent / "backups" / server_name
+    backups_root = safe_child_path(SERVERS_ROOT.parent / "backups", server_name)
     backups_root.mkdir(parents=True, exist_ok=True)
-    archive_base = backups_root / f"{server_name}-world-{world}-{ts}"
+    archive_base = safe_child_path(backups_root, f"{server_name}-world-{world}-{ts}")
 
     fmt = compression if compression in {"zip", "gztar", "bztar", "tar"} else "zip"
     archive_path = shutil.make_archive(str(archive_base), fmt, root_dir=str(world_dir))
