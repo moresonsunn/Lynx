@@ -333,7 +333,7 @@ class LocalAdapter:
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
             return self._get_docker().delete_server(steam_id)
-        return self.local.stop_server(container_id)
+        return self.local.delete_server(container_id)
 
     def update_metadata(self, container_id: str, **fields: Any) -> None:
         self.local.update_metadata(container_id, **fields)

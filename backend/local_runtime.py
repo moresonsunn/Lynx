@@ -1,4 +1,5 @@
 import os
+import shutil
 import socket
 import subprocess
 import time
@@ -525,6 +526,41 @@ class LocalRuntimeManager:
             self._wait_for_port_release(port, timeout=5, interval=0.25)
 
         return {"id": name, "status": "stopped", "method": "process_tree"}
+
+    def delete_server(self, server_id: str) -> Dict:
+        """Stop the server (if running) AND remove its directory on disk.
+
+        Previously deletion only stopped the process, leaving the whole
+        folder behind — the server vanished from the website but the
+        files stayed on disk.
+        """
+        name = server_id
+        try:
+            self.stop_server(name)
+        except Exception as e:
+            logger.warning(f"delete_server: stop failed for {name} (continuing): {e}")
+
+        dir_removed = False
+        try:
+            srv_dir = self._server_dir(name)
+            # Containment: never delete outside SERVERS_ROOT (id comes from URL)
+            root = SERVERS_ROOT.resolve()
+            target = srv_dir.resolve() if srv_dir.exists() or srv_dir.is_symlink() else None
+            if target is not None and (target == root or root not in target.parents):
+                logger.error(f"delete_server: refusing to remove {target} (outside SERVERS_ROOT)")
+                return {"id": name, "name": name, "deleted": True, "dir_removed": False,
+                        "error": "Refusing to remove path outside servers root"}
+            if srv_dir.is_symlink():
+                srv_dir.unlink(missing_ok=True)
+                dir_removed = True
+            elif srv_dir.is_dir():
+                shutil.rmtree(srv_dir, ignore_errors=True)
+                dir_removed = not srv_dir.exists()
+            else:
+                dir_removed = True  # nothing there to begin with
+        except Exception as e:
+            logger.warning(f"delete_server: failed to remove directory for {name}: {e}")
+        return {"id": name, "name": name, "deleted": True, "dir_removed": dir_removed}
 
 
     def update_server_ram(self, server_id: str, min_ram: str | None, max_ram: str | None) -> Dict:

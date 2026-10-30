@@ -871,6 +871,8 @@ def delete_server(container_id: str, current_user: User = Depends(require_server
         result = get_docker_manager().delete_server(container_id)
         if result.get("error") and not result.get("deleted"):
             raise HTTPException(status_code=500, detail=f"Failed to delete server: {result.get('error')}")
+        if result.get("deleted") and not result.get("dir_removed"):
+            raise HTTPException(status_code=500, detail=f"Server stopped but its folder could not be removed: {result.get('error') or 'unknown error'}")
         return result
     except HTTPException:
         raise
