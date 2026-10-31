@@ -12,12 +12,12 @@ import {
   FaSearch,
   FaLock,
 } from 'react-icons/fa';
-import { API, authHeaders, useApp } from '../context/AppContext';
+import { API, authHeaders, useAuth } from '../context/AppContext';
 import { useTranslation } from '../i18n';
 
 export default function SecurityPage() {
   const { t } = useTranslation();
-  const { currentUser } = useApp();
+  const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('audit'); // 'audit' | '2fa' | 'ip' | 'apikeys'
 
   const [overview, setOverview] = useState(null);

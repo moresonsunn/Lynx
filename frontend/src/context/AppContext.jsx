@@ -174,6 +174,8 @@ export function useAuth() {
   return context;
 }
 
+export const useApp = useAuth;
+
 // Theme Context
 const ThemeContext = createContext(null);
 const ACCENT_COLOR_KEY = 'lynx_accent_color';
