@@ -135,17 +135,20 @@ class UserSessionResponse(BaseModel):
     user: UserResponse
 
 class RoleResponse(BaseModel):
+    id: Optional[int] = None
     name: str
-    description: str
-    permissions: List[str]
-    is_system: bool
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    permissions: List[str] = []
+    is_system: bool = False
 
     class Config:
         from_attributes = True
 
 class PermissionResponse(BaseModel):
     name: str
-    description: str
+    description: Optional[str] = None
     category: str
 
     class Config:
@@ -156,16 +159,18 @@ class RolesListResponse(BaseModel):
 
 class PermissionsListResponse(BaseModel):
     permissions: List[PermissionResponse]
+    categories: Optional[Dict[str, List[PermissionResponse]]] = None
 
 class AuditLogResponse(BaseModel):
     id: int
-    user_id: Optional[int]
+    user_id: Optional[int] = None
+    username: Optional[str] = None
     timestamp: datetime
     action: str
-    resource_type: Optional[str]
-    resource_id: Optional[str]
-    details: Optional[Dict[str, Any]]
-    ip_address: Optional[str]
+    resource_type: Optional[str] = None
+    resource_id: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    ip_address: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -351,7 +356,54 @@ async def list_users(
 
 # Move static routes before dynamic /{user_id} to avoid path conflicts
 # Role and permission routes
+def _serialize_roles(user_service: UserService) -> List[Dict[str, Any]]:
+    try:
+        from user_service import DEFAULT_ROLES
+    except Exception:
+        DEFAULT_ROLES = []
+    roles = user_service.get_roles()
+    if not roles:
+        user_service.initialize_default_permissions_and_roles()
+        roles = user_service.get_roles()
+    if isinstance(DEFAULT_ROLES, dict):
+        meta_by_name = DEFAULT_ROLES
+    else:
+        meta_by_name = {r["name"]: r for r in DEFAULT_ROLES if isinstance(r, dict) and "name" in r}
+    out = []
+    for r in roles:
+        meta = meta_by_name.get(r.name, {}) if isinstance(meta_by_name, dict) else {}
+        out.append({
+            "id": r.id,
+            "name": r.name,
+            "display_name": meta.get("display_name") or r.name.replace("_", " ").title(),
+            "description": r.description or meta.get("description") or "",
+            "color": meta.get("color") or "#3b82f6",
+            "permissions": list(r.permissions or []),
+            "is_system": bool(r.is_system),
+        })
+    return out
+
+
+def _serialize_permissions(user_service: UserService) -> Dict[str, Any]:
+    permissions = user_service.get_permissions()
+    if not permissions:
+        user_service.initialize_default_permissions_and_roles()
+        permissions = user_service.get_permissions()
+    items = []
+    categories: Dict[str, List[Dict[str, Any]]] = {}
+    for p in permissions:
+        entry = {
+            "name": p.name,
+            "description": p.description or "",
+            "category": p.category or "general",
+        }
+        items.append(entry)
+        categories.setdefault(entry["category"], []).append(entry)
+    return {"permissions": items, "categories": categories}
+
+
 @router.get("/roles", response_model=RolesListResponse)
+@router.get("/roles/list", response_model=RolesListResponse)
 async def get_roles(
     request: Request,
     current_user: User = Depends(require_user_manage_roles),
@@ -359,20 +411,11 @@ async def get_roles(
 ):
     """Get all available roles."""
     user_service = UserService(db)
-    roles = user_service.get_roles()
-    
-    # Log the action
-    log_user_action(
-        user=current_user,
-        action="role.list",
-        resource_type="roles",
-        request=request,
-        db=db
-    )
-    
-    return {"roles": roles}
+    return {"roles": _serialize_roles(user_service)}
+
 
 @router.get("/permissions", response_model=PermissionsListResponse)
+@router.get("/permissions/list", response_model=PermissionsListResponse)
 async def get_permissions(
     request: Request,
     current_user: User = Depends(require_user_manage_roles),
@@ -380,53 +423,62 @@ async def get_permissions(
 ):
     """Get all available permissions."""
     user_service = UserService(db)
-    permissions = user_service.get_permissions()
-    
-    # Log the action
-    log_user_action(
-        user=current_user,
-        action="permission.list",
-        resource_type="permissions",
-        request=request,
-        db=db
-    )
-    
-    return {"permissions": permissions}
+    return _serialize_permissions(user_service)
+
 
 # Audit logs
 @router.get("/audit-logs", response_model=AuditLogListResponse)
+@router.get("/audit/logs", response_model=AuditLogListResponse)
 async def get_audit_logs(
     request: Request,
     user_id: Optional[int] = None,
     action: Optional[str] = None,
-    page: int = 1, 
+    page: int = 1,
     page_size: int = 50,
+    limit: Optional[int] = None,
     current_user: User = Depends(require_system_audit),
     db: Session = Depends(get_db)
 ):
     """Get audit logs with filtering and pagination."""
     user_service = UserService(db)
-    result = user_service.get_audit_logs(user_id, action, page, page_size)
-    
-    # Log the action
-    log_user_action(
-        user=current_user,
-        action="audit.view",
-        resource_type="audit_logs",
-        details={"user_id": user_id, "action": action, "page": page, "page_size": page_size},
-        request=request,
-        db=db
-    )
-    
-    return result
+    effective_size = limit if limit and limit > 0 else page_size
+    result = user_service.get_audit_logs(user_id, action, page, effective_size)
+    user_lookup = {
+        u.id: u.username
+        for u in db.query(User.id, User.username).all()
+    }
+    enriched_logs = []
+    for log in result.get("logs", []):
+        enriched_logs.append({
+            "id": log.id,
+            "user_id": log.user_id,
+            "username": user_lookup.get(log.user_id) if log.user_id else "System",
+            "timestamp": log.timestamp,
+            "action": log.action,
+            "resource_type": log.resource_type,
+            "resource_id": log.resource_id,
+            "details": log.details,
+            "ip_address": log.ip_address,
+        })
+    return {
+        "logs": enriched_logs,
+        "total": result.get("total", len(enriched_logs)),
+        "page": result.get("page", page),
+        "page_size": result.get("page_size", effective_size),
+        "total_pages": result.get("total_pages", 1),
+    }
+
 
 # Role management (create/update/delete custom roles)
 class RoleCreate(BaseModel):
     name: str
+    display_name: Optional[str] = None
     description: Optional[str] = None
     permissions: List[str] = []
 
 class RoleUpdate(BaseModel):
+    name: Optional[str] = None
+    display_name: Optional[str] = None
     description: Optional[str] = None
     permissions: Optional[List[str]] = None
 
@@ -439,13 +491,26 @@ async def create_role(
 ):
     service = UserService(db)
     try:
-        new_role = service.create_role(role.name, role.description, role.permissions)
-        log_user_action(user=current_user, action="role.create", resource_type="role", resource_id=role.name, request=request, db=db)
-        return {"message": "Role created", "role": {"name": new_role.name, "description": new_role.description, "permissions": new_role.permissions, "is_system": new_role.is_system}}
+        slug = role.name.strip().lower().replace(" ", "_")
+        desc = role.description or role.display_name or role.name
+        new_role = service.create_role(slug, desc, role.permissions)
+        log_user_action(user=current_user, action="role.create", resource_type="role", resource_id=slug, request=request, db=db)
+        return {
+            "message": "Role created",
+            "role": {
+                "id": new_role.id,
+                "name": new_role.name,
+                "display_name": role.display_name or new_role.name.replace("_", " ").title(),
+                "description": new_role.description,
+                "permissions": new_role.permissions,
+                "is_system": new_role.is_system,
+            },
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.patch("/roles/{name}")
+@router.put("/roles/{name}")
 async def update_role(
     request: Request,
     name: str,
@@ -455,9 +520,24 @@ async def update_role(
 ):
     service = UserService(db)
     try:
-        updated = service.update_role(name, description=role.description, permissions=role.permissions)
-        log_user_action(user=current_user, action="role.edit", resource_type="role", resource_id=name, request=request, db=db)
-        return {"message": "Role updated", "role": {"name": updated.name, "description": updated.description, "permissions": updated.permissions, "is_system": updated.is_system}}
+        from models import Role
+        target_name = name
+        if name.isdigit():
+            by_id = db.query(Role).filter(Role.id == int(name)).first()
+            if by_id:
+                target_name = by_id.name
+        updated = service.update_role(target_name, description=role.description, permissions=role.permissions)
+        log_user_action(user=current_user, action="role.edit", resource_type="role", resource_id=target_name, request=request, db=db)
+        return {
+            "message": "Role updated",
+            "role": {
+                "id": updated.id,
+                "name": updated.name,
+                "description": updated.description,
+                "permissions": updated.permissions,
+                "is_system": updated.is_system,
+            },
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -470,8 +550,14 @@ async def delete_role(
 ):
     service = UserService(db)
     try:
-        service.delete_role(name)
-        log_user_action(user=current_user, action="role.delete", resource_type="role", resource_id=name, request=request, db=db)
+        from models import Role
+        target_name = name
+        if name.isdigit():
+            by_id = db.query(Role).filter(Role.id == int(name)).first()
+            if by_id:
+                target_name = by_id.name
+        service.delete_role(target_name)
+        log_user_action(user=current_user, action="role.delete", resource_type="role", resource_id=target_name, request=request, db=db)
         return {"message": "Role deleted"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

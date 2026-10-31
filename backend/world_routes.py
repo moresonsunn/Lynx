@@ -1,13 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Query, File
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 from pathlib import Path
 import shutil
 import tempfile
 import time
-from typing import List
+from typing import List, Dict, Any
 
-from database import get_db
 from auth import require_auth, require_moderator
 from server_permissions import require_server_permission
 from models import User
@@ -16,19 +14,116 @@ from config import get_server_dir, safe_child_path
 router = APIRouter(prefix="/worlds", tags=["worlds"])
 
 
+def _read_active_level_name(server_dir: Path) -> str:
+    props = server_dir / "server.properties"
+    if props.is_file():
+        try:
+            for raw in props.read_text(encoding="utf-8", errors="ignore").splitlines():
+                line = raw.strip()
+                if line.startswith("level-name="):
+                    val = line.split("=", 1)[1].strip()
+                    if val:
+                        return val
+        except Exception:
+            pass
+    return "world"
+
+
+def _is_world_folder(p: Path) -> bool:
+    if not p.is_dir():
+        return False
+    markers = ("level.dat", "level.dat_old", "session.lock", "region", "DIM-1", "DIM1", "playerdata")
+    return any((p / m).exists() for m in markers)
+
+
 def _detect_world_dirs(server_dir: Path) -> List[Path]:
     worlds: List[Path] = []
-    for p in server_dir.iterdir():
-        if p.is_dir():
-            
-            if (p / "level.dat").exists():
-                worlds.append(p)
-    
+    if not server_dir.exists():
+        return worlds
+
+    active_level = _read_active_level_name(server_dir)
+    try:
+        active_dir = safe_child_path(server_dir, active_level)
+        if active_dir.is_dir():
+            worlds.append(active_dir)
+    except Exception:
+        pass
+
     for name in ["world", "world_nether", "world_the_end"]:
         p = server_dir / name
         if p.is_dir() and p not in worlds:
             worlds.append(p)
+
+    try:
+        for p in sorted(server_dir.iterdir(), key=lambda x: x.name.lower()):
+            if p.is_dir() and p not in worlds and _is_world_folder(p):
+                worlds.append(p)
+    except Exception:
+        pass
+
+    # Also check a dedicated worlds/ container directory if present (e.g. Multiverse / modpacks)
+    worlds_container = server_dir / "worlds"
+    if worlds_container.is_dir():
+        try:
+            for p in sorted(worlds_container.iterdir(), key=lambda x: x.name.lower()):
+                if p.is_dir() and p not in worlds and _is_world_folder(p):
+                    worlds.append(p)
+        except Exception:
+            pass
+
     return worlds
+
+
+def collect_worlds_info(server_dir: Path) -> List[Dict[str, Any]]:
+    active_level = _read_active_level_name(server_dir)
+    worlds = _detect_world_dirs(server_dir)
+    items: List[Dict[str, Any]] = []
+
+    for w in worlds:
+        size = 0
+        modified = 0
+        try:
+            modified = int(w.stat().st_mtime)
+        except Exception:
+            pass
+        try:
+            count = 0
+            for f in w.rglob('*'):
+                if f.is_file():
+                    try:
+                        st = f.stat()
+                        size += st.st_size
+                        if int(st.st_mtime) > modified:
+                            modified = int(st.st_mtime)
+                    except Exception:
+                        pass
+                    count += 1
+                    if count > 8000:
+                        break
+                if size > 10 * 1024 * 1024 * 1024:
+                    break
+        except Exception:
+            pass
+
+        dims = ["Overworld"]
+        if (w / "DIM-1").is_dir() or w.name.endswith("_nether"):
+            if "Nether" not in dims:
+                dims.append("Nether")
+        if (w / "DIM1").is_dir() or w.name.endswith("_the_end"):
+            if "The End" not in dims:
+                dims.append("The End")
+
+        rel_path = w.relative_to(server_dir).as_posix()
+        items.append({
+            "name": w.name,
+            "path": rel_path,
+            "size": size,
+            "modified": modified,
+            "is_active": rel_path == active_level or w.name == active_level,
+            "has_level_dat": (w / "level.dat").exists(),
+            "dimensions": dims,
+        })
+    return items
 
 
 @router.get("/{server_name}")
@@ -36,34 +131,8 @@ def list_worlds(
     server_name: str,
     current_user: User = Depends(require_auth)
 ):
-    # Sync def so FastAPI runs it in threadpool; heavy rglob no longer blocks event loop (fixes 30s tab delay)
     server_dir = get_server_dir(server_name)
-    worlds = _detect_world_dirs(server_dir)
-    items = []
-    for w in worlds:
-        size = 0
-        try:
-            # Limit scan to avoid 5s stalls on huge worlds; if >2000 files switch to fast du estimate
-            count = 0
-            for f in w.rglob('*'):
-                if f.is_file():
-                    try:
-                        size += f.stat().st_size
-                    except Exception:
-                        pass
-                    count += 1
-                    if count > 8000:
-                        break
-                if size > 10 * 1024 * 1024 * 1024:  # cap at 10GB for display
-                    break
-        except Exception:
-            pass
-        items.append({
-            "name": w.name,
-            "path": str(w.relative_to(server_dir)),
-            "size": size,
-        })
-    return {"worlds": items}
+    return {"worlds": collect_worlds_info(server_dir), "active_level": _read_active_level_name(server_dir)}
 
 
 @router.get("/{server_name}/download")
@@ -78,10 +147,11 @@ async def download_world(
         raise HTTPException(status_code=404, detail="World not found")
 
     ts = time.strftime("%Y%m%d-%H%M%S")
+    safe_world_slug = world.replace("/", "_").replace("\\", "_")
     tmpdir = Path(tempfile.mkdtemp(prefix="worlddl_"))
-    archive_base = safe_child_path(tmpdir, f"{server_name}-{world}-{ts}")
+    archive_base = safe_child_path(tmpdir, f"{server_name}-{safe_world_slug}-{ts}")
     archive_path = shutil.make_archive(str(archive_base), 'zip', root_dir=str(world_dir))
-    return FileResponse(archive_path, filename=f"{server_name}-{world}-{ts}.zip")
+    return FileResponse(archive_path, filename=f"{server_name}-{safe_world_slug}-{ts}.zip")
 
 
 @router.post("/{server_name}/upload")
@@ -97,7 +167,7 @@ async def upload_world(
     low = fname.lower()
     if not (low.endswith('.zip') or low.endswith('.tar') or low.endswith('.tar.gz')):
         raise HTTPException(status_code=400, detail="Only .zip/.tar(.gz) archives are allowed")
-    
+
     import re
     if not re.fullmatch(r"[A-Za-z0-9_-]+", world_name):
         raise HTTPException(status_code=400, detail="Invalid world name")
@@ -105,20 +175,11 @@ async def upload_world(
     server_dir = get_server_dir(server_name)
     target_dir = safe_child_path(server_dir, world_name)
     target_dir.mkdir(parents=True, exist_ok=True)
-    
-    
+
     tmpdir = Path(tempfile.mkdtemp(prefix="worldup_"))
     tmpfile = safe_child_path(tmpdir, fname)
     with tmpfile.open('wb') as f:
         f.write(file.file.read())
-
-    fmt = 'zip'
-    if tmpfile.suffix == '.zip':
-        fmt = 'zip'
-    elif tmpfile.suffixes[-2:] == ['.tar', '.gz']:
-        fmt = 'gztar'
-    elif tmpfile.suffix == '.tar':
-        fmt = 'tar'
 
     shutil.unpack_archive(str(tmpfile), str(target_dir), format=None)
     return {"ok": True, "world": world_name}
@@ -140,7 +201,8 @@ async def backup_world(
     from config import SERVERS_ROOT
     backups_root = safe_child_path(SERVERS_ROOT.parent / "backups", server_name)
     backups_root.mkdir(parents=True, exist_ok=True)
-    archive_base = safe_child_path(backups_root, f"{server_name}-world-{world}-{ts}")
+    safe_world_slug = world.replace("/", "_").replace("\\", "_")
+    archive_base = safe_child_path(backups_root, f"{server_name}-world-{safe_world_slug}-{ts}")
 
     fmt = compression if compression in {"zip", "gztar", "bztar", "tar"} else "zip"
     archive_path = shutil.make_archive(str(archive_base), fmt, root_dir=str(world_dir))

@@ -160,29 +160,38 @@ async def verify_2fa_setup(
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
 
+class TOTPDisableRequest(BaseModel):
+    password: Optional[str] = None
+    code: Optional[str] = None
+
+
 @router.post("/2fa/disable")
 async def disable_2fa(
-    password: str,
+    body: Optional[TOTPDisableRequest] = None,
+    password: Optional[str] = None,
     current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Disable 2FA for user"""
-    
     from passlib.context import CryptContext
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    
-    # Verify password
-    if not pwd_context.verify(password, current_user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid password")
-    
+
+    pwd = password or (body.password if body else None)
     two_factor = db.query(UserTwoFactor).filter(
         UserTwoFactor.user_id == current_user.id
     ).first()
-    
+
+    if pwd:
+        if not pwd_context.verify(pwd, current_user.hashed_password):
+            raise HTTPException(status_code=401, detail="Invalid password")
+    elif body and body.code and two_factor:
+        if not _verify_totp(two_factor.secret, body.code):
+            raise HTTPException(status_code=400, detail="Invalid verification code")
+
     if two_factor:
         db.delete(two_factor)
         db.commit()
-        
+
         # Log action
         log = AuditLog(
             user_id=current_user.id,
@@ -192,7 +201,7 @@ async def disable_2fa(
         )
         db.add(log)
         db.commit()
-    
+
     return {'success': True, 'message': '2FA disabled'}
 
 
@@ -251,13 +260,10 @@ async def get_ip_whitelist(
     db: Session = Depends(get_db)
 ):
     """Get IP whitelist entries"""
-    
     if not current_user.preferences:
         current_user.preferences = {}
-    
     whitelist = current_user.preferences.get('ip_whitelist', [])
-    
-    return {'whitelist': whitelist}
+    return {'whitelist': whitelist, 'entries': whitelist}
 
 
 @router.post("/ip-whitelist")
@@ -313,29 +319,31 @@ async def add_ip_to_whitelist(
     return {'success': True, 'message': 'IP added to whitelist'}
 
 
-@router.delete("/ip-whitelist/{ip_address}")
+@router.delete("/ip-whitelist/{ip_address:path}")
 async def remove_ip_from_whitelist(
     ip_address: str,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """Remove IP from whitelist"""
-    
     if not current_user.preferences or 'ip_whitelist' not in current_user.preferences:
         raise HTTPException(status_code=404, detail="IP not found in whitelist")
-    
+
     whitelist = current_user.preferences['ip_whitelist']
-    updated = [item for item in whitelist if item['ip_address'] != ip_address]
-    
+    updated = [
+        item for item in whitelist
+        if item.get('ip_address') != ip_address and str(item.get('id', '')) != ip_address
+    ]
+
     if len(updated) == len(whitelist):
         raise HTTPException(status_code=404, detail="IP not found in whitelist")
-    
+
     current_user.preferences['ip_whitelist'] = updated
-    
+
     from sqlalchemy.orm.attributes import flag_modified
     flag_modified(current_user, 'preferences')
     db.commit()
-    
+
     return {'success': True, 'message': 'IP removed from whitelist'}
 
 
@@ -397,6 +405,64 @@ def _is_valid_ip(ip: str) -> bool:
 
 # ==================== Enhanced Audit Logging ====================
 
+def _serialize_audit_logs(db: Session, logs: List[AuditLog], total: Optional[int] = None) -> Dict[str, Any]:
+    user_lookup = {
+        u.id: u.username
+        for u in db.query(User.id, User.username).all()
+    }
+    items = []
+    for log in logs:
+        uname = user_lookup.get(log.user_id) if log.user_id else (log.user.username if getattr(log, "user", None) else "System")
+        items.append({
+            'id': log.id,
+            'user_id': log.user_id,
+            'user': uname or 'System',
+            'username': uname or 'System',
+            'action': log.action,
+            'resource_type': log.resource_type,
+            'resource_id': log.resource_id,
+            'details': log.details,
+            'ip_address': log.ip_address,
+            'timestamp': log.timestamp.isoformat() if log.timestamp else None,
+        })
+    return {
+        'total': total if total is not None else len(items),
+        'logs': items,
+    }
+
+
+@router.get("/audit-logs")
+async def list_security_audit_logs(
+    user_id: Optional[int] = None,
+    action: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    limit: int = 100,
+    current_user: User = Depends(require_moderator),
+    db: Session = Depends(get_db)
+):
+    """GET endpoint for security audit logs"""
+    q = db.query(AuditLog)
+    if user_id:
+        q = q.filter(AuditLog.user_id == user_id)
+    if action:
+        q = q.filter(AuditLog.action.like(f"%{action}%"))
+    if resource_type:
+        q = q.filter(AuditLog.resource_type == resource_type)
+    total = q.count()
+    logs = q.order_by(AuditLog.timestamp.desc()).limit(max(1, min(limit, 500))).all()
+    return _serialize_audit_logs(db, logs, total=total)
+
+
+@router.get("/audit-actions")
+async def list_security_audit_actions(
+    current_user: User = Depends(require_moderator),
+    db: Session = Depends(get_db)
+):
+    """Get distinct audit log action types"""
+    rows = db.query(AuditLog.action).distinct().order_by(AuditLog.action.asc()).all()
+    return {'actions': [r[0] for r in rows if r and r[0]]}
+
+
 @router.post("/audit-logs/query")
 async def query_audit_logs(
     query: AuditLogQuery,
@@ -404,44 +470,22 @@ async def query_audit_logs(
     db: Session = Depends(get_db)
 ):
     """Advanced audit log querying"""
-    
     q = db.query(AuditLog)
-    
-    # Apply filters
+
     if query.user_id:
         q = q.filter(AuditLog.user_id == query.user_id)
-    
     if query.action:
         q = q.filter(AuditLog.action.like(f"%{query.action}%"))
-    
     if query.resource_type:
         q = q.filter(AuditLog.resource_type == query.resource_type)
-    
     if query.start_date:
         q = q.filter(AuditLog.timestamp >= query.start_date)
-    
     if query.end_date:
         q = q.filter(AuditLog.timestamp <= query.end_date)
-    
-    # Get results
+
+    total = q.count()
     logs = q.order_by(AuditLog.timestamp.desc()).limit(query.limit).all()
-    
-    return {
-        'total': len(logs),
-        'logs': [
-            {
-                'id': log.id,
-                'user': log.user.username if log.user else 'System',
-                'action': log.action,
-                'resource_type': log.resource_type,
-                'resource_id': log.resource_id,
-                'details': log.details,
-                'ip_address': log.ip_address,
-                'timestamp': log.timestamp.isoformat()
-            }
-            for log in logs
-        ]
-    }
+    return _serialize_audit_logs(db, logs, total=total)
 
 
 @router.get("/audit-logs/summary")
@@ -619,36 +663,50 @@ async def check_server_permission(
 # ==================== Security Dashboard ====================
 
 @router.get("/dashboard")
+@router.get("/overview")
 async def get_security_dashboard(
-    current_user: User = Depends(require_admin),
+    request: Request,
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get security overview dashboard"""
-    
-    # User stats
     total_users = db.query(User).count()
     active_users = db.query(User).filter(User.is_active == True).count()
     users_with_2fa = db.query(UserTwoFactor).filter(
         UserTwoFactor.is_enabled == True
     ).count()
-    
-    # Recent failed logins
+
+    my_2fa = db.query(UserTwoFactor).filter(
+        UserTwoFactor.user_id == current_user.id,
+        UserTwoFactor.is_enabled == True,
+    ).first()
+
     recent_failures = db.query(User).filter(
         User.failed_login_attempts > 0
     ).order_by(User.failed_login_attempts.desc()).limit(5).all()
-    
-    # API key usage
+
     active_api_keys = db.query(UserAPIKey).filter(
         UserAPIKey.is_active == True
     ).count()
-    
-    # Recent security events
-    security_actions = ['login', 'failed_login', 'enable_2fa', 'disable_2fa', 'api_key_created']
-    recent_events = db.query(AuditLog).filter(
-        AuditLog.action.in_(security_actions)
-    ).order_by(AuditLog.timestamp.desc()).limit(10).all()
-    
+
+    whitelist = (current_user.preferences or {}).get('ip_whitelist', [])
+    active_whitelist = [w for w in whitelist if w.get('enabled', True)]
+
+    recent_events = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(10).all()
+    user_lookup = {
+        u.id: u.username
+        for u in db.query(User.id, User.username).all()
+    }
+
+    client_ip = request.client.host if request.client else None
+    if "x-forwarded-for" in request.headers:
+        client_ip = request.headers["x-forwarded-for"].split(",")[0].strip()
+
     return {
+        'two_factor_enabled': bool(my_2fa),
+        'ip_whitelist_active': len(active_whitelist) > 0,
+        'ip_whitelist_count': len(whitelist),
+        'current_ip': client_ip,
         'users': {
             'total': total_users,
             'active': active_users,
@@ -668,9 +726,12 @@ async def get_security_dashboard(
         },
         'recent_events': [
             {
+                'id': e.id,
                 'action': e.action,
-                'user': e.user.username if e.user else 'System',
-                'timestamp': e.timestamp.isoformat(),
+                'user': user_lookup.get(e.user_id, 'System') if e.user_id else 'System',
+                'resource_type': e.resource_type,
+                'resource_id': e.resource_id,
+                'timestamp': e.timestamp.isoformat() if e.timestamp else None,
                 'ip': e.ip_address
             }
             for e in recent_events

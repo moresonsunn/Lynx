@@ -13,7 +13,15 @@ import os
 import docker
 from docker.errors import NotFound as DockerNotFound
 from file_manager import list_dir as fm_list_dir, read_file as fm_read_file
-from backup_manager import list_backups as bk_list, create_backup as bk_create, create_backup_async, restore_backup as bk_restore
+from backup_manager import (
+    list_backups as bk_list,
+    create_backup as bk_create,
+    create_backup_async,
+    restore_backup as bk_restore,
+    delete_backup as bk_delete,
+    resolve_backup_path as bk_resolve_path,
+    get_detected_mod_backup_folders,
+)
 import requests
 from bs4 import BeautifulSoup
 import threading
@@ -1047,7 +1055,12 @@ def get_server_console(container_id: str, tail: int = 100, current_user: User = 
 
 @app.get("/api/servers/{name}/backups")
 def backups_list(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
-    return {"items": bk_list(name)}
+    items = bk_list(name)
+    return {
+        "items": items,
+        "backups": items,
+        "mod_folders": get_detected_mod_backup_folders(name),
+    }
 
 @app.post("/api/servers/{name}/backups")
 async def backups_create(name: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
@@ -1058,6 +1071,16 @@ async def backups_create(name: str, current_user: User = Depends(require_server_
 @app.post("/api/servers/{name}/restore")
 def backups_restore(name: str, file: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
     bk_restore(name, file)
+    return {"ok": True}
+
+@app.get("/api/servers/{name}/backups/download")
+def backups_download(name: str, file: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
+    target = bk_resolve_path(name, file)
+    return FileResponse(str(target), filename=target.name, media_type="application/zip")
+
+@app.delete("/api/servers/{name}/backups/{file:path}")
+def backups_delete(name: str, file: str, current_user: User = Depends(require_server_permission("manage", param_name="name"))):
+    bk_delete(name, file)
     return {"ok": True}
 
 # ── Backup Scheduler Endpoints ─────────────────────────────────────────────
@@ -1101,25 +1124,14 @@ def api_test_remote_config(current_user: User = Depends(require_admin)):
 @app.get("/api/servers/{name}/worlds")
 def api_server_worlds(name: str, current_user: User = Depends(require_server_permission("view", param_name="name"))):
     """Get worlds for a specific server (alias for /worlds/{name})."""
-    from world_routes import _detect_world_dirs
+    from world_routes import collect_worlds_info, _read_active_level_name
     from config import get_server_dir
     server_dir = get_server_dir(name)
-    worlds = _detect_world_dirs(server_dir)
-    items = []
-    for w in worlds:
-        size = 0
-        try:
-            for f in w.rglob('*'):
-                if f.is_file():
-                    size += f.stat().st_size
-        except Exception:
-            pass
-        items.append({
-            "name": w.name,
-            "path": str(w.relative_to(server_dir)),
-            "size": size,
-        })
-    return {"worlds": items}
+    items = collect_worlds_info(server_dir)
+    return {
+        "worlds": items,
+        "active_level": _read_active_level_name(server_dir),
+    }
 
 
 @app.get("/api/api/backup-remote-config")  # Handle double /api prefix from frontend

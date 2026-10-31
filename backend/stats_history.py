@@ -29,6 +29,7 @@ _running = False
 # Track last network counters per server to calculate rates
 _last_net_counters = {}
 
+
 def _get_conn() -> sqlite3.Connection:
     global _conn
     if _conn is None:
@@ -64,31 +65,31 @@ def _calculate_network_rates(server_id: str, rx_mb: float, tx_mb: float) -> tupl
     """Calculate network rates in MB/s based on previous counters."""
     global _last_net_counters
     now = time.time()
-    
+
     if server_id not in _last_net_counters:
         _last_net_counters[server_id] = {
             'rx_mb': rx_mb,
             'tx_mb': tx_mb,
             'timestamp': now
         }
-        return 0.0, 0.0  # First reading, no rate yet
-    
+        return 0.0, 0.0
+
     last = _last_net_counters[server_id]
     time_diff = now - last['timestamp']
-    
+
     if time_diff > 0:
         rx_rate = max(0, (rx_mb - last['rx_mb']) / time_diff)
         tx_rate = max(0, (tx_mb - last['tx_mb']) / time_diff)
     else:
         rx_rate = 0.0
         tx_rate = 0.0
-    
+
     _last_net_counters[server_id] = {
         'rx_mb': rx_mb,
         'tx_mb': tx_mb,
         'timestamp': now
     }
-    
+
     return rx_rate, tx_rate
 
 
@@ -96,12 +97,11 @@ def record_stats(server_id: str, server_name: str, stats: dict):
     """Insert one stats snapshot."""
     with _lock:
         conn = _get_conn()
-        
-        # Calculate network rates
+
         rx_mb = stats.get("network_rx_mb", 0)
         tx_mb = stats.get("network_tx_mb", 0)
         rx_rate, tx_rate = _calculate_network_rates(server_id, rx_mb, tx_mb)
-        
+
         conn.execute(
             """INSERT INTO stats (ts, server_id, server_name, cpu_percent, memory_used_mb,
                memory_limit_mb, memory_percent, network_rx_mb, network_tx_mb,
@@ -135,47 +135,60 @@ def get_stats_history(server_id: str, hours: int = 1, resolution: int = 0) -> li
     with _lock:
         conn = _get_conn()
         if resolution > 0:
-            # Aggregate by time buckets
+            if resolution >= 60:
+                bucket_expr = "strftime('%Y-%m-%dT%H:00:00', ts)"
+                params = (server_id, server_id, since)
+            else:
+                bucket_expr = (
+                    "strftime('%Y-%m-%dT%H:', ts) || "
+                    "printf('%02d', (CAST(strftime('%M', ts) AS INTEGER) / ?) * ?) || ':00'"
+                )
+                params = (resolution, resolution, server_id, server_id, since)
+
             rows = conn.execute(
-                """SELECT
-                     strftime('%%Y-%%m-%%dT%%H:', ts) || 
-                       printf('%%02d', (CAST(strftime('%%M', ts) AS INTEGER) / ?) * ?) || ':00' AS bucket,
-                   AVG(cpu_percent), AVG(memory_used_mb), AVG(memory_limit_mb),
-                   AVG(memory_percent), AVG(network_rx_rate_mbps), AVG(network_tx_rate_mbps),
-                   MAX(player_count)
+                f"""SELECT
+                     {bucket_expr} AS bucket,
+                     AVG(cpu_percent), AVG(memory_used_mb), AVG(memory_limit_mb),
+                     AVG(memory_percent), AVG(network_rx_rate_mbps), AVG(network_tx_rate_mbps),
+                     MAX(player_count)
+                   FROM stats
+                   WHERE (server_id = ? OR server_name = ?) AND ts >= ?
+                   GROUP BY bucket
+                   ORDER BY bucket""",
+                params,
+            ).fetchall()
+
+            # If at least 2 buckets exist, return the aggregated buckets.
+            # Otherwise fall back to raw data points so newly started servers
+            # still display a continuous line in 6h / 24h / 7d views.
+            if len(rows) >= 2:
+                return [
+                    {
+                        "ts": r[0], "cpu": round(r[1] or 0, 2), "ram_used": round(r[2] or 0, 1),
+                        "ram_limit": round(r[3] or 0, 1), "ram_pct": round(r[4] or 0, 1),
+                        "net_rx_rate": round(r[5] or 0, 4), "net_tx_rate": round(r[6] or 0, 4),
+                        "players": r[7] or 0,
+                    }
+                    for r in rows
+                ]
+
+        rows = conn.execute(
+            """SELECT ts, cpu_percent, memory_used_mb, memory_limit_mb, memory_percent,
+                      network_rx_rate_mbps, network_tx_rate_mbps, player_count
                  FROM stats
-                 WHERE server_id = ? AND ts >= ?
-                 GROUP BY bucket
-                 ORDER BY bucket""",
-                (resolution, resolution, server_id, since),
-            ).fetchall()
-            return [
-                {
-                    "ts": r[0], "cpu": round(r[1] or 0, 2), "ram_used": round(r[2] or 0, 1),
-                    "ram_limit": round(r[3] or 0, 1), "ram_pct": round(r[4] or 0, 1),
-                    "net_rx_rate": round(r[5] or 0, 4), "net_tx_rate": round(r[6] or 0, 4),
-                    "players": r[7] or 0,
-                }
-                for r in rows
-            ]
-        else:
-            rows = conn.execute(
-                """SELECT ts, cpu_percent, memory_used_mb, memory_limit_mb, memory_percent,
-                          network_rx_rate_mbps, network_tx_rate_mbps, player_count
-                     FROM stats
-                     WHERE server_id = ? AND ts >= ?
-                     ORDER BY ts""",
-                (server_id, since),
-            ).fetchall()
-            return [
-                {
-                    "ts": r[0], "cpu": round(r[1] or 0, 2), "ram_used": round(r[2] or 0, 1),
-                    "ram_limit": round(r[3] or 0, 1), "ram_pct": round(r[4] or 0, 1),
-                    "net_rx_rate": round(r[5] or 0, 4), "net_tx_rate": round(r[6] or 0, 4),
-                    "players": r[7] or 0,
-                }
-                for r in rows
-            ]
+                 WHERE (server_id = ? OR server_name = ?) AND ts >= ?
+                 ORDER BY ts""",
+            (server_id, server_id, since),
+        ).fetchall()
+        return [
+            {
+                "ts": r[0], "cpu": round(r[1] or 0, 2), "ram_used": round(r[2] or 0, 1),
+                "ram_limit": round(r[3] or 0, 1), "ram_pct": round(r[4] or 0, 1),
+                "net_rx_rate": round(r[5] or 0, 4), "net_tx_rate": round(r[6] or 0, 4),
+                "players": r[7] or 0,
+            }
+            for r in rows
+        ]
 
 
 def prune_old_stats():
@@ -190,8 +203,7 @@ def prune_old_stats():
 def _collector_loop():
     """Background thread that periodically collects stats from all running servers."""
     global _running
-    
-    # Import here to avoid circular imports
+
     try:
         from runtime_adapter import get_runtime_manager
     except Exception as e:
@@ -205,14 +217,9 @@ def _collector_loop():
         cycle_start = time.time()
         _cycle_count += 1
         try:
-            # Try to get the runtime manager (handles both Docker and local)
             manager = get_runtime_manager_or_docker()
-            if manager is None:
-                logger.debug("Stats collector: No runtime manager available")
-            else:
+            if manager is not None:
                 servers = manager.list_servers()
-                logger.debug(f"Stats collector: Found {len(servers)} servers")
-                # prune vanished servers from net-counter map to avoid unbounded growth
                 alive_ids = {str(s.get("id") or s.get("container_id") or s.get("name")) for s in servers}
                 for dead in list(_last_net_counters.keys()):
                     if dead not in alive_ids:
@@ -230,19 +237,14 @@ def _collector_loop():
                         s = manager.get_server_stats(str(cid))
                         if s and not s.get("error"):
                             record_stats(str(cid), name, s)
-                            logger.debug(f"Recorded stats for {name} ({cid}): cpu={s.get('cpu_percent', 0)}% mem={s.get('memory_usage_mb', 0)}MB players={s.get('player_count', 0)}")
-                        else:
-                            logger.debug(f"No stats for {cid}: {s.get('error') if s else 'None'}")
                     except Exception as e:
                         logger.warning(f"Stats collection failed for {cid}: {e}")
         except Exception as e:
             logger.error(f"Stats collector error: {e}")
 
-        # Prune old stats every 100 cycles (~50 min at 30s interval)
         if _cycle_count % 100 == 0:
             try:
                 prune_old_stats()
-                # reclaim WAL pages; without VACUUM the file never shrinks
                 try:
                     with _lock:
                         _get_conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -251,7 +253,6 @@ def _collector_loop():
             except Exception:
                 pass
 
-        # Sleep in small intervals so we can stop quickly
         elapsed = time.time() - cycle_start
         sleep_time = max(1, _COLLECT_INTERVAL - elapsed)
         for _ in range(int(sleep_time)):
@@ -260,7 +261,8 @@ def _collector_loop():
             time.sleep(1)
 
 
-_manager_singleton = None  # cached DockerManager to avoid 2880 clients/day leak
+_manager_singleton = None
+
 
 def get_runtime_manager_or_docker():
     """Get runtime manager (local) or fall back to Docker manager (cached)."""
@@ -272,10 +274,8 @@ def get_runtime_manager_or_docker():
             return adapter
     except Exception:
         pass
-    # Reuse singleton; recreate only if health check fails
     if _manager_singleton is not None:
         try:
-            # cheap liveness check — does not open new socket if already connected
             _manager_singleton._ensure_client()  # type: ignore[attr-defined]
             _manager_singleton.client.ping()
             return _manager_singleton

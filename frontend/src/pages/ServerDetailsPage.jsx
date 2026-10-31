@@ -825,109 +825,114 @@ export default function ServerDetailsPage() {
           </div>
 
           {/* Responsive Navigation Bar: Core Tabs + "Tools & More" Dropdown */}
-          <div className="flex items-center justify-between gap-2 mt-5">
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar select-none">
-              {primaryTabs.map(tab => {
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => handleTabChange(tab.id)}
-                    className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
-                      isActive
-                        ? 'bg-white/10 text-white border-brand-500'
-                        : 'border-transparent text-white/60 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    <tab.icon className={`text-xs ${isActive ? 'text-brand-400' : ''}`} />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
+          <div ref={moreMenuRef} className="mt-5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar select-none">
+                {primaryTabs.map(tab => {
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => handleTabChange(tab.id)}
+                      className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
+                        isActive
+                          ? 'bg-white/10 text-white border-brand-500'
+                          : 'border-transparent text-white/60 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <tab.icon className={`text-xs ${isActive ? 'text-brand-400' : ''}`} />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
 
-              {/* Tools & More Dropdown Trigger */}
-              {secondaryGroups.length > 0 && (
-                <div className="relative" ref={moreMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setMoreMenuOpen(v => !v)}
-                    className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
-                      activeSecondaryTab
-                        ? 'bg-brand-500/20 text-white border-brand-500'
-                        : moreMenuOpen
-                          ? 'bg-white/10 text-white border-white/30'
-                          : 'border-transparent text-white/65 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    {activeSecondaryTab ? (
-                      <>
-                        <activeSecondaryTab.icon className="text-xs text-brand-400" />
-                        <span>{activeSecondaryTab.label}</span>
-                      </>
-                    ) : (
-                      <>
-                        <FaPuzzlePiece className="text-xs text-brand-400" />
-                        <span>Tools & More</span>
-                      </>
-                    )}
-                    <FaChevronDown className={`text-[10px] transition-transform duration-200 ${moreMenuOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Categorized Tools Dropdown / Drawer Panel */}
-          {moreMenuOpen && secondaryGroups.length > 0 && (
-            <div
-              ref={moreMenuRef}
-              className="mt-1 mb-3 p-4 rounded-2xl bg-[#141827]/95 border border-white/15 shadow-2xl backdrop-blur-xl animate-fade-in"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {secondaryGroups.map(group => (
-                  <div key={group.title} className="space-y-1.5">
-                    <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
-                      {group.title}
-                    </div>
-                    {group.items.map(item => {
-                      const active = activeTab === item.id;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => handleTabChange(item.id)}
-                          className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition-all ${
-                            active
-                              ? 'bg-brand-500/20 border border-brand-500/40 text-white'
-                              : 'hover:bg-white/5 text-white/75 hover:text-white border border-transparent'
-                          }`}
-                        >
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                            active ? 'bg-brand-500 text-white' : 'bg-white/10 text-brand-400'
-                          }`}>
-                            <item.icon className="text-xs" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">{item.label}</div>
-                            {item.desc && (
-                              <div className="text-[11px] text-white/45 truncate">{item.desc}</div>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
+                {/* Tools & More Dropdown Trigger */}
+                {secondaryGroups.length > 0 && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMoreMenuOpen(v => !v);
+                      }}
+                      className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
+                        activeSecondaryTab
+                          ? 'bg-brand-500/20 text-white border-brand-500'
+                          : moreMenuOpen
+                            ? 'bg-white/10 text-white border-white/30'
+                            : 'border-transparent text-white/65 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      {activeSecondaryTab ? (
+                        <>
+                          <activeSecondaryTab.icon className="text-xs text-brand-400" />
+                          <span>{activeSecondaryTab.label}</span>
+                        </>
+                      ) : (
+                        <>
+                          <FaPuzzlePiece className="text-xs text-brand-400" />
+                          <span>Tools & More</span>
+                        </>
+                      )}
+                      <FaChevronDown className={`text-[10px] transition-transform duration-200 ${moreMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
                   </div>
-                ))}
+                )}
               </div>
             </div>
-          )}
+
+            {/* Categorized Tools Dropdown / Drawer Panel */}
+            {moreMenuOpen && secondaryGroups.length > 0 && (
+              <div
+                className="mt-1 mb-3 p-4 rounded-2xl bg-[#141827]/95 border border-white/15 shadow-2xl backdrop-blur-xl animate-fade-in"
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {secondaryGroups.map(group => (
+                    <div key={group.title} className="space-y-1.5">
+                      <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                        {group.title}
+                      </div>
+                      {group.items.map(item => {
+                        const active = activeTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleTabChange(item.id)}
+                            className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition-all ${
+                              active
+                                ? 'bg-brand-500/20 border border-brand-500/40 text-white'
+                                : 'hover:bg-white/5 text-white/75 hover:text-white border border-transparent'
+                            }`}
+                          >
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                              active ? 'bg-brand-500 text-white' : 'bg-white/10 text-brand-400'
+                            }`}>
+                              <item.icon className="text-xs" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium truncate">{item.label}</div>
+                              {item.desc && (
+                                <div className="text-[11px] text-white/45 truncate">{item.desc}</div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Tab Content */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
         {activeTab === 'overview' && (() => {
-          const backups = Array.isArray(backupData) ? backupData : backupData?.backups || [];
+          const backups = Array.isArray(backupData) ? backupData : (backupData?.items || backupData?.backups || []);
           const worlds = Array.isArray(worldsData) ? worldsData : worldsData?.worlds || [];
           const tasks = Array.isArray(schedulesData) ? schedulesData : schedulesData?.tasks || [];
           const toName = (p) => (typeof p === 'string' ? p : (p && p.name) || '');
@@ -980,28 +985,6 @@ export default function ServerDetailsPage() {
                     <FaCopy className="text-xs" />
                     {copiedAddress ? 'Copied!' : 'Copy Address'}
                   </button>
-                </div>
-              )}
-
-              {/* Quick Tools Strip — Mobile-friendly 1-click access to all tools */}
-              {quickTools.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                  {quickTools.slice(0, 6).map(tool => (
-                    <button
-                      key={tool.id}
-                      type="button"
-                      onClick={() => handleTabChange(tool.id)}
-                      className="glassmorphism hover:bg-white/10 border border-white/10 hover:border-brand-500/40 rounded-xl p-3 flex items-center gap-2.5 text-left transition-all group"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-brand-500/15 group-hover:bg-brand-500 text-brand-400 group-hover:text-white flex items-center justify-center flex-shrink-0 transition-colors">
-                        <tool.icon className="text-xs" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-white truncate">{tool.label}</div>
-                        <div className="text-[10px] text-white/40 truncate">{tool.desc || 'Open tool'}</div>
-                      </div>
-                    </button>
-                  ))}
                 </div>
               )}
 
@@ -1261,10 +1244,25 @@ export default function ServerDetailsPage() {
                     <div className="space-y-1">
                       {worlds.slice(0, 5).map((world, i) => (
                         <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-white/5 last:border-0">
-                          <div className="flex items-center gap-2">
-                            <FaFolder className="text-white/30 text-xs" />
-                            <span className="text-white">{world.name}</span>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFilesPath(world.path || world.name || '.');
+                              setIsEditing(false);
+                              setFilesEditing(false);
+                              handleTabChange('files');
+                            }}
+                            className="flex items-center gap-2 text-left hover:text-brand-300 transition-colors"
+                            title={`Open /${world.path || world.name} in File Manager`}
+                          >
+                            <FaFolder className="text-amber-400/70 text-xs" />
+                            <span className="text-white hover:text-brand-300">{world.name}</span>
+                            {world.is_active && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">
+                                active
+                              </span>
+                            )}
+                          </button>
                           <span className="text-white/60 text-xs font-sans tabular-nums">{formatBytes(world.size)}</span>
                         </div>
                       ))}
@@ -1302,7 +1300,14 @@ export default function ServerDetailsPage() {
                     <div className="space-y-1">
                       {backups.slice(0, 3).map((backup, i) => (
                         <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-white/5 last:border-0">
-                          <span className="text-white truncate max-w-[55%]">{backup.name}</span>
+                          <div className="flex items-center gap-2 min-w-0 max-w-[60%]">
+                            <span className="text-white truncate">{backup.name || backup.file}</span>
+                            {backup.source === 'mod' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 flex-shrink-0">
+                                mod
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-3 text-xs text-white/40 tabular-nums">
                             <span>{formatBytes(backup.size)}</span>
                             {formatDate(backup.modified) && <span>{formatDate(backup.modified)}</span>}
@@ -1423,11 +1428,29 @@ export default function ServerDetailsPage() {
         )}
 
         {activeTab === 'worlds' && (
-          <WorldsPanel serverName={server.name} serverId={server.id} />
+          <WorldsPanel
+            serverName={server.name}
+            serverId={server.id}
+            onOpenInFiles={(folderPath) => {
+              setFilesPath(folderPath || '.');
+              setIsEditing(false);
+              setFilesEditing(false);
+              handleTabChange('files');
+            }}
+          />
         )}
 
         {activeTab === 'backup' && (
-          <BackupsPanel serverName={server.name} serverId={server.id} />
+          <BackupsPanel
+            serverName={server.name}
+            serverId={server.id}
+            onOpenInFiles={(folderPath) => {
+              setFilesPath(folderPath || '.');
+              setIsEditing(false);
+              setFilesEditing(false);
+              handleTabChange('files');
+            }}
+          />
         )}
 
         {activeTab === 'schedule' && (

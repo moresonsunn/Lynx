@@ -5,23 +5,47 @@ import tarfile
 import time
 import zipfile
 import asyncio
-from typing import List
+import threading as _threading
+from typing import List, Optional
 from fastapi import HTTPException
-from config import SERVERS_ROOT
+from config import SERVERS_ROOT, safe_child_path
 
 
 DEFAULT_BACKUPS_ROOT = SERVERS_ROOT.parent / "backups"
 DEFAULT_BACKUPS_ROOT.mkdir(parents=True, exist_ok=True)
 
-# Volatile directories excluded from backups to prevent archive bloat over time
-# (rotated logs, crash dumps, loader caches, previous backups). Extend via BACKUP_EXCLUDE_DIRS.
-# NOTE: "backups" MUST stay excluded — the old code copied each archive into
-# server_dir/backups/ and the next run re-archived all previous zips (exponential growth + freeze).
-_DEFAULT_BACKUP_EXCLUDES = {"logs", "crash-reports", "cache", ".cache", "tmp", "backups"}
+# Common backup directories created by Minecraft backup mods (SimpleBackups, FTB Backups, AromaBackup, Textile, etc.)
+MOD_BACKUP_DIRS = (
+    "backups",
+    "simplebackups",
+    "ftbbackups",
+    "ftbbackups2",
+    "backup",
+    "world_backups",
+)
 
-# Guard against overlapping runs (scheduler + manual click at same time)
+BACKUP_ARCHIVE_SUFFIXES = (
+    ".zip",
+    ".tar.gz",
+    ".tgz",
+    ".tar.bz2",
+    ".tar.xz",
+    ".tar",
+    ".zst",
+    ".7z",
+)
+
+# Volatile directories excluded from backups to prevent archive bloat over time
+_DEFAULT_BACKUP_EXCLUDES = {
+    "logs",
+    "crash-reports",
+    "cache",
+    ".cache",
+    "tmp",
+    *MOD_BACKUP_DIRS,
+}
+
 _BACKUP_IN_PROGRESS: set = set()
-import threading as _threading
 _BACKUP_LOCK = _threading.Lock()
 
 
@@ -38,14 +62,18 @@ def _is_excluded(rel: Path, excludes: set) -> bool:
     return bool(rel.parts) and rel.parts[0] in excludes
 
 
+def _is_backup_archive(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    low = path.name.lower()
+    return any(low.endswith(ext) for ext in BACKUP_ARCHIVE_SUFFIXES)
+
+
 def _archive_zip(root: Path, archive_path: Path, excludes: set) -> None:
-    # compresslevel=1: ~3x faster than default 6, slightly larger file.
-    # Backups used to freeze the whole app for minutes on big worlds.
     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
         for path in root.rglob("*"):
             if not path.is_file():
                 continue
-            # skip lock / temp / socket files that break zips or bloat them
             if path.name in ("session.lock",):
                 continue
             if path.suffix in (".tmp", ".temp", ".lock"):
@@ -59,7 +87,6 @@ def _archive_zip(root: Path, archive_path: Path, excludes: set) -> None:
             try:
                 zf.write(path, rel.as_posix())
             except (OSError, ValueError):
-                # file vanished mid-backup (world saving) — skip, don't abort
                 continue
 
 
@@ -86,51 +113,125 @@ def _get_backups_root() -> Path:
 
 
 def _server_path(name: str) -> Path:
-    server_dir = (SERVERS_ROOT / name).resolve()
+    server_dir = safe_child_path(SERVERS_ROOT, name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
     return server_dir
 
 
 def list_backups(name: str) -> List[dict]:
+    """List both Panel backups and automatic Modpack backups inside the server directory."""
     server_dir = _server_path(name)
-    dest_dir = _get_backups_root() / name
+    dest_dir = safe_child_path(_get_backups_root(), name)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    items = []
-    for p in sorted(dest_dir.glob("*.zip")):
-        items.append({
-            "file": p.name,
-            "size": p.stat().st_size,
-            "modified": int(p.stat().st_mtime),
-        })
-    
-    for p in sorted(dest_dir.glob("*.tar.gz")):
-        items.append({
-            "file": p.name,
-            "size": p.stat().st_size,
-            "modified": int(p.stat().st_mtime),
-        })
-    
-    # Also check server's own backups/ folder
-    server_backup_dir = server_dir / "backups"
-    if server_backup_dir.exists():
-        for p in sorted(server_backup_dir.glob("*.zip")):
-            # Check if already in list (avoid duplicates)
-            if not any(item["file"] == p.name for item in items):
+    items: List[dict] = []
+    seen_files = set()
+
+    # 1. Scan Panel Backups directory (/data/backups/<server_name>)
+    try:
+        for p in sorted(dest_dir.iterdir()):
+            if _is_backup_archive(p):
+                st = p.stat()
                 items.append({
                     "file": p.name,
-                    "size": p.stat().st_size,
-                    "modified": int(p.stat().st_mtime),
+                    "name": p.name,
+                    "size": st.st_size,
+                    "modified": int(st.st_mtime),
+                    "source": "panel",
+                    "source_label": "Panel Backup",
+                    "folder_path": None,
                 })
-        for p in sorted(server_backup_dir.glob("*.tar.gz")):
-            if not any(item["file"] == p.name for item in items):
+                seen_files.add(p.name)
+    except Exception:
+        pass
+
+    # 2. Scan Modpack / In-Server Backup directories (backups/, simplebackups/, ftbbackups/, etc.)
+    for mod_dir_name in MOD_BACKUP_DIRS:
+        mod_backup_dir = server_dir / mod_dir_name
+        if not mod_backup_dir.is_dir():
+            continue
+        try:
+            for p in mod_backup_dir.rglob("*"):
+                if not _is_backup_archive(p):
+                    continue
+                rel_to_server = p.relative_to(server_dir).as_posix()
+                if p.name in seen_files or rel_to_server in seen_files:
+                    continue
+                st = p.stat()
                 items.append({
-                    "file": p.name,
-                    "size": p.stat().st_size,
-                    "modified": int(p.stat().st_mtime),
+                    "file": rel_to_server,
+                    "name": p.name,
+                    "size": st.st_size,
+                    "modified": int(st.st_mtime),
+                    "source": "mod",
+                    "source_label": f"Mod Backup ({mod_dir_name})",
+                    "folder": p.parent.relative_to(server_dir).as_posix(),
+                    "folder_path": p.parent.relative_to(server_dir).as_posix(),
                 })
-    
+                seen_files.add(rel_to_server)
+        except Exception:
+            continue
+
     return sorted(items, key=lambda x: x["modified"], reverse=True)
+
+
+def get_detected_mod_backup_folders(name: str) -> List[dict]:
+    """Return any backup folders found inside the server directory."""
+    server_dir = _server_path(name)
+    found = []
+    for mod_dir_name in MOD_BACKUP_DIRS:
+        d = server_dir / mod_dir_name
+        if d.is_dir():
+            count = sum(1 for p in d.rglob("*") if _is_backup_archive(p))
+            found.append({
+                "name": mod_dir_name,
+                "folder": mod_dir_name,
+                "path": mod_dir_name,
+                "count": count,
+                "archive_count": count,
+            })
+    return found
+
+
+def resolve_backup_archive(name: str, backup_file: str) -> Path:
+    """Safely resolve a backup archive from either the panel backup root or the server's mod backup folders."""
+    server_dir = _server_path(name)
+    dest_dir = safe_child_path(_get_backups_root(), name)
+
+    # Try panel backup directory first
+    try:
+        candidate = safe_child_path(dest_dir, backup_file)
+        if candidate.is_file():
+            return candidate
+    except Exception:
+        pass
+
+    # Try server directory (if backup_file is e.g. "simplebackups/world.zip" or "backups/2026.zip")
+    try:
+        candidate_in_server = safe_child_path(server_dir, backup_file)
+        if candidate_in_server.is_file() and _is_backup_archive(candidate_in_server):
+            rel_parts = candidate_in_server.relative_to(server_dir).parts
+            if rel_parts and rel_parts[0] in MOD_BACKUP_DIRS:
+                return candidate_in_server
+    except Exception:
+        pass
+
+    # Also check by bare filename inside each MOD_BACKUP_DIRS
+    bare_name = Path(backup_file).name
+    for mod_dir_name in MOD_BACKUP_DIRS:
+        mod_dir = server_dir / mod_dir_name
+        if mod_dir.is_dir():
+            try:
+                candidate = safe_child_path(mod_dir, bare_name)
+                if candidate.is_file() and _is_backup_archive(candidate):
+                    return candidate
+            except Exception:
+                continue
+
+    raise HTTPException(status_code=404, detail="Backup not found")
+
+
+resolve_backup_path = resolve_backup_archive
 
 
 def create_backup(name: str, compression: str = 'zip') -> dict:
@@ -145,12 +246,6 @@ async def create_backup_async(name: str, compression: str = 'zip') -> dict:
 
 
 def _create_backup_sync(name: str, compression: str = 'zip') -> dict:
-    """Internal synchronous backup implementation.
-
-    Runs in a worker thread (see create_backup_async / scheduler to_thread).
-    Never call directly from an async event-loop handler — it blocks for
-    seconds/minutes on big worlds and freezes the whole panel.
-    """
     from settings_routes import get_backup_settings
     import logging as _logging
     _log = _logging.getLogger(__name__)
@@ -164,7 +259,7 @@ def _create_backup_sync(name: str, compression: str = 'zip') -> dict:
         backup_settings = get_backup_settings()
 
         ts = time.strftime("%Y%m%d-%H%M%S")
-        dest_dir = _get_backups_root() / name
+        dest_dir = safe_child_path(_get_backups_root(), name)
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         compress = backup_settings.get("compress", True)
@@ -181,13 +276,9 @@ def _create_backup_sync(name: str, compression: str = 'zip') -> dict:
             archive_path = dest_dir / f"{name}-{ts}{ext}"
             _archive_tar(server_dir, archive_path, excludes, mode)
 
-        # NOTE: intentionally NO second copy into server_dir/backups/ anymore.
-        # The old duplicate doubled disk IO/time AND got re-archived on the
-        # next run (backups-inside-backups → exponential growth → freeze).
-        # list_backups() still reads legacy copies if present.
         size = archive_path.stat().st_size
         _log.info(f"Backup {archive_path.name} done in {time.time()-started:.1f}s ({size//1024//1024} MB)")
-        return {"file": archive_path.name, "size": size}
+        return {"file": archive_path.name, "name": archive_path.name, "size": size}
     finally:
         with _BACKUP_LOCK:
             _BACKUP_IN_PROGRESS.discard(name)
@@ -195,18 +286,10 @@ def _create_backup_sync(name: str, compression: str = 'zip') -> dict:
 
 def restore_backup(name: str, backup_file: str) -> None:
     server_dir = _server_path(name)
-    dest_dir = _get_backups_root() / name
-    archive = (dest_dir / backup_file).resolve()
-    if not str(archive).startswith(str(dest_dir)) or not archive.exists():
-        raise HTTPException(status_code=404, detail="Backup not found")
-    
+    archive = resolve_backup_archive(name, backup_file)
     shutil.unpack_archive(str(archive), str(server_dir))
 
 
 def delete_backup(name: str, backup_file: str) -> None:
-    server_dir = _server_path(name)
-    dest_dir = _get_backups_root() / name
-    archive = (dest_dir / backup_file).resolve()
-    if not str(archive).startswith(str(dest_dir)) or not archive.exists():
-        raise HTTPException(status_code=404, detail="Backup not found")
+    archive = resolve_backup_archive(name, backup_file)
     archive.unlink()
