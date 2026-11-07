@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { API, authHeaders } from '../../context/AppContext';
 import { useTranslation } from '../../i18n';
-import ConfirmModal from '../ConfirmModal';
 import {
-  FaShieldAlt, FaSpinner, FaSearch, FaTrash, FaUndo, FaEyeSlash,
-  FaCheckCircle, FaExclamationTriangle, FaTimesCircle, FaFilter,
+  FaShieldAlt, FaSpinner, FaSearch, FaUndo, FaEyeSlash,
+  FaCheckCircle, FaTimesCircle, FaFilter,
   FaChevronDown, FaChevronUp, FaCube, FaPlus, FaTimes, FaInfoCircle,
-  FaDesktop, FaServer, FaQuestion, FaStar, FaEye, FaUser
+  FaDesktop, FaServer, FaQuestion, FaStar, FaEye
 } from 'react-icons/fa';
 
 const SIDE_CONFIG = {
@@ -73,8 +72,8 @@ function ModCard({ mod, onDisable, onRestore, onWhitelist, disabledMode = false 
             </button>
           ) : mod.is_client_only ? (
             <>
-              <button onClick={(e) => { e.stopPropagation(); onWhitelist?.(mod.filename); }}
-                className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors" title="Whitelist mod">
+              <button onClick={(e) => { e.stopPropagation(); onWhitelist?.(mod.filename, mod.mod_name); }}
+                className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors" title="Add to Client-Only Allowlist">
                 <FaStar className="w-3.5 h-3.5" />
               </button>
               <button onClick={(e) => { e.stopPropagation(); onDisable?.(mod.filename); }}
@@ -109,24 +108,10 @@ export default function ClientModFilterPanel({ serverName }) {
   const [filtering, setFiltering] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [disabledMods, setDisabledMods] = useState([]);
-  const [whitelist, setWhitelist] = useState([]);
   const [allowlistEntries, setAllowlistEntries] = useState([]);
-  const [allowlistLoading, setAllowlistLoading] = useState(false);
-  const [allowlistSearch, setAllowlistSearch] = useState('');
-
-  // Add Entry Modal state
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({
-    pattern: '',
-    mod_name: '',
-    notes: '',
-  });
+  const [newPattern, setNewPattern] = useState('');
+  const [newNote, setNewNote] = useState('');
   const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
-
-  // Deletion Confirmation state
-  const [entryToDelete, setEntryToDelete] = useState(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
   const [showDisabled, setShowDisabled] = useState(false);
   const [showWhitelist, setShowWhitelist] = useState(true);
   const [filter, setFilter] = useState('all'); // all, client, server, unknown
@@ -139,19 +124,13 @@ export default function ClientModFilterPanel({ serverName }) {
   };
 
   const formatDate = (isoString) => {
-    if (!isoString) return '—';
+    if (!isoString) return '';
     try {
       const d = new Date(isoString);
-      if (isNaN(d.getTime())) return String(isoString);
-      return d.toLocaleString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleDateString();
     } catch {
-      return String(isoString);
+      return '';
     }
   };
 
@@ -163,25 +142,21 @@ export default function ClientModFilterPanel({ serverName }) {
   }, [serverName]);
 
   const loadWhitelist = useCallback(async () => {
-    setAllowlistLoading(true);
     try {
       const r = await fetch(`${API}/client-mods/whitelist/${serverName}`, { headers: authHeaders() });
       if (r.ok) {
         const data = await r.json();
         let entries = [];
-        let patterns = [];
-
         if (Array.isArray(data.entries) && data.entries.length > 0) {
           entries = data.entries.map((item, idx) => ({
             id: item.pattern || `entry-${idx}`,
             pattern: item.pattern || '',
             mod_name: item.mod_name || null,
             added_at: item.added_at || null,
-            added_by: item.added_by || 'system',
+            added_by: item.added_by || null,
             status: (item.status || 'active').toLowerCase(),
             notes: item.notes || null,
           }));
-          patterns = data.patterns || entries.map(e => e.pattern);
         } else if (Array.isArray(data.patterns) && data.patterns.length > 0) {
           entries = data.patterns.map((pat, idx) => {
             const patStr = typeof pat === 'string' ? pat : (pat?.pattern || '');
@@ -190,21 +165,15 @@ export default function ClientModFilterPanel({ serverName }) {
               pattern: patStr,
               mod_name: typeof pat === 'object' ? pat.mod_name : null,
               added_at: typeof pat === 'object' ? pat.added_at : null,
-              added_by: typeof pat === 'object' ? pat.added_by : 'system',
+              added_by: typeof pat === 'object' ? pat.added_by : null,
               status: typeof pat === 'object' && pat.status ? pat.status.toLowerCase() : 'active',
               notes: typeof pat === 'object' ? pat.notes : null,
             };
           });
-          patterns = data.patterns.map(p => typeof p === 'string' ? p : p.pattern);
         }
         setAllowlistEntries(entries);
-        setWhitelist(patterns);
       }
-    } catch (e) {
-      addLog(`Failed to load allowlist: ${e.message}`, 'error');
-    } finally {
-      setAllowlistLoading(false);
-    }
+    } catch { }
   }, [serverName]);
 
   useEffect(() => {
@@ -297,16 +266,21 @@ export default function ClientModFilterPanel({ serverName }) {
     } catch (e) { addLog(`Restore all failed: ${e.message}`, 'error'); }
   };
 
-  const whitelistMod = async (filename) => {
-    const pattern = filename.toLowerCase().replace('.jar', '');
+  const whitelistMod = async (filename, modName) => {
+    const pattern = filename.toLowerCase().replace(/\.jar$/, '');
     try {
       const r = await fetch(`${API}/client-mods/whitelist/${serverName}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ pattern, mod_name: filename }),
+        body: JSON.stringify({
+          pattern,
+          mod_name: modName || filename,
+          status: 'active',
+        }),
       });
       if (r.ok) {
-        addLog(`Whitelisted: ${pattern}`, 'success');
+        addLog(`Added to allowlist: ${pattern}`, 'success');
+        setShowWhitelist(true);
         loadWhitelist();
       }
     } catch (e) { addLog(`Failed to whitelist: ${e.message}`, 'error'); }
@@ -314,70 +288,46 @@ export default function ClientModFilterPanel({ serverName }) {
 
   const handleAddEntry = async (e) => {
     e?.preventDefault();
-    if (!addForm.pattern.trim()) return;
-
+    if (!newPattern.trim() || isSubmittingAdd) return;
     setIsSubmittingAdd(true);
     try {
-      const res = await fetch(`${API}/client-mods/whitelist/${serverName}`, {
+      const r = await fetch(`${API}/client-mods/whitelist/${serverName}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
-          pattern: addForm.pattern.trim(),
-          mod_name: addForm.mod_name.trim() || undefined,
-          notes: addForm.notes.trim() || undefined,
+          pattern: newPattern.trim(),
+          notes: newNote.trim() || undefined,
           status: 'active',
         }),
       });
-
-      if (res.ok) {
-        addLog(`Added to allowlist: ${addForm.pattern.trim()}`, 'success');
-        setAddForm({ pattern: '', mod_name: '', notes: '' });
-        setShowAddModal(false);
+      if (r.ok) {
+        addLog(`Added allowlist pattern: ${newPattern.trim()}`, 'success');
+        setNewPattern('');
+        setNewNote('');
         loadWhitelist();
       } else {
-        const err = await res.json().catch(() => ({}));
-        addLog(`Failed to add allowlist entry: ${err.detail || res.statusText}`, 'error');
+        const err = await r.json().catch(() => ({}));
+        addLog(`Failed: ${err.detail || r.statusText}`, 'error');
       }
     } catch (err) {
-      addLog(`Failed to add allowlist entry: ${err.message}`, 'error');
+      addLog(`Failed: ${err.message}`, 'error');
     } finally {
       setIsSubmittingAdd(false);
     }
   };
 
-  const handleConfirmRemove = async () => {
-    if (!entryToDelete) return;
-    setIsDeleting(true);
+  const removeWhitelistPattern = async (pattern) => {
     try {
-      const r = await fetch(`${API}/client-mods/whitelist/${serverName}?pattern=${encodeURIComponent(entryToDelete.pattern)}`, {
+      const r = await fetch(`${API}/client-mods/whitelist/${serverName}?pattern=${encodeURIComponent(pattern)}`, {
         method: 'DELETE',
         headers: authHeaders(),
       });
       if (r.ok) {
-        addLog(`Removed from allowlist: ${entryToDelete.pattern}`, 'success');
-        setEntryToDelete(null);
+        addLog(`Removed allowlist pattern: ${pattern}`, 'success');
         loadWhitelist();
-      } else {
-        const err = await r.json().catch(() => ({}));
-        addLog(`Failed to remove allowlist pattern: ${err.detail || r.statusText}`, 'error');
       }
-    } catch (err) {
-      addLog(`Failed to remove allowlist pattern: ${err.message}`, 'error');
-    } finally {
-      setIsDeleting(false);
-    }
+    } catch (e) { addLog(`Failed: ${e.message}`, 'error'); }
   };
-
-  const filteredAllowlistEntries = useMemo(() => {
-    if (!allowlistSearch.trim()) return allowlistEntries;
-    const q = allowlistSearch.toLowerCase();
-    return allowlistEntries.filter(e =>
-      e.pattern?.toLowerCase().includes(q) ||
-      (e.mod_name && e.mod_name.toLowerCase().includes(q)) ||
-      (e.notes && e.notes.toLowerCase().includes(q)) ||
-      (e.added_by && e.added_by.toLowerCase().includes(q))
-    );
-  }, [allowlistEntries, allowlistSearch]);
 
   const filteredMods = analysis?.mods?.filter(m => {
     if (filter === 'client') return m.is_client_only;
@@ -398,7 +348,7 @@ export default function ClientModFilterPanel({ serverName }) {
             {t('clientModFilter.title') || 'Client Mod Filter'}
           </h2>
           <p className="text-xs text-white/40 mt-0.5">
-            {t('clientModFilter.subtitle') || 'Automatically detect and filter client-only mods that cause server crashes, while preserving your allowlist.'}
+            {t('clientModFilter.subtitle') || 'Automatically detect & remove client-only mods that crash or are useless on dedicated servers.'}
           </p>
         </div>
       </div>
@@ -528,244 +478,91 @@ export default function ClientModFilterPanel({ serverName }) {
         )}
       </div>
 
-      {/* ── Whitelist Tracking Table Section ── */}
+      {/* ── Client-Only Allowlist Section ── */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-4">
         <div className="flex items-center justify-between cursor-pointer" onClick={() => setShowWhitelist(!showWhitelist)}>
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-500/20 rounded-lg"><FaStar className="w-4 h-4 text-blue-400" /></div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-white">{t('clientModFilter.whitelist.title')}</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-medium">
-                  {allowlistEntries.length}
-                </span>
-              </div>
-              <p className="text-xs text-white/40">{t('clientModFilter.whitelist.subtitle')}</p>
+              <h3 className="text-sm font-semibold text-white">
+                {t('clientModFilter.whitelist.title') || 'Client-Only Allowlist'} ({allowlistEntries.length})
+              </h3>
+              <p className="text-xs text-white/40">
+                {t('clientModFilter.whitelist.subtitle') || 'Patterns that prevent mods from being filtered'}
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowAddModal(true); }}
-              className="px-2.5 py-1 text-xs bg-blue-500/20 border border-blue-500/40 text-blue-300 rounded-lg hover:bg-blue-500/30 flex items-center gap-1.5 transition-colors"
-            >
-              <FaPlus className="w-3 h-3" /> {t('clientModFilter.whitelist.addEntry')}
-            </button>
-            {showWhitelist ? <FaChevronUp className="text-white/30" /> : <FaChevronDown className="text-white/30" />}
-          </div>
+          {showWhitelist ? <FaChevronUp className="text-white/30" /> : <FaChevronDown className="text-white/30" />}
         </div>
 
         {showWhitelist && (
           <div className="mt-4 space-y-3">
-            {/* Table Toolbar */}
-            {allowlistEntries.length > 0 && (
-              <div className="flex items-center justify-between gap-3">
-                <div className="relative flex-1 max-w-xs">
-                  <FaSearch className="absolute left-3 top-2.5 text-white/30 text-xs" />
-                  <input
-                    type="text"
-                    value={allowlistSearch}
-                    onChange={(e) => setAllowlistSearch(e.target.value)}
-                    placeholder={t('clientModFilter.whitelist.searchPlaceholder')}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-500/40"
-                  />
-                </div>
-              </div>
-            )}
+            <form onSubmit={handleAddEntry} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <input
+                type="text"
+                required
+                value={newPattern}
+                onChange={e => setNewPattern(e.target.value)}
+                placeholder={t('clientModFilter.whitelist.patternPlaceholder') || 'e.g. jei*, appleskin, create...'}
+                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30"
+              />
+              <input
+                type="text"
+                value={newNote}
+                onChange={e => setNewNote(e.target.value)}
+                placeholder={t('clientModFilter.whitelist.notesPlaceholder') || 'Note (optional)'}
+                className="sm:w-56 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30"
+              />
+              <button
+                type="submit"
+                disabled={!newPattern.trim() || isSubmittingAdd}
+                className="px-3 py-2 bg-blue-500/20 border border-blue-500/40 text-blue-300 rounded-lg text-sm hover:bg-blue-500/30 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isSubmittingAdd ? <FaSpinner className="w-3 h-3 animate-spin" /> : <FaPlus className="w-3 h-3" />}
+                {t('clientModFilter.whitelist.addButton') || 'Add'}
+              </button>
+            </form>
 
-            {/* Structured Table */}
-            {allowlistLoading ? (
-              <div className="flex items-center justify-center py-8 text-white/40 gap-2 text-xs">
-                <FaSpinner className="animate-spin w-4 h-4" /> {t('common.loading')}
-              </div>
-            ) : filteredAllowlistEntries.length === 0 ? (
-              <div className="text-center py-8 px-4 border border-dashed border-white/10 rounded-xl bg-white/[0.01]">
-                <div className="w-10 h-10 rounded-full bg-blue-500/10 text-blue-400 flex items-center justify-center mx-auto mb-2">
-                  <FaStar className="w-5 h-5 opacity-60" />
-                </div>
-                <p className="text-sm font-medium text-white/70">{t('clientModFilter.whitelist.noEntries')}</p>
-                <p className="text-xs text-white/40 max-w-md mx-auto mt-1 mb-3">
-                  {t('clientModFilter.whitelist.noEntriesDescription')}
-                </p>
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="px-3 py-1.5 bg-blue-500/20 border border-blue-500/40 text-blue-300 rounded-lg text-xs hover:bg-blue-500/30 inline-flex items-center gap-1.5"
-                >
-                  <FaPlus className="w-3 h-3" /> {t('clientModFilter.whitelist.addEntry')}
-                </button>
-              </div>
+            {allowlistEntries.length === 0 ? (
+              <p className="text-xs text-white/30">
+                {t('clientModFilter.whitelist.noEntries') || 'No allowlist entries recorded'}
+              </p>
             ) : (
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/45 bg-white/[0.02]">
-                        <th className="py-2.5 px-4 font-medium">{t('clientModFilter.whitelist.colPattern')}</th>
-                        <th className="py-2.5 px-4 font-medium">{t('clientModFilter.whitelist.colAddedAt')}</th>
-                        <th className="py-2.5 px-4 font-medium">{t('clientModFilter.whitelist.colAddedBy')}</th>
-                        <th className="py-2.5 px-4 font-medium">{t('clientModFilter.whitelist.colStatus')}</th>
-                        <th className="py-2.5 px-4 font-medium text-right">{t('clientModFilter.whitelist.colActions')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/10 text-xs">
-                      {filteredAllowlistEntries.map((entry) => (
-                        <tr key={entry.id || entry.pattern} className="hover:bg-white/[0.02] transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="flex flex-col gap-0.5">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs font-semibold text-white bg-white/10 px-2 py-0.5 rounded border border-white/10">
-                                  {entry.pattern}
-                                </span>
-                                {entry.mod_name && (
-                                  <span className="text-xs text-brand-300 font-medium">
-                                    {entry.mod_name}
-                                  </span>
-                                )}
-                              </div>
-                              {entry.notes && (
-                                <p className="text-[11px] text-white/40 italic truncate max-w-[280px]">
-                                  {entry.notes}
-                                </p>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-white/60 whitespace-nowrap">
-                            {formatDate(entry.added_at)}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="inline-flex items-center gap-1.5 text-white/70">
-                              <FaUser className="w-2.5 h-2.5 text-white/30" />
-                              {entry.added_by || t('clientModFilter.whitelist.systemUser')}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                              {t('clientModFilter.whitelist.statusActive')}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <button
-                              onClick={() => setEntryToDelete(entry)}
-                              className="p-1.5 text-white/40 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors inline-flex items-center"
-                              title={t('clientModFilter.whitelist.removeTooltip')}
-                            >
-                              <FaTrash className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
+                {allowlistEntries.map((entry) => (
+                  <div
+                    key={entry.id || entry.pattern}
+                    className="flex items-center justify-between gap-2 p-2.5 bg-blue-500/5 rounded-lg border border-blue-500/15"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap text-xs">
+                      <span className="font-mono text-blue-300 font-medium">{entry.pattern}</span>
+                      {entry.mod_name && entry.mod_name !== entry.pattern && (
+                        <span className="text-white/70">{entry.mod_name}</span>
+                      )}
+                      {entry.notes && (
+                        <span className="text-white/40 truncate">— {entry.notes}</span>
+                      )}
+                      {(entry.added_at || entry.added_by) && (
+                        <span className="text-white/30">
+                          {formatDate(entry.added_at)}{entry.added_by ? ` · ${entry.added_by}` : ''}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeWhitelistPattern(entry.pattern)}
+                      className="p-1 text-white/30 hover:text-red-400 transition-colors flex-shrink-0"
+                      title={t('clientModFilter.whitelist.removeTooltip') || 'Remove from allowlist'}
+                    >
+                      <FaTimes className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         )}
       </div>
-
-      {/* ── Add Entry Modal ── */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !isSubmittingAdd && setShowAddModal(false)} />
-          <div className="relative bg-ink-900 border border-white/10 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-blue-500/20 text-blue-400 rounded-lg">
-                  <FaPlus className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-white">{t('clientModFilter.whitelist.addModalTitle')}</h3>
-                  <p className="text-xs text-white/40">{t('clientModFilter.whitelist.addModalSubtitle')}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowAddModal(false)}
-                disabled={isSubmittingAdd}
-                className="p-1.5 text-white/40 hover:text-white rounded-lg transition-colors"
-              >
-                <FaTimes className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddEntry} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-white/70 mb-1">
-                  {t('clientModFilter.whitelist.patternLabel')} <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={addForm.pattern}
-                  onChange={(e) => setAddForm({ ...addForm, pattern: e.target.value })}
-                  placeholder={t('clientModFilter.whitelist.patternPlaceholder')}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-500/50 font-mono"
-                />
-                <p className="text-[11px] text-white/40 mt-1">
-                  {t('clientModFilter.whitelist.patternHelp')}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-white/70 mb-1">
-                  {t('clientModFilter.whitelist.modNameLabel')}
-                </label>
-                <input
-                  type="text"
-                  value={addForm.mod_name}
-                  onChange={(e) => setAddForm({ ...addForm, mod_name: e.target.value })}
-                  placeholder={t('clientModFilter.whitelist.modNamePlaceholder')}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-500/50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-white/70 mb-1">
-                  {t('clientModFilter.whitelist.notesLabel')}
-                </label>
-                <textarea
-                  rows={2}
-                  value={addForm.notes}
-                  onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
-                  placeholder={t('clientModFilter.whitelist.notesPlaceholder')}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-500/50 resize-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  disabled={isSubmittingAdd}
-                  className="px-4 py-2 text-xs font-medium text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  {t('clientModFilter.whitelist.cancelButton')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingAdd || !addForm.pattern.trim()}
-                  className="px-4 py-2 text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {isSubmittingAdd ? <FaSpinner className="animate-spin" /> : <FaPlus className="w-3 h-3" />}
-                  {isSubmittingAdd ? t('clientModFilter.whitelist.addingButton') : t('clientModFilter.whitelist.addButton')}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Confirm Removal Dialog ── */}
-      <ConfirmModal
-        isOpen={!!entryToDelete}
-        title={t('clientModFilter.whitelist.confirmRemoveTitle')}
-        message={t('clientModFilter.whitelist.confirmRemoveMessage', { pattern: entryToDelete?.pattern })}
-        confirmText={t('clientModFilter.whitelist.confirmRemoveButton')}
-        cancelText={t('clientModFilter.whitelist.cancelButton')}
-        confirmVariant="danger"
-        isLoading={isDeleting}
-        onConfirm={handleConfirmRemove}
-        onCancel={() => setEntryToDelete(null)}
-      />
 
       {/* ── Activity Log ── */}
       {actionLog.length > 0 && (
@@ -790,7 +587,7 @@ export default function ClientModFilterPanel({ serverName }) {
           <div className="flex items-start gap-3">
             <FaInfoCircle className="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0" />
             <div className="text-xs text-white/50 space-y-1.5">
-              <p><strong className="text-white/70">How it works:</strong> Click "Analyze Mods" to scan all JAR files in your server's mods folder.</p>
+              <p><strong className="text-white/70">How it works:</strong> Click &quot;Analyze Mods&quot; to scan all JAR files in your server&apos;s mods folder.</p>
               <p>The system detects client-only mods using <strong className="text-white/60">5 strategies</strong>:</p>
               <ul className="list-disc ml-4 space-y-0.5">
                 <li><strong className="text-white/60">JAR Metadata</strong> — reads fabric.mod.json <code className="text-brand-300">environment</code>, quilt.mod.json, Forge <code className="text-brand-300">clientSideOnly</code></li>

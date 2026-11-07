@@ -38,8 +38,6 @@ import {
   FaExpandAlt,
   FaPause,
   FaSlidersH,
-  FaArrowCircleUp,
-  FaArrowUp,
 } from 'react-icons/fa';
 
 import TerminalPanel from '../components/TerminalPanel';
@@ -816,21 +814,6 @@ export default function ServerDetailsPage() {
                     <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
                     {server.status}
                   </span>
-                  {modpack.isModpack && (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                      <FaCube className="text-purple-400 text-xs" />
-                      <span className="capitalize">{modpack.provider || 'Modpack'}</span>
-                      {modpack.currentVersionName && (
-                        <span className="font-mono text-[11px] text-purple-200">{modpack.currentVersionName}</span>
-                      )}
-                      {modpack.hasUpdate && (
-                        <span className="flex h-2 w-2 relative ml-0.5" title={`Update available: ${modpack.latestVersion?.version_name || modpack.latestVersion?.version_number}`}>
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
-                        </span>
-                      )}
-                    </span>
-                  )}
                 </div>
                 <div className="flex items-center gap-2.5 text-xs sm:text-sm text-white/60 mt-1 flex-wrap">
                   <span>{displayType}</span>
@@ -886,20 +869,13 @@ export default function ServerDetailsPage() {
                 <button
                   type="button"
                   onClick={() => setShowModpackUpdateModal(true)}
-                  className={`px-3.5 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${
-                    modpack.hasUpdate
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg shadow-purple-500/25 ring-1 ring-purple-400/40'
-                      : 'bg-white/10 hover:bg-white/15 text-white/90 border border-white/10'
-                  }`}
-                  title={modpack.hasUpdate ? `${t('modpackUpdate.updateAvailable') || 'Update available'}: ${modpack.latestVersion?.version_name || modpack.latestVersion?.version_number}` : (t('modpackUpdate.changeVersion') || 'Change modpack version')}
+                  className="px-3 py-2 text-white/75 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                  title={modpack.hasUpdate ? `${t('modpackUpdate.updateAvailable') || 'Update available'}: ${modpack.latestVersion?.version_name || modpack.latestVersion?.version_number}` : (t('modpackUpdate.changeVersion') || 'Update Modpack')}
                 >
-                  <FaArrowCircleUp className={modpack.loading ? 'animate-spin text-sm text-purple-300' : 'text-sm text-purple-300'} />
-                  <span>{t('modpackUpdate.updateButton') || 'Update Modpack'}</span>
+                  <FaSync className={`text-xs text-brand-400 ${modpack.loading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">{t('modpackUpdate.updateButton') || 'Update Modpack'}</span>
                   {modpack.hasUpdate && (
-                    <span className="flex h-2 w-2 relative">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
-                    </span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
                   )}
                 </button>
               )}
@@ -1090,36 +1066,6 @@ export default function ServerDetailsPage() {
                 </div>
               )}
 
-              {/* Modpack Update Available Alert Banner */}
-              {modpack.isModpack && modpack.hasUpdate && access.canManage && (
-                <div className="bg-gradient-to-r from-purple-900/40 via-indigo-900/30 to-purple-900/40 border border-purple-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-purple-500/20 text-purple-300 rounded-xl border border-purple-500/30">
-                      <FaArrowCircleUp className="w-5 h-5 text-amber-400 animate-bounce" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-                        <span>{t('modpackUpdate.updateAvailable') || 'Modpack Update Available'}</span>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          {modpack.currentVersionName} → {modpack.latestVersion?.version_name || modpack.latestVersion?.version_number}
-                        </span>
-                      </h4>
-                      <p className="text-xs text-white/60 mt-0.5">
-                        {t('modpackUpdate.updateAvailableDesc', { provider: modpack.provider }) || `A newer release is available from ${modpack.provider}. Click below to review changelog and update safely.`}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowModpackUpdateModal(true)}
-                    className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/20 whitespace-nowrap self-stretch sm:self-auto justify-center"
-                  >
-                    <FaArrowCircleUp className="w-3.5 h-3.5" />
-                    <span>{t('modpackUpdate.updateToVersion', { version: modpack.latestVersion?.version_name || modpack.latestVersion?.version_number }) || `Update to ${modpack.latestVersion?.version_name || modpack.latestVersion?.version_number}`}</span>
-                  </button>
-                </div>
-              )}
-
               {/* Live Read-Only Console Preview */}
               <LiveConsolePreview
                 serverId={server.id}
@@ -1189,43 +1135,24 @@ export default function ServerDetailsPage() {
                       </div>
                     )}
                     {modpack.isModpack && (
-                      <>
-                        <div className="flex justify-between items-center">
-                          <span className="text-white/50">{t('servers.modpack') || 'Modpack'}</span>
-                          <span className="text-white font-medium flex items-center gap-1.5">
-                            <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                              {modpack.provider || 'Pack'}
-                            </span>
-                            <span>{modpack.packName}</span>
+                      <div className="flex justify-between items-center">
+                        <span className="text-white/50">{t('servers.modpack') || 'Modpack'}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white font-medium">
+                            {modpack.packName}
+                            {modpack.currentVersionName ? <span className="text-white/50 font-mono text-xs ml-1.5">({modpack.currentVersionName})</span> : null}
                           </span>
+                          {access.canManage && (
+                            <button
+                              type="button"
+                              onClick={() => setShowModpackUpdateModal(true)}
+                              className="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                            >
+                              {t('common.update') || 'Update'} →
+                            </button>
+                          )}
                         </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-white/50">{t('servers.modpackVersion') || 'Modpack Version'}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-white font-mono">{modpack.currentVersionName || 'Unknown'}</span>
-                            {access.canManage && (
-                              <button
-                                type="button"
-                                onClick={() => setShowModpackUpdateModal(true)}
-                                className={`text-xs px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors ${
-                                  modpack.hasUpdate
-                                    ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30'
-                                    : 'text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/20'
-                                }`}
-                              >
-                                {modpack.hasUpdate ? (
-                                  <>
-                                    <span>{t('common.update') || 'Update'} ({modpack.latestVersion?.version_name || modpack.latestVersion?.version_number})</span>
-                                    <FaArrowUp className="w-2.5 h-2.5" />
-                                  </>
-                                ) : (
-                                  <span>{t('common.update') || 'Update'} →</span>
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </>
+                      </div>
                     )}
                   </div>
                 </div>

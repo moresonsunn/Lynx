@@ -417,19 +417,6 @@ describe('ModpackUpdateModal Adversarial & Contract Resilience', () => {
     expect(container.textContent).toContain('1 installed');
     expect(container.textContent).toContain('1 filtered');
     expect(container.textContent).toContain('success-server-pre-update-20261107.zip');
-
-    // Click inspect cleaned files toggle
-    const inspectBtn = Array.from(container.querySelectorAll('button')).find(
-      b => b.textContent.includes('Inspect Cleaned & Filtered Files') || b.textContent.includes('Inspect')
-    );
-    expect(inspectBtn).toBeDefined();
-
-    await act(async () => {
-      inspectBtn.click();
-    });
-
-    expect(container.textContent).toContain('outdated-jei-1.0.jar');
-    expect(container.textContent).toContain('sodium-extra-client.jar');
   });
 });
 
@@ -604,7 +591,7 @@ describe('ClientModFilterPanel Adversarial & Contract Resilience', () => {
     });
   });
 
-  test('submits Add Entry modal form with POST request', async () => {
+  test('submits inline Add Entry form with POST request', async () => {
     let postBody = null;
 
     global.fetch = jest.fn().mockImplementation((url, opts) => {
@@ -640,24 +627,11 @@ describe('ClientModFilterPanel Adversarial & Contract Resilience', () => {
       );
     });
 
-    // Open add modal
-    const addBtns = Array.from(container.querySelectorAll('button')).filter(
-      b => b.textContent.includes('Add Entry')
-    );
-    expect(addBtns.length).toBeGreaterThan(0);
-
-    await act(async () => {
-      addBtns[0].click();
-    });
-
-    expect(container.textContent).toContain('Add Allowlist Entry');
-
-    // Find inputs in modal
-    const modalInputs = Array.from(container.querySelectorAll('input'));
-    const patternInput = modalInputs.find(i => i.required);
+    // Find inline inputs
+    const inputs = Array.from(container.querySelectorAll('input'));
+    const patternInput = inputs.find(i => i.required);
     expect(patternInput).toBeDefined();
 
-    // Set values
     await act(async () => {
       setNativeValue(patternInput, 'newmod*');
       patternInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -674,7 +648,7 @@ describe('ClientModFilterPanel Adversarial & Contract Resilience', () => {
     expect(postBody.status).toBe('active');
   });
 
-  test('executes removal via ConfirmModal with DELETE request query param', async () => {
+  test('executes removal directly with DELETE request query param', async () => {
     let deletedUrl = null;
 
     global.fetch = jest.fn().mockImplementation((url, opts) => {
@@ -711,23 +685,12 @@ describe('ClientModFilterPanel Adversarial & Contract Resilience', () => {
 
     expect(container.textContent).toContain('deleteme*');
 
-    // Click trash button
-    const trashBtn = container.querySelector('button[title*="Remove"]');
-    expect(trashBtn).not.toBeNull();
+    // Click remove button
+    const removeBtn = container.querySelector('button[title*="Remove"]');
+    expect(removeBtn).not.toBeNull();
 
     await act(async () => {
-      trashBtn.click();
-    });
-
-    // Confirm dialog should appear
-    expect(container.textContent).toContain('deleteme*');
-    const confirmBtn = Array.from(container.querySelectorAll('button')).find(
-      b => b.textContent.includes('Confirm') || b.textContent.includes('Remove')
-    );
-    expect(confirmBtn).toBeDefined();
-
-    await act(async () => {
-      confirmBtn.click();
+      removeBtn.click();
     });
 
     expect(deletedUrl).toContain('/api/client-mods/whitelist/delete-server?pattern=deleteme*');

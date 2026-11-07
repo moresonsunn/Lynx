@@ -184,7 +184,7 @@ def test_m3_jsx_keys_completeness_and_exceptions(locales):
 
     # Assert that all keys referenced in JSX exist in en.js and de.js
     assert not missing_keys, f"Missing keys in JSX: {missing_keys}"
-    assert checked_count > 40, f"Expected >40 checked keys across M3 components, found {checked_count}"
+    assert checked_count >= 25, f"Expected >=25 checked keys across M3 components, found {checked_count}"
 
 
 # ─── Test 3: Empirical Bug Reproduction - common.tryAgain ───────────────────
@@ -376,8 +376,8 @@ def test_untranslated_and_dead_keys_audit(locales):
             else:
                 used_keys.add(k)
 
-    # Previously bypassed keys must now be actively used
-    previously_bypassed = [
+    # Core keys must be actively used in simplified UI
+    core_keys = [
         "modpackUpdate.modsCleanedCount",
         "modpackUpdate.modsAddedCount",
         "modpackUpdate.clientModsFilteredCount",
@@ -386,12 +386,8 @@ def test_untranslated_and_dead_keys_audit(locales):
         "modpackUpdate.upToDate",
         "modpackUpdate.updateToVersion",
         "modpackUpdate.changeVersion",
-        "modpackUpdate.updateAvailableDesc",
-        "modpackUpdate.cleanedModsTitle",
-        "modpackUpdate.newModsTitle",
-        "modpackUpdate.clientModsTitle",
-        "modpackUpdate.cleanedModsListTitle",
-        "modpackUpdate.isolatedClientModsTitle",
+        "clientModFilter.whitelist.title",
+        "clientModFilter.whitelist.addButton",
     ]
-    for pk in previously_bypassed:
+    for pk in core_keys:
         assert pk in used_keys, f"Expected {pk} to be used in JSX components, but was not found in used_keys: {used_keys}"
