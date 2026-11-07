@@ -73,6 +73,7 @@ class ModrinthProvider:
                 "game_versions": v.get("game_versions", []),
                 "loaders": v.get("loaders", []),
                 "date_published": v.get("date_published"),
+                "changelog": v.get("changelog") or "",
                 "files": v.get("files", []),
             })
         return versions

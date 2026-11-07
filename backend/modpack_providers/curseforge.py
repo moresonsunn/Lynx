@@ -256,12 +256,21 @@ class CurseForgeProvider:
                 "file_id": file_id
             })
 
+            known_loaders = {"forge", "fabric", "neoforge", "quilt"}
+            loaders = [
+                gv.lower() for gv in (game_versions or [])
+                if isinstance(gv, str) and gv.lower() in known_loaders
+            ]
+            loaders = list(dict.fromkeys(loaders))
+
             out.append(cast(PackVersion, {
                 "id": file_id,
                 "name": f.get("displayName"),
                 "version_number": file_name,
                 "game_versions": game_versions,
+                "loaders": loaders,
                 "date_published": f.get("fileDate"),
+                "changelog": f.get("changeLog") or f.get("changelog") or "",
                 "files": files_list,
                 "has_server_pack": has_server_pack,
             }))

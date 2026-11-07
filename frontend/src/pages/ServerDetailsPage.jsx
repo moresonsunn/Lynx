@@ -38,6 +38,8 @@ import {
   FaExpandAlt,
   FaPause,
   FaSlidersH,
+  FaArrowCircleUp,
+  FaArrowUp,
 } from 'react-icons/fa';
 
 import TerminalPanel from '../components/TerminalPanel';
@@ -54,6 +56,7 @@ import SteamModsPanel from '../components/server-details/SteamModsPanel';
 import SteamSettingsPanel from '../components/server-details/SteamSettingsPanel';
 import ModManagerPanel from '../components/server-details/ModManagerPanel';
 import ClientModFilterPanel from '../components/server-details/ClientModFilterPanel';
+import ModpackUpdateModal from '../components/server-details/ModpackUpdateModal';
 import ResourceGraphs from '../components/ResourceGraphs';
 import ServerPermissionsPanel from '../components/server-details/ServerPermissionsPanel';
 import ConfirmModal from '../components/ConfirmModal';
@@ -506,6 +509,69 @@ export default function ServerDetailsPage() {
   const runtimeKind = (typeVersionData?.server_kind || server?.server_kind || '').toLowerCase();
   const isSteam = runtimeKind === 'steam';
 
+  // Modpack Detection & Live Versions
+  const [showModpackUpdateModal, setShowModpackUpdateModal] = useState(false);
+  const [modpackRefreshKey, setModpackRefreshKey] = useState(0);
+
+  const modpackLabels = useMemo(() => {
+    const raw = {
+      ...(server?.labels || {}),
+      ...(typeVersionData?.labels || {}),
+    };
+    return {
+      provider: raw['mc.modpack.provider'] || raw['mc.modpack.source'] || '',
+      id: raw['mc.modpack.id'] || raw['mc.modpack.slug'] || '',
+      versionId: raw['mc.modpack.version_id'] || '',
+      versionName: raw['mc.modpack.version_name'] || raw['mc.modpack.version_id'] || '',
+      name: raw['mc.modpack.name'] || raw['mc.modpack.title'] || raw['mc.modpack.id'] || '',
+    };
+  }, [server?.labels, typeVersionData?.labels]);
+
+  const { data: modpackVersionData, loading: modpackVersionsLoading } = useFetch(
+    server?.name && !isSteam ? `${API}/modpacks/server/${encodeURIComponent(server.name)}/versions?_k=${modpackRefreshKey}` : null,
+    [server?.name, modpackRefreshKey, isSteam],
+    { cacheEnabled: false }
+  );
+
+  const modpack = useMemo(() => {
+    const hasLabelModpack = Boolean(modpackLabels.provider && modpackLabels.id);
+    const isModpack = hasLabelModpack || Boolean(modpackVersionData?.provider && modpackVersionData?.pack_id);
+    const provider = modpackVersionData?.provider || modpackLabels.provider;
+    const packId = modpackVersionData?.pack_id || modpackLabels.id;
+    const packName = modpackLabels.name || packId;
+    const currentVersionId = modpackVersionData?.current_version_id || modpackLabels.versionId;
+    const currentVersionName = modpackVersionData?.current_version_name || modpackLabels.versionName || currentVersionId;
+
+    const versions = modpackVersionData?.versions || [];
+    const latestVersion = versions.length > 0 ? versions[0] : null;
+    const hasUpdate = Boolean(
+      latestVersion &&
+      currentVersionId &&
+      String(latestVersion.version_id) !== String(currentVersionId)
+    );
+
+    return {
+      isModpack,
+      provider,
+      packId,
+      packName,
+      currentVersionId,
+      currentVersionName,
+      latestVersion,
+      versions,
+      hasUpdate,
+      loading: modpackVersionsLoading,
+    };
+  }, [modpackLabels, modpackVersionData, modpackVersionsLoading]);
+
+  const handleModpackUpdateSuccess = useCallback((result) => {
+    if (actions?.__refreshServers) {
+      actions.__refreshServers();
+    }
+    setModpackRefreshKey(k => k + 1);
+    setLogReset(r => r + 1);
+  }, [actions]);
+
   const overviewActive = activeTab === 'overview';
   const { data: playerData } = useFetch(
     overviewActive && server?.name ? `${API}/players/${server.name}/roster` : null,
@@ -527,7 +593,7 @@ export default function ServerDetailsPage() {
   // Build Primary Tabs + Categorized Secondary ("Tools & More") Tabs
   const { primaryTabs, secondaryGroups, allTabs } = useMemo(() => {
     const serverType = (typeVersionData?.server_type || server?.type || '').toLowerCase();
-    const isModdedServer = ['fabric', 'forge', 'neoforge', 'quilt'].includes(serverType);
+    const isModdedServer = ['fabric', 'forge', 'neoforge', 'quilt'].includes(serverType) || modpack.isModpack;
     const isPluginServer = ['paper', 'purpur', 'spigot', 'bukkit'].includes(serverType);
     const isHybridServer = ['mohist', 'magma', 'banner', 'catserver', 'spongeforge'].includes(serverType);
 
@@ -612,7 +678,7 @@ export default function ServerDetailsPage() {
 
     const flat = [...pTabs, ...sGroups.flatMap(g => g.items)];
     return { primaryTabs: pTabs, secondaryGroups: sGroups, allTabs: flat };
-  }, [isSteam, t, typeVersionData, server, access.canManage]);
+  }, [isSteam, t, typeVersionData, server, access.canManage, modpack.isModpack]);
 
   const activeSecondaryTab = useMemo(() => {
     const isPrimary = primaryTabs.some(pt => pt.id === activeTab);
@@ -750,6 +816,21 @@ export default function ServerDetailsPage() {
                     <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
                     {server.status}
                   </span>
+                  {modpack.isModpack && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      <FaCube className="text-purple-400 text-xs" />
+                      <span className="capitalize">{modpack.provider || 'Modpack'}</span>
+                      {modpack.currentVersionName && (
+                        <span className="font-mono text-[11px] text-purple-200">{modpack.currentVersionName}</span>
+                      )}
+                      {modpack.hasUpdate && (
+                        <span className="flex h-2 w-2 relative ml-0.5" title={`Update available: ${modpack.latestVersion?.version_name || modpack.latestVersion?.version_number}`}>
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2.5 text-xs sm:text-sm text-white/60 mt-1 flex-wrap">
                   <span>{displayType}</span>
@@ -801,6 +882,27 @@ export default function ServerDetailsPage() {
                   <span>{t('servers.start')}</span>
                 </button>
               ))}
+              {modpack.isModpack && access.canManage && (
+                <button
+                  type="button"
+                  onClick={() => setShowModpackUpdateModal(true)}
+                  className={`px-3.5 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${
+                    modpack.hasUpdate
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg shadow-purple-500/25 ring-1 ring-purple-400/40'
+                      : 'bg-white/10 hover:bg-white/15 text-white/90 border border-white/10'
+                  }`}
+                  title={modpack.hasUpdate ? `${t('modpackUpdate.updateAvailable') || 'Update available'}: ${modpack.latestVersion?.version_name || modpack.latestVersion?.version_number}` : (t('modpackUpdate.changeVersion') || 'Change modpack version')}
+                >
+                  <FaArrowCircleUp className={modpack.loading ? 'animate-spin text-sm text-purple-300' : 'text-sm text-purple-300'} />
+                  <span>{t('modpackUpdate.updateButton') || 'Update Modpack'}</span>
+                  {modpack.hasUpdate && (
+                    <span className="flex h-2 w-2 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
+                    </span>
+                  )}
+                </button>
+              )}
               {access.canManage && (
                 <button
                   onClick={() => setShowSettingsModal(true)}
@@ -988,6 +1090,36 @@ export default function ServerDetailsPage() {
                 </div>
               )}
 
+              {/* Modpack Update Available Alert Banner */}
+              {modpack.isModpack && modpack.hasUpdate && access.canManage && (
+                <div className="bg-gradient-to-r from-purple-900/40 via-indigo-900/30 to-purple-900/40 border border-purple-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-purple-500/20 text-purple-300 rounded-xl border border-purple-500/30">
+                      <FaArrowCircleUp className="w-5 h-5 text-amber-400 animate-bounce" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                        <span>{t('modpackUpdate.updateAvailable') || 'Modpack Update Available'}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          {modpack.currentVersionName} → {modpack.latestVersion?.version_name || modpack.latestVersion?.version_number}
+                        </span>
+                      </h4>
+                      <p className="text-xs text-white/60 mt-0.5">
+                        {t('modpackUpdate.updateAvailableDesc', { provider: modpack.provider }) || `A newer release is available from ${modpack.provider}. Click below to review changelog and update safely.`}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowModpackUpdateModal(true)}
+                    className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/20 whitespace-nowrap self-stretch sm:self-auto justify-center"
+                  >
+                    <FaArrowCircleUp className="w-3.5 h-3.5" />
+                    <span>{t('modpackUpdate.updateToVersion', { version: modpack.latestVersion?.version_name || modpack.latestVersion?.version_number }) || `Update to ${modpack.latestVersion?.version_name || modpack.latestVersion?.version_number}`}</span>
+                  </button>
+                </div>
+              )}
+
               {/* Live Read-Only Console Preview */}
               <LiveConsolePreview
                 serverId={server.id}
@@ -1055,6 +1187,45 @@ export default function ServerDetailsPage() {
                         <span className="text-white/50">Loader</span>
                         <span className="text-white font-medium">{typeVersionData.loader_version}</span>
                       </div>
+                    )}
+                    {modpack.isModpack && (
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="text-white/50">{t('servers.modpack') || 'Modpack'}</span>
+                          <span className="text-white font-medium flex items-center gap-1.5">
+                            <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              {modpack.provider || 'Pack'}
+                            </span>
+                            <span>{modpack.packName}</span>
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-white/50">{t('servers.modpackVersion') || 'Modpack Version'}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-white font-mono">{modpack.currentVersionName || 'Unknown'}</span>
+                            {access.canManage && (
+                              <button
+                                type="button"
+                                onClick={() => setShowModpackUpdateModal(true)}
+                                className={`text-xs px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors ${
+                                  modpack.hasUpdate
+                                    ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30'
+                                    : 'text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/20'
+                                }`}
+                              >
+                                {modpack.hasUpdate ? (
+                                  <>
+                                    <span>{t('common.update') || 'Update'} ({modpack.latestVersion?.version_name || modpack.latestVersion?.version_number})</span>
+                                    <FaArrowUp className="w-2.5 h-2.5" />
+                                  </>
+                                ) : (
+                                  <span>{t('common.update') || 'Update'} →</span>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1490,7 +1661,10 @@ export default function ServerDetailsPage() {
         )}
 
         {activeTab === 'mod-manager' && (
-          <ModManagerPanel serverName={server.name} />
+          <ModManagerPanel
+            serverName={server.name}
+            onOpenModpackUpdate={() => setShowModpackUpdateModal(true)}
+          />
         )}
 
         {activeTab === 'client-mod-filter' && (
@@ -1511,6 +1685,15 @@ export default function ServerDetailsPage() {
           )
         )}
       </div>
+
+      {/* Modpack Update Modal */}
+      <ModpackUpdateModal
+        isOpen={showModpackUpdateModal}
+        serverName={server?.name}
+        currentVersion={modpack.currentVersionName}
+        onClose={() => setShowModpackUpdateModal(false)}
+        onUpdateSuccess={handleModpackUpdateSuccess}
+      />
 
       {/* Delete Confirmation Modal */}
       <ConfirmModal

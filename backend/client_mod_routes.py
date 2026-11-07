@@ -4,16 +4,21 @@ Client-Side Mod Management API Routes
 Endpoints for analyzing, filtering, and managing client-only mods on servers.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
-from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Any
 from pathlib import Path
+from datetime import datetime, timezone
 
 from auth import require_auth, require_moderator
 from models import User
 from config import SERVERS_ROOT, safe_child_path
 
 router = APIRouter(prefix="/client-mods", tags=["client_mods"])
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # ─── Request / Response Models ──────────────────────────────
@@ -34,8 +39,46 @@ class RestoreRequest(BaseModel):
 class DisableRequest(BaseModel):
     filename: str
 
+class AllowlistEntry(BaseModel):
+    pattern: str = Field(..., description="Mod filename pattern or mod ID")
+    mod_name: Optional[str] = Field(None, description="Human readable mod display name")
+    added_at: Optional[str] = Field(default_factory=_utcnow_iso, description="ISO-8601 UTC timestamp")
+    added_by: Optional[str] = Field(None, description="Username who added this entry")
+    status: str = Field("active", description="Status ('active' or 'disabled')")
+    notes: Optional[str] = Field(None, description="Optional notes or comment")
+
+    @field_validator("added_at", mode="before")
+    @classmethod
+    def ensure_added_at(cls, v: Any) -> str:
+        if not v or not isinstance(v, str) or not v.strip():
+            return _utcnow_iso()
+        return v.strip()
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def ensure_status(cls, v: Any) -> str:
+        if not v or not isinstance(v, str) or not v.strip():
+            return "active"
+        return v.strip().lower()
+
 class WhitelistRequest(BaseModel):
-    pattern: str
+    pattern: str = Field(..., description="Mod pattern to allowlist")
+    mod_name: Optional[str] = Field(None, description="Optional mod display name")
+    notes: Optional[str] = Field(None, description="Optional notes or comment")
+    status: Optional[str] = Field("active", description="Status (default: 'active')")
+
+AllowlistAddRequest = WhitelistRequest
+
+class WhitelistDeleteRequest(BaseModel):
+    pattern: Optional[str] = Field(None, description="Pattern to remove from allowlist")
+
+AllowlistDeleteRequest = WhitelistDeleteRequest
+
+class WhitelistResponse(BaseModel):
+    patterns: List[str] = Field(..., description="List of pattern strings")
+    entries: List[AllowlistEntry] = Field(..., description="Structured allowlist entries")
+
+AllowlistResponse = WhitelistResponse
 
 
 # ─── Endpoints ──────────────────────────────────────────────
@@ -255,59 +298,114 @@ async def add_whitelist_pattern(
     req: WhitelistRequest,
     current_user: User = Depends(require_moderator),
 ):
-    """Add a pattern to the server's whitelist (mods matching this won't be filtered)."""
-    from client_mod_filter import add_to_whitelist
+    """
+    Add or update a pattern in the server's allowlist.
+    Preserves metadata (mod_name, notes, status, added_by, added_at) in client-only-allow.json
+    and synchronizes client-only-allow.txt.
+    """
+    from client_mod_filter import add_to_allowlist
 
     server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
-    success = add_to_whitelist(server_dir, req.pattern)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to update whitelist")
+    pattern = req.pattern.strip() if req.pattern else ""
+    if not pattern:
+        raise HTTPException(status_code=400, detail="Pattern cannot be empty")
+    if "\n" in pattern or "\r" in pattern:
+        raise HTTPException(status_code=400, detail="Pattern cannot contain newline characters")
 
-    return {"message": f"Added '{req.pattern}' to whitelist"}
+    username = getattr(current_user, "username", None)
+    mod_name = req.mod_name.strip() if req.mod_name and req.mod_name.strip() else None
+    notes = req.notes.strip() if req.notes and req.notes.strip() else None
+    status = (req.status or "active").strip()
+
+    try:
+        entry = add_to_allowlist(
+            server_dir=server_dir,
+            pattern=pattern,
+            mod_name=mod_name,
+            added_by=username,
+            notes=notes,
+            status=status,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to update whitelist: {exc}")
+
+    return {
+        "message": f"Added '{pattern}' to whitelist",
+        "entry": entry,
+        "pattern": pattern,
+    }
 
 
 @router.delete("/whitelist/{server_name}")
 async def remove_whitelist_pattern(
     server_name: str,
-    pattern: str = Query(..., description="Pattern to remove from whitelist"),
+    pattern: Optional[str] = Query(None, description="Pattern to remove from whitelist"),
+    body: Optional[WhitelistDeleteRequest] = Body(None),
     current_user: User = Depends(require_moderator),
 ):
-    """Remove a pattern from the server's whitelist."""
-    from client_mod_filter import remove_from_whitelist
+    """
+    Remove a pattern from the server's allowlist.
+    Accepts pattern via query param (?pattern=...) or JSON request body ({"pattern": "..."}).
+    Removes the entry from both client-only-allow.json and client-only-allow.txt.
+    """
+    from client_mod_filter import remove_from_allowlist
+
+    target_pattern = pattern
+    if not target_pattern and body and body.pattern:
+        target_pattern = body.pattern
+
+    if not target_pattern or not target_pattern.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Pattern must be provided in query parameter or request body",
+        )
+    target_pattern = target_pattern.strip()
+    if "\n" in target_pattern or "\r" in target_pattern:
+        raise HTTPException(status_code=400, detail="Pattern cannot contain newline characters")
 
     server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
-    success = remove_from_whitelist(server_dir, pattern)
+    success = remove_from_allowlist(server_dir, target_pattern)
     if not success:
         raise HTTPException(status_code=404, detail="Pattern not found in whitelist")
 
-    return {"message": f"Removed '{pattern}' from whitelist"}
+    return {
+        "message": f"Removed '{target_pattern}' from whitelist",
+        "pattern": target_pattern,
+    }
 
 
-@router.get("/whitelist/{server_name}")
+@router.get("/whitelist/{server_name}", response_model=WhitelistResponse)
 async def get_whitelist(
     server_name: str,
     current_user: User = Depends(require_auth),
 ):
-    """Get the current whitelist patterns for a server."""
+    """
+    Get the current allowlist patterns and structured entries for a server.
+    Synchronizes client-only-allow.json and client-only-allow.txt automatically.
+    """
+    from client_mod_filter import get_allowlist_entries
+
     server_dir = safe_child_path(SERVERS_ROOT, server_name)
     if not server_dir.exists():
         raise HTTPException(status_code=404, detail="Server not found")
 
-    allow_file = server_dir / "client-only-allow.txt"
-    patterns = []
-    if allow_file.exists():
-        for line in allow_file.read_text(encoding="utf-8", errors="ignore").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                patterns.append(line)
+    entries = get_allowlist_entries(server_dir)
+    patterns = [
+        e["pattern"]
+        for e in entries
+        if isinstance(e, dict) and isinstance(e.get("pattern"), str) and e["pattern"].strip()
+    ]
 
-    return {"patterns": patterns}
+    return {
+        "patterns": patterns,
+        "entries": entries,
+    }
 
 
 @router.post("/restore-all/{server_name}")

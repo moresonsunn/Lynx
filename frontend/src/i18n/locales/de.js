@@ -37,6 +37,7 @@ export default {
     selectLanguage: 'Sprache auswählen',
     clearFilters: 'Filter löschen',
     all: 'Alle',
+    tryAgain: 'Erneut versuchen',
   },
 
   // Auth / Login
@@ -182,6 +183,8 @@ export default {
     start: 'Starten',
     stop: 'Stoppen',
     restart: 'Neustart',
+    modpack: 'Modpack',
+    modpackVersion: 'Modpack-Version',
   },
 
   // Templates
@@ -634,5 +637,142 @@ export default {
   // Worlds Panel
   worldsPanel: {
     uploadWorld: 'Welt hochladen (.zip)',
+  },
+
+  // Modpack-Update-Ablauf
+  modpackUpdate: {
+    // Aktions-Schaltflächen & Abzeichen
+    updateButton: 'Modpack aktualisieren',
+    updateAvailable: 'Update verfügbar',
+    upToDate: 'Aktuell',
+    checkingUpdates: 'Suche nach Updates...',
+    startUpdate: 'Jetzt aktualisieren',
+    updating: 'Wird aktualisiert...',
+
+    // Modal & Kopfzeile
+    modalTitle: 'Modpack aktualisieren',
+    modalSubtitle: '{{serverName}} auf eine neue Modpack-Version aktualisieren.',
+    installedVersion: 'Installierte Version',
+    currentVersion: 'Aktuell installiert',
+    targetVersion: 'Ziel-Updateversion',
+    selectTargetVersion: 'Zielversion auswählen...',
+    provider: 'Anbieter',
+    packId: 'Paket-ID',
+    noVersionsFound: 'Keine Zielversionen für dieses Modpack verfügbar.',
+    checkingVersions: 'Verfügbare Modpack-Versionen werden geprüft...',
+    notTrackedTitle: 'Kein erfasstes Modpack',
+    notTrackedMessage: 'Dieser Server besitzt keine aktiven Modpack-Metadaten (z. B. Vanilla, Spigot oder benutzerdefinierter Server). Interaktive Updates sind für Server verfügbar, die über Modrinth, CurseForge oder FTB installiert wurden.',
+    failedLoadTitle: 'Laden der Versionen fehlgeschlagen',
+    retryQuery: 'Abfrage wiederholen',
+
+    // Versions-Abzeichen
+    currentBadge: 'Aktuell',
+    latestBadge: 'Neueste',
+    activeRelease: 'Aktive Version',
+    reinstallWarning: '(Ausgewählte Version ist bereits installiert – Aktualisierung wird Dateien reparieren/neu installieren)',
+    release: 'Release',
+    beta: 'Beta',
+    alpha: 'Alpha',
+    publishedOn: 'Veröffentlicht am {{date}}',
+
+    // Änderungsprotokoll
+    changelog: 'Änderungsprotokoll',
+    changelogTitle: 'Changelog & Versionshinweise',
+    noChangelog: 'Kein Änderungsprotokoll für diese Version vorhanden.',
+    viewChangelog: 'Changelog anzeigen',
+
+    // Sicherheit & Hinweise
+    safetyBackup: 'Sicherheits-Backup vor dem Update erstellen',
+    safetyBackupLabel: 'Sicherheits-Backup vor dem Update erstellen (Empfohlen)',
+    safetyBackupNotice: 'Erstellt vor dem Update automatisch ein Backup von Welt, Konfiguration und Mods.',
+    cleanupNoticeTitle: 'Automatische Bereinigung & Filterung',
+    cleanupNotice: 'Veraltete Mods der vorherigen Version werden entfernt und Client-Only-Mods gefiltert, wobei Ihre Ausnahmeliste beibehalten wird.',
+    duplicateCleanupTitle: 'Duplikat-Bereinigung:',
+    duplicateCleanupDesc: 'Veraltete und ersetzte Mod-JARs der alten Version werden bereinigt, um Duplikat-Konflikte zu vermeiden.',
+    clientFilterTitle: 'Client-Mod-Filter:',
+    clientFilterDesc: 'Nach dem Update werden Client-Only-Mods gefiltert, wobei Ausnahmelisten-Einträge strikt erhalten bleiben.',
+
+    // Fortschritts-Schritte
+    progressTitle: 'Modpack wird aktualisiert...',
+    progressSubtitle: 'Zielversion {{version}} wird angewendet. Bitte schließen Sie diesen Dialog nicht.',
+    progressStopping: 'Server-Container wird gestoppt...',
+    progressBackup: 'Erstelle Sicherheits-Backup...',
+    progressDownloading: 'Lade neue Modpack-Dateien herunter...',
+    progressCleaning: 'Entferne veraltete Mods und Manifestdateien...',
+    progressFiltering: 'Client-Mod-Erkennung & Filterung läuft...',
+    progressRestarting: 'Starte Server-Container neu...',
+
+    // Zusammenfassung
+    updateSuccess: 'Modpack erfolgreich aktualisiert',
+    completedTitle: 'Modpack-Update erfolgreich abgeschlossen!',
+    updateSuccessDetail: 'Erfolgreich von Version {{from}} auf Version {{to}} aktualisiert.',
+    backupCreated: 'Backup erstellt: {{filename}}',
+    backupSkipped: 'Deaktiviert / Übersprungen',
+    modsCleanedCount: '{{count}} entfernt',
+    modsAddedCount: '{{count}} installiert',
+    clientModsFilteredCount: '{{count}} gefiltert',
+    inspectFiles: 'Bereinigte & gefilterte Dateien einsehen',
+    updateError: 'Modpack-Aktualisierung fehlgeschlagen',
+    updateNowButton: 'Modpack jetzt aktualisieren',
+    updateToVersion: 'Auf {{version}} aktualisieren',
+    changeVersion: 'Version ändern',
+    updateAvailableDesc: 'Eine neuere Version ist von {{provider}} verfügbar. Klicken Sie unten, um das Änderungsprotokoll zu prüfen und sicher zu aktualisieren.',
+    cleanedModsTitle: 'Veraltete Mods bereinigt',
+    newModsTitle: 'Neue Mods hinzugefügt',
+    clientModsTitle: 'Client-Mods gefiltert',
+    cleanedModsListTitle: 'Bereinigte veraltete Mods:',
+    isolatedClientModsTitle: 'Isolierte Client-Only-Mods:',
+  },
+
+  // Client-Mod-Filter & Ausnahmelisten-Verwaltung
+  clientModFilter: {
+    title: 'Client-Mod-Filter',
+    subtitle: 'Erkennt und filtert automatisch Client-Only-Mods, die Serverabstürze verursachen, und schützt Ihre Ausnahmeliste.',
+    analyzeButton: 'Mods analysieren',
+    autoFilterButton: 'Client-Mods automatisch filtern',
+    previewButton: 'Vorschau (Testlauf)',
+
+    // Ausnahmelisten-Tabelle
+    whitelist: {
+      title: 'Client-Only-Ausnahmeliste',
+      subtitle: 'Erfasste Mods und Dateimuster, die auf diesem Server dauerhaft erhalten bleiben und nicht gefiltert werden.',
+      count: '{{count}} Einträge',
+      searchPlaceholder: 'Muster oder Mod-Namen suchen...',
+      addEntry: 'Eintrag hinzufügen',
+      noEntries: 'Keine Ausnahmelisten-Einträge vorhanden',
+      noEntriesDescription: 'Fügen Sie Muster hinzu, um sicherzustellen, dass wichtige Client-Mods bei Updates oder Filterläufen nicht deaktiviert werden.',
+
+      // Tabellen-Spaltenüberschriften
+      colPattern: 'Muster / Mod-Name',
+      colAddedAt: 'Hinzugefügt am',
+      colAddedBy: 'Hinzugefügt von',
+      colStatus: 'Status',
+      colActions: 'Aktionen',
+
+      // Abzeichen & Bezeichnungen
+      statusActive: 'Aktiv',
+      statusDisabled: 'Deaktiviert',
+      systemUser: 'System',
+      removeTooltip: 'Muster aus Ausnahmeliste entfernen',
+
+      // Modal zum Hinzufügen
+      addModalTitle: 'Ausnahmelisten-Eintrag hinzufügen',
+      addModalSubtitle: 'Schützen Sie eine Mod oder ein Dateinamenmuster vor der Client-Mod-Filterung.',
+      patternLabel: 'Muster / Dateiname / Mod-ID',
+      patternPlaceholder: 'z. B. jei*, appleskin*, create',
+      patternHelp: 'Unterstützt Platzhalter (*). Beispiel: "appleskin*" passt auf jede Version der AppleSkin-JAR.',
+      modNameLabel: 'Mod-Anzeigename (optional)',
+      modNamePlaceholder: 'z. B. AppleSkin',
+      notesLabel: 'Notizen (optional)',
+      notesPlaceholder: 'z. B. Erlaubt für HUD-Anzeige der Spieler',
+      addButton: 'Zur Ausnahmeliste hinzufügen',
+      addingButton: 'Wird hinzugefügt...',
+      cancelButton: 'Abbrechen',
+
+      // Bestätigungs-Modal
+      confirmRemoveTitle: 'Ausnahmemuster entfernen',
+      confirmRemoveMessage: 'Möchten Sie das Muster "{{pattern}}" wirklich aus der Ausnahmeliste entfernen? Diese Mod wird bei zukünftigen Server-Updates oder Filtersuchläufen möglicherweise gefiltert.',
+      confirmRemoveButton: 'Muster entfernen',
+    },
   },
 };

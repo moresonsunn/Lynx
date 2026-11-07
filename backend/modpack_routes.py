@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, HttpUrl
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Set
 from pathlib import Path
+import asyncio
+from datetime import datetime, timezone
 import tempfile
 import shutil
 import zipfile
@@ -16,11 +18,11 @@ import os
 import re
 import logging
 
-from auth import require_moderator
+from auth import require_auth, require_moderator
 from models import User
 from runtime_adapter import get_runtime_manager_or_docker
 from config import SERVERS_ROOT, safe_child_path
-from mod_side_resolver import ModSideResolver
+from mod_side_resolver import ModSideResolver, inspect_jar_metadata
 from client_mod_detector import (
     load_client_only_config,
     detect_client_only_mods,
@@ -32,6 +34,10 @@ from client_mod_detector import (
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/modpacks", tags=["modpacks"])
+
+class ModpackUpdateRequest(BaseModel):
+    target_version_id: str
+    create_backup: bool = True
 
 def _host_matches(host: str, *domains: str) -> bool:
     """Safely check whether a parsed URL hostname equals or is a subdomain of one of the allowed domains."""
@@ -86,6 +92,314 @@ def _push_event(task_id: str, event):
 
 def get_docker_manager():
     return get_runtime_manager_or_docker()
+
+
+PROTECTED_PREFIXES = (
+    "world",
+    "world_nether",
+    "world_the_end",
+    "backups",
+    "logs",
+    "crash-reports",
+)
+
+PROTECTED_EXACT_FILES = {
+    "server.properties",
+    "eula.txt",
+    "whitelist.json",
+    "ops.json",
+    "banned-players.json",
+    "banned-ips.json",
+    "usercache.json",
+    "server-icon.png",
+    "modpack.meta.json",
+    ".mod_side_report.json",
+    "client-only-allow.json",
+    "client-only-allow.txt",
+}
+
+
+def is_path_protected(rel_path: str) -> bool:
+    norm = rel_path.replace("\\", "/").strip("/").lower()
+    base_name = norm.split("/")[-1]
+    if base_name in {f.lower() for f in PROTECTED_EXACT_FILES} or norm in {f.lower() for f in PROTECTED_EXACT_FILES}:
+        return True
+    first_part = norm.split("/")[0]
+    for prefix in PROTECTED_PREFIXES:
+        if first_part == prefix.lower() or norm.startswith(prefix.lower() + "/"):
+            return True
+    return False
+
+
+def get_server_modpack_info(server_name: str) -> Optional[dict]:
+    """
+    Retrieves modpack metadata for a server.
+    Fallback priority:
+      1. <server_dir>/modpack.meta.json
+      2. <server_dir>/server_meta.json
+      3. Docker container labels (mc.modpack.*)
+    """
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
+    if not server_dir.exists() or not server_dir.is_dir():
+        # Fallback to check Docker container labels even if directory is elsewhere or not created yet
+        try:
+            dm = get_docker_manager()
+            for s in dm.list_servers():
+                if s.get("name") == server_name:
+                    labels = s.get("labels") or {}
+                    prov = labels.get("mc.modpack.provider")
+                    pid = labels.get("mc.modpack.id")
+                    vid = labels.get("mc.modpack.version_id")
+                    if prov and pid:
+                        return {
+                            "server_name": server_name,
+                            "provider": str(prov).strip().lower(),
+                            "pack_id": str(pid).strip(),
+                            "version_id": str(vid) if vid is not None else None,
+                            "version_name": str(vid) if vid is not None else None,
+                            "installed_files": [],
+                            "loader": labels.get("mc.type"),
+                            "loader_version": None,
+                            "minecraft_version": labels.get("mc.version"),
+                            "install_mode": labels.get("mc.modpack.install_mode", "server"),
+                            "installed_at": None,
+                            "updated_at": None,
+                            "source": "docker_labels",
+                            "server_dir": server_dir,
+                        }
+                    break
+        except Exception as e:
+            log.warning(f"Error checking Docker labels for {server_name}: {e}")
+        return None
+
+    # Tier 1: modpack.meta.json
+    meta_file = server_dir / "modpack.meta.json"
+    if meta_file.is_file():
+        try:
+            data = json.loads(meta_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                provider = str(data.get("provider") or "").strip().lower()
+                pack_id = str(data.get("pack_id") or "").strip()
+                if provider and pack_id:
+                    return {
+                        "server_name": server_name,
+                        "provider": provider,
+                        "pack_id": pack_id,
+                        "version_id": str(data.get("version_id")) if data.get("version_id") is not None else None,
+                        "version_name": data.get("version_name"),
+                        "installed_files": data.get("installed_files") or [],
+                        "loader": data.get("loader"),
+                        "loader_version": data.get("loader_version"),
+                        "minecraft_version": data.get("minecraft_version"),
+                        "install_mode": data.get("install_mode", "server"),
+                        "installed_at": data.get("installed_at"),
+                        "updated_at": data.get("updated_at"),
+                        "source": "modpack.meta.json",
+                        "server_dir": server_dir,
+                    }
+        except Exception as e:
+            log.warning(f"Error reading {meta_file}: {e}")
+
+    # Tier 2: server_meta.json
+    server_meta_file = server_dir / "server_meta.json"
+    if server_meta_file.is_file():
+        try:
+            data = json.loads(server_meta_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                prov = data.get("modpack_provider") or data.get("provider")
+                pid = data.get("modpack_id") or data.get("pack_id")
+                vid = data.get("modpack_version_id") or data.get("version_id")
+                if prov and pid:
+                    return {
+                        "server_name": server_name,
+                        "provider": str(prov).strip().lower(),
+                        "pack_id": str(pid).strip(),
+                        "version_id": str(vid) if vid is not None else None,
+                        "version_name": data.get("modpack_version_name") or (str(vid) if vid is not None else None),
+                        "installed_files": data.get("installed_files") or [],
+                        "loader": data.get("mc_type") or data.get("loader"),
+                        "loader_version": data.get("loader_version"),
+                        "minecraft_version": data.get("mc_version") or data.get("minecraft_version"),
+                        "install_mode": data.get("install_mode", "server"),
+                        "installed_at": data.get("installed_at"),
+                        "updated_at": data.get("updated_at"),
+                        "source": "server_meta.json",
+                        "server_dir": server_dir,
+                    }
+        except Exception as e:
+            log.warning(f"Error reading {server_meta_file}: {e}")
+
+    # Tier 3: Docker container labels
+    try:
+        dm = get_docker_manager()
+        for s in dm.list_servers():
+            if s.get("name") == server_name:
+                labels = s.get("labels") or {}
+                prov = labels.get("mc.modpack.provider")
+                pid = labels.get("mc.modpack.id")
+                vid = labels.get("mc.modpack.version_id")
+                if prov and pid:
+                    return {
+                        "server_name": server_name,
+                        "provider": str(prov).strip().lower(),
+                        "pack_id": str(pid).strip(),
+                        "version_id": str(vid) if vid is not None else None,
+                        "version_name": str(vid) if vid is not None else None,
+                        "installed_files": [],
+                        "loader": labels.get("mc.type"),
+                        "loader_version": None,
+                        "minecraft_version": labels.get("mc.version"),
+                        "install_mode": labels.get("mc.modpack.install_mode", "server"),
+                        "installed_at": None,
+                        "updated_at": None,
+                        "source": "docker_labels",
+                        "server_dir": server_dir,
+                    }
+                break
+    except Exception as e:
+        log.warning(f"Error checking Docker labels for {server_name}: {e}")
+
+    return None
+
+
+def save_server_modpack_info(server_name: str, meta: dict) -> Path:
+    """Writes updated modpack metadata to <server_dir>/modpack.meta.json atomically."""
+    server_dir = safe_child_path(SERVERS_ROOT, server_name)
+    server_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = server_dir / "modpack.meta.json"
+
+    temp_fd, temp_path = tempfile.mkstemp(prefix="modpack_meta_", suffix=".tmp", dir=str(server_dir))
+    try:
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+        os.replace(temp_path, meta_path)
+    except Exception:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+        raise
+    return meta_path
+
+
+def reconcile_and_cleanup_modpack(
+    server_dir: Path,
+    staging_dir: Path,
+    previous_meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[str]]:
+    """
+    Executes hybrid cleanup combining:
+      Method B: Mod-ID based deduplication (inspect_jar_metadata)
+      Method A: Manifest-based file tracking (previous_meta["installed_files"])
+    """
+    server_dir = Path(server_dir)
+    mods_dir = server_dir / "mods"
+    disabled_dir = server_dir / "mods-disabled-client"
+
+    mods_cleaned: List[str] = []
+    files_removed: List[str] = []
+    deleted_paths: Set[str] = set()
+
+    # 1. Scan and index existing jars in server_dir/mods and server_dir/mods-disabled-client
+    existing_mod_map: Dict[str, List[Path]] = {}
+    scan_dirs = [mods_dir]
+    if disabled_dir.exists():
+        scan_dirs.append(disabled_dir)
+
+    for target_d in scan_dirs:
+        if not target_d.exists():
+            continue
+        for jar_path in target_d.glob("*.jar"):
+            try:
+                info = inspect_jar_metadata(jar_path)
+                mod_ids = set()
+                if info.get("mod_id"):
+                    mod_ids.add(info["mod_id"].strip().lower())
+                for prov in info.get("provided_mods", []):
+                    if prov:
+                        mod_ids.add(str(prov).strip().lower())
+                for mid in mod_ids:
+                    existing_mod_map.setdefault(mid, []).append(jar_path)
+            except Exception:
+                pass
+
+    # 2. Method B: Inspect incoming jars in staging_dir
+    staged_mods = list(staging_dir.rglob("*.jar"))
+    for s_jar in staged_mods:
+        try:
+            s_info = inspect_jar_metadata(s_jar)
+            s_mod_id = (s_info.get("mod_id") or "").strip().lower()
+            incoming_mids = set()
+            if s_mod_id:
+                incoming_mids.add(s_mod_id)
+            for prov in s_info.get("provided_mods", []):
+                if prov:
+                    incoming_mids.add(str(prov).strip().lower())
+
+            for mid in incoming_mids:
+                if mid in existing_mod_map:
+                    for existing_jar in existing_mod_map[mid]:
+                        if existing_jar.name != s_jar.name and existing_jar.exists():
+                            try:
+                                existing_jar.unlink()
+                                deleted_paths.add(str(existing_jar.resolve()))
+                                if existing_jar.name not in mods_cleaned:
+                                    mods_cleaned.append(existing_jar.name)
+                            except OSError:
+                                pass
+        except Exception:
+            pass
+
+    # 3. Method A: Manifest-based file tracking from previous_meta
+    new_staged_files = {
+        p.relative_to(staging_dir).as_posix()
+        for p in staging_dir.rglob("*")
+        if p.is_file()
+    }
+
+    if previous_meta and isinstance(previous_meta.get("installed_files"), list):
+        old_files = set(previous_meta["installed_files"])
+        candidates_to_prune = old_files - new_staged_files
+
+        for rel_str in candidates_to_prune:
+            if is_path_protected(rel_str):
+                continue
+
+            norm_rel = Path(rel_str).as_posix().lstrip("/")
+            if ".." in norm_rel.split("/"):
+                continue
+
+            target_file = safe_child_path(server_dir, norm_rel)
+            if str(target_file.resolve()) in deleted_paths:
+                continue
+
+            if target_file.is_file():
+                try:
+                    target_file.unlink()
+                    deleted_paths.add(str(target_file.resolve()))
+                    if norm_rel.startswith("mods/") or norm_rel.endswith(".jar"):
+                        if target_file.name not in mods_cleaned:
+                            mods_cleaned.append(target_file.name)
+                    else:
+                        files_removed.append(norm_rel)
+                except OSError:
+                    pass
+            elif norm_rel.startswith("mods/"):
+                disabled_file = server_dir / "mods-disabled-client" / target_file.name
+                if disabled_file.is_file() and str(disabled_file.resolve()) not in deleted_paths:
+                    try:
+                        disabled_file.unlink()
+                        deleted_paths.add(str(disabled_file.resolve()))
+                        if disabled_file.name not in mods_cleaned:
+                            mods_cleaned.append(disabled_file.name)
+                    except OSError:
+                        pass
+
+    return {
+        "mods_cleaned": sorted(mods_cleaned),
+        "files_removed": sorted(files_removed),
+    }
 
 
 def _extract_modpack_metadata(base: Path) -> Dict[str, Any]:
@@ -1433,6 +1747,31 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                 }
             )
 
+            # Write modpack.meta.json so new installations have ground-truth metadata immediately
+            try:
+                installed_files = sorted([
+                    p.relative_to(target_dir).as_posix()
+                    for p in target_dir.rglob("*")
+                    if p.is_file() and not is_path_protected(p.relative_to(target_dir).as_posix())
+                ])
+                initial_meta = {
+                    "provider": req.provider.lower(),
+                    "pack_id": str(req.pack_id),
+                    "version_id": str(v.get("id")),
+                    "version_name": v.get("name") or str(v.get("id")),
+                    "installed_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "installed_files": installed_files,
+                    "loader": loader,
+                    "loader_version": loader_version,
+                    "minecraft_version": mc_version,
+                    "install_mode": install_mode,
+                    "client_pack_fallback": bool(is_client_pack_fallback),
+                }
+                save_server_modpack_info(req.name, initial_meta)
+            except Exception as meta_err:
+                log.warning(f"Failed to save initial modpack.meta.json for {req.name}: {meta_err}")
+
             _push_event(
                 task_id,
                 {
@@ -1496,130 +1835,482 @@ async def list_updates():
             continue
     return {"updates": updates}
 
-@router.post("/update")
-async def update_modpack(server_name: str, provider: str, pack_id: str, version_id: str, current_user: User = Depends(require_moderator)):
-    # Simplified update: stop, backup, apply new files (overrides+mods), restart
-    from catalog_routes import get_providers_live
-    dm = get_docker_manager()
-    providers = get_providers_live()
-    # Find server container id
-    target = None
-    for s in dm.list_servers():
-        if s.get("name") == server_name:
-            target = s
-            break
-    if not target:
-        raise HTTPException(status_code=404, detail="Server not found")
-    container_id = target.get("id")
-    if not container_id:
-        raise HTTPException(status_code=400, detail="Container id missing")
+def _stage_modpack_version(
+    provider_id: str,
+    provider: Any,
+    pack_id: str,
+    target_version_obj: Dict[str, Any],
+    staging_dir: Path,
+    tmpdir: Path,
+) -> Dict[str, Any]:
+    """
+    Downloads and stages the target modpack version files into staging_dir.
+    Returns metadata dict: {"loader": ..., "minecraft_version": ..., "loader_version": ...}
+    """
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    loader = None
+    mc_version = None
+    loader_version = None
 
-    # Stop server
-    try:
-        dm.stop_server(container_id)
-    except Exception:
-        pass
+    if target_version_obj.get("loaders"):
+        loader = target_version_obj["loaders"][0]
+    if target_version_obj.get("game_versions"):
+        mc_version = target_version_obj["game_versions"][0]
 
-    # Backup
-    try:
-        from backup_manager import create_backup as bk_create
-        bk_create(server_name)
-    except Exception:
-        pass
+    # Path A: Feed The Beast
+    if provider_id == "ftb" and hasattr(provider, "get_version_manifest"):
+        ftb_mani = provider.get_version_manifest(pack_id, str(target_version_obj.get("id")))
+        (staging_dir / ".ftb_manifest.json").write_text(json.dumps(ftb_mani, indent=2), encoding="utf-8")
+        for tgt in ftb_mani.get("targets", []) or []:
+            if isinstance(tgt, dict):
+                if tgt.get("type") == "game" and tgt.get("version"):
+                    mc_version = str(tgt["version"])
+                elif tgt.get("type") == "modloader":
+                    loader = str(tgt.get("name") or "").lower()
+                    loader_version = str(tgt.get("version") or "")
+        ftb_files = ftb_mani.get("files", []) or []
+        for f_entry in ftb_files:
+            if not isinstance(f_entry, dict) or f_entry.get("clientonly"):
+                continue
+            f_url = f_entry.get("url")
+            if not f_url:
+                continue
+            rel_path = str(f_entry.get("path") or "./").lstrip("./").lstrip("/")
+            f_name = str(f_entry.get("name") or Path(f_url).name)
+            dest_file = safe_child_path(staging_dir, rel_path, f_name)
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            _download_to(dest_file, f_url, timeout=120)
+        return {"loader": loader, "minecraft_version": mc_version, "loader_version": loader_version}
 
-    # Download and apply new version (reuse logic from install worker in a simplified form)
-    p = providers.get(provider)
-    if not p:
-        raise HTTPException(status_code=400, detail="Provider not configured")
-    versions = p.get_versions(pack_id, limit=50)
-    v = next((x for x in versions if str(x.get("id")) == str(version_id)), None)
-    if not v:
-        raise HTTPException(status_code=400, detail="Version not found")
-    files = v.get("files") or []
-    mr = None
+    # Path B: Modrinth / CurseForge / Zip archives
+    files = target_version_obj.get("files") or []
+    artifact = None
     for f in files:
-        fn = (f.get("filename") or "").lower()
-        if f.get("primary") or fn.endswith(".mrpack"):
-            mr = f
+        if f.get("is_server_pack") and f.get("url"):
+            artifact = f
             break
-    if not mr and files:
-        mr = files[0]
-    if not mr or not mr.get("url"):
-        raise HTTPException(status_code=400, detail="No downloadable file for version")
+    if not artifact:
+        for f in files:
+            if f.get("url"):
+                artifact = f
+                break
 
-    servers_root = SERVERS_ROOT
-    target_dir = safe_child_path(servers_root, server_name)
-    if not target_dir.exists():
-        raise HTTPException(status_code=400, detail="Server directory does not exist")
+    if not artifact or not artifact.get("url"):
+        raise HTTPException(
+            status_code=400,
+            detail="No downloadable artifact found for target modpack version",
+        )
 
-    tmpdir = Path(tempfile.mkdtemp(prefix="mrpack_update_"))
-    try:
-        mrpack_path = safe_child_path(tmpdir, mr.get("filename") or "pack.mrpack")
-        with requests.get(mr["url"], stream=True, timeout=60) as r:
-            r.raise_for_status()
-            with open(mrpack_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-        # Extract overrides and download files
-        idx = None
-        with zipfile.ZipFile(mrpack_path, 'r') as z:
-            names = z.namelist()
+    filename = artifact.get("filename") or "modpack.zip"
+    artifact_path = safe_child_path(tmpdir, filename)
+    with requests.get(artifact["url"], stream=True, timeout=180) as r:
+        r.raise_for_status()
+        with open(artifact_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+    extract_dir = tmpdir / "extracted"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(artifact_path, "r") as z:
+        names = z.namelist()
+        has_overrides = any(n.startswith("overrides/") or n.startswith("server-overrides/") for n in names)
+        if has_overrides:
             for name in names:
-                if name.startswith("overrides/") and not name.endswith("/"):
-                    dest = safe_child_path(target_dir, name[len("overrides/"):])
+                if (name.startswith("overrides/") or name.startswith("server-overrides/")) and not name.endswith("/"):
+                    sub = "overrides/" if name.startswith("overrides/") else "server-overrides/"
+                    rel = name[len(sub):]
+                    dest = safe_child_path(staging_dir, rel)
                     dest.parent.mkdir(parents=True, exist_ok=True)
-                    with z.open(name) as src, open(dest, 'wb') as dst:
+                    with z.open(name) as src, open(dest, "wb") as dst:
                         shutil.copyfileobj(src, dst)
-            index_name = None
-            for cand in ("modrinth.index.json", "index.json"):
-                if cand in names:
-                    index_name = cand
-                    break
-            if index_name:
-                with z.open(index_name) as s:
-                    idx = json.load(s)
-        if isinstance(idx, dict) and isinstance(idx.get("files"), list):
-            for entry in idx["files"]:
+                elif name in ("modrinth.index.json", "manifest.json", "index.json"):
+                    dest = safe_child_path(staging_dir, name)
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    with z.open(name) as src, open(dest, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+        else:
+            z.extractall(extract_dir)
+            def _single_top_level_dir(base: Path):
+                entries = [p for p in base.iterdir()]
+                if len(entries) == 1 and entries[0].is_dir():
+                    return entries[0]
+                return None
+            src_dir = _single_top_level_dir(extract_dir) or extract_dir
+            for item in src_dir.iterdir():
+                dest = safe_child_path(staging_dir, item.name)
+                if item.is_dir():
+                    shutil.copytree(item, dest, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, dest)
+
+    # 1. Modrinth modrinth.index.json (.mrpack)
+    mr_index_path = staging_dir / "modrinth.index.json"
+    if not mr_index_path.exists() and (staging_dir / "index.json").exists():
+        mr_index_path = staging_dir / "index.json"
+
+    if mr_index_path.exists():
+        try:
+            mr_idx = json.loads(mr_index_path.read_text(encoding="utf-8", errors="ignore"))
+            deps = mr_idx.get("dependencies") or {}
+            if isinstance(deps, dict):
+                mc_version = deps.get("minecraft") or mc_version
+                if deps.get("neoforge"):
+                    loader = "neoforge"
+                    loader_version = str(deps["neoforge"])
+                elif deps.get("forge"):
+                    loader = "forge"
+                    loader_version = str(deps["forge"])
+                elif deps.get("fabric-loader"):
+                    loader = "fabric"
+                    loader_version = str(deps["fabric-loader"])
+                elif deps.get("quilt-loader"):
+                    loader = "quilt"
+                    loader_version = str(deps["quilt-loader"])
+
+            mr_files = mr_idx.get("files") or []
+            for entry in mr_files:
+                if not isinstance(entry, dict):
+                    continue
                 env = entry.get("env") or {}
                 if isinstance(env, dict) and str(env.get("server", "")).lower() == "unsupported":
                     continue
-                path = entry.get("path")
+                rel_p = entry.get("path")
                 downloads = entry.get("downloads") or []
-                if not path or not downloads:
+                if not rel_p or not downloads:
                     continue
-                dest = safe_child_path(target_dir, path)
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                url0 = downloads[0]
+                dest_p = safe_child_path(staging_dir, rel_p)
+                dest_p.parent.mkdir(parents=True, exist_ok=True)
                 try:
-                    with requests.get(url0, stream=True, timeout=60) as r:
-                        r.raise_for_status()
-                        with open(dest, 'wb') as f:
-                            for chunk in r.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-                except Exception:
-                    continue
-        # Record metadata about installed modpack version (labels not updatable post-create)
+                    _download_to(dest_p, downloads[0], timeout=120)
+                except Exception as de:
+                    log.warning(f"Failed Modrinth download {rel_p}: {de}")
+        except Exception as e:
+            log.warning(f"Failed parsing Modrinth index: {e}")
+
+    # 2. CurseForge manifest.json
+    cf_manifest_path = staging_dir / "manifest.json"
+    if cf_manifest_path.exists():
         try:
-            meta_path = target_dir / "modpack.meta.json"
-            meta = {
-                "provider": provider,
-                "pack_id": str(pack_id),
-                "version_id": str(version_id),
-            }
-            with open(meta_path, 'w', encoding='utf-8') as f:
-                json.dump(meta, f)
-        except Exception:
-            pass
+            cf_mani = json.loads(cf_manifest_path.read_text(encoding="utf-8", errors="ignore"))
+            mc_info = cf_mani.get("minecraft") or {}
+            if isinstance(mc_info, dict):
+                mc_version = mc_info.get("version") or mc_version
+                for ml in mc_info.get("modLoaders") or []:
+                    if isinstance(ml, dict) and ml.get("id"):
+                        ml_id = str(ml["id"]).lower()
+                        if ml_id.startswith("forge-"):
+                            loader = "forge"
+                            loader_version = ml_id[len("forge-"):]
+                        elif ml_id.startswith("fabric-"):
+                            loader = "fabric"
+                            loader_version = ml_id[len("fabric-"):]
+                        elif ml_id.startswith("neoforge-"):
+                            loader = "neoforge"
+                            loader_version = ml_id[len("neoforge-"):]
+
+            if hasattr(provider, "expand_manifest_files"):
+                try:
+                    resolved_files = provider.expand_manifest_files(cf_mani)
+                    for rf in resolved_files:
+                        dl = rf.get("downloadUrl")
+                        fname = rf.get("fileName") or f"{rf.get('id')}.jar"
+                        if dl:
+                            dest_mod = safe_child_path(staging_dir, "mods", fname)
+                            dest_mod.parent.mkdir(parents=True, exist_ok=True)
+                            _download_to(dest_mod, dl, timeout=120)
+                except Exception as cf_err:
+                    log.warning(f"CurseForge expand_manifest_files error: {cf_err}")
+            elif cf_mani.get("files"):
+                from modpack_providers.curseforge import CURSE_API_BASE
+                for cf_entry in cf_mani.get("files") or []:
+                    proj_id = cf_entry.get("projectID")
+                    file_id = cf_entry.get("fileID")
+                    if proj_id and file_id:
+                        try:
+                            headers = provider._headers() if hasattr(provider, "_headers") else {}
+                            fr = requests.get(f"{CURSE_API_BASE}/mods/{proj_id}/files/{file_id}", headers=headers, timeout=15)
+                            if fr.ok:
+                                fd = fr.json().get("data") or {}
+                                dl = fd.get("downloadUrl")
+                                fname = fd.get("fileName") or f"{proj_id}-{file_id}.jar"
+                                if dl:
+                                    dest_mod = safe_child_path(staging_dir, "mods", fname)
+                                    dest_mod.parent.mkdir(parents=True, exist_ok=True)
+                                    _download_to(dest_mod, dl, timeout=120)
+                        except Exception as de:
+                            log.warning(f"Failed CurseForge file download {proj_id}/{file_id}: {de}")
+        except Exception as e:
+            log.warning(f"Failed parsing CurseForge manifest: {e}")
+
+    # Fallback loader/version detection from staged files
+    meta_detect = _extract_modpack_metadata(staging_dir)
+    if not loader and meta_detect.get("loader"):
+        loader = meta_detect.get("loader")
+    if not mc_version and meta_detect.get("minecraft_version"):
+        mc_version = meta_detect.get("minecraft_version")
+    if not loader_version and meta_detect.get("loader_version"):
+        loader_version = meta_detect.get("loader_version")
+
+    return {"loader": loader, "minecraft_version": mc_version, "loader_version": loader_version}
+
+
+@router.get("/server/{server_name}/versions")
+async def get_server_modpack_versions(
+    server_name: str,
+    limit: int = 50,
+    current_user: User = Depends(require_auth),
+):
+    info = get_server_modpack_info(server_name)
+    if not info or not info.get("provider") or not info.get("pack_id"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Server '{server_name}' does not have a tracked modpack",
+        )
+
+    from catalog_routes import get_providers_live
+    providers = get_providers_live()
+    provider = providers.get(info["provider"])
+    if not provider:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Modpack provider '{info['provider']}' is not configured",
+        )
+
+    try:
+        raw_versions = provider.get_versions(info["pack_id"], limit=limit)
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch versions from provider: {e}",
+        )
+
+    current_ver = str(info.get("version_id") or "")
+    current_ver_name = info.get("version_name")
+
+    versions = []
+    for v in raw_versions:
+        vid = str(v.get("id"))
+        is_current = bool(current_ver and vid == current_ver)
+        v_name = v.get("name") or vid
+        if is_current and not current_ver_name:
+            current_ver_name = v_name
+        versions.append({
+            "version_id": vid,
+            "version_name": v_name,
+            "version_number": v.get("version_number") or v_name,
+            "game_versions": v.get("game_versions") or [],
+            "loaders": v.get("loaders") or [],
+            "date_published": v.get("date_published"),
+            "changelog": v.get("changelog") or "",
+            "is_current": is_current,
+        })
+
+    if not current_ver_name and current_ver:
+        current_ver_name = current_ver
+
+    return {
+        "server_name": server_name,
+        "provider": info["provider"],
+        "pack_id": info["pack_id"],
+        "current_version_id": current_ver or None,
+        "current_version_name": current_ver_name or None,
+        "versions": versions,
+    }
+
+
+@router.post("/server/{server_name}/update")
+async def update_server_modpack(
+    server_name: str,
+    payload: ModpackUpdateRequest,
+    current_user: User = Depends(require_moderator),
+):
+    servers_root = SERVERS_ROOT
+    server_dir = safe_child_path(servers_root, server_name)
+    if not server_dir.exists() or not server_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
+
+    modpack_info = get_server_modpack_info(server_name)
+    if not modpack_info or not modpack_info.get("provider") or not modpack_info.get("pack_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Server '{server_name}' does not have modpack metadata installed",
+        )
+
+    provider_id = modpack_info["provider"]
+    pack_id = str(modpack_info["pack_id"])
+    previous_version_id = modpack_info.get("version_id")
+
+    from catalog_routes import get_providers_live
+    providers = get_providers_live()
+    provider = providers.get(provider_id)
+    if not provider:
+        raise HTTPException(status_code=400, detail=f"Modpack provider '{provider_id}' is not configured")
+
+    try:
+        versions = provider.get_versions(pack_id, limit=50)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch versions from provider: {e}")
+
+    target_version_obj = next((x for x in versions if str(x.get("id")) == str(payload.target_version_id)), None)
+    if not target_version_obj:
+        raise HTTPException(status_code=404, detail=f"Target version '{payload.target_version_id}' not found")
+
+    target_version_name = target_version_obj.get("name") or str(payload.target_version_id)
+
+    # Check container running state
+    dm = get_docker_manager()
+    target_server = None
+    try:
+        for s in dm.list_servers():
+            if s.get("name") == server_name:
+                target_server = s
+                break
+    except Exception:
+        pass
+
+    container_id = target_server.get("id") if target_server else None
+    was_running = False
+    if target_server:
+        was_running = (str(target_server.get("status", "")).lower() == "running")
+
+    if was_running and container_id:
+        try:
+            await asyncio.to_thread(dm.stop_server, container_id, timeout=60)
+        except Exception as e:
+            log.warning(f"Error gracefully stopping server container {container_id}: {e}")
+
+    # Safety Backup
+    backup_created = None
+    if payload.create_backup:
+        try:
+            from backup_manager import create_backup_async
+            bk_res = await create_backup_async(server_name, tag="pre-update")
+            backup_created = bk_res.get("file") or bk_res.get("name")
+        except Exception as exc:
+            log.error(f"Pre-update safety backup failed for {server_name}: {exc}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Safety backup failed before update: {exc}. Update aborted.",
+            )
+
+    tmpdir = Path(tempfile.mkdtemp(prefix=f"update_{server_name}_"))
+    staging_dir = tmpdir / "staged"
+    try:
+        staged_meta = _stage_modpack_version(
+            provider_id=provider_id,
+            provider=provider,
+            pack_id=pack_id,
+            target_version_obj=target_version_obj,
+            staging_dir=staging_dir,
+            tmpdir=tmpdir,
+        )
+
+        loader = staged_meta.get("loader") or modpack_info.get("loader")
+        loader_version = staged_meta.get("loader_version") or modpack_info.get("loader_version")
+        mc_version = staged_meta.get("minecraft_version") or modpack_info.get("minecraft_version")
+
+        # Cleanup: Method B + Method A
+        cleanup_res = reconcile_and_cleanup_modpack(
+            server_dir=server_dir,
+            staging_dir=staging_dir,
+            previous_meta=modpack_info,
+        )
+
+        # Copy staged files to server_dir
+        mods_added = []
+        for p in staging_dir.rglob("*"):
+            if p.is_file():
+                rel = p.relative_to(staging_dir)
+                dest = safe_child_path(server_dir, rel.as_posix())
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                is_jar = rel.parts and rel.parts[0] == "mods" and rel.suffix.lower() == ".jar"
+                if is_jar:
+                    if not dest.exists() or rel.name in cleanup_res["mods_cleaned"]:
+                        if rel.name not in mods_added:
+                            mods_added.append(rel.name)
+                shutil.copy2(p, dest)
+
+        # Post-update client mod filtering
+        filter_report = {}
+        client_mods_filtered = []
+        try:
+            resolver = ModSideResolver(
+                minecraft_version=mc_version or "unknown",
+                modloader=loader or "unknown",
+            )
+            filter_report = resolver.filter_server_mods(
+                server_dir=server_dir,
+                minecraft_version=mc_version,
+                modloader=loader,
+                use_allowlist=True,
+                dry_run=False,
+            )
+            client_mods_filtered = [
+                m.get("file_name") or m.get("name")
+                for m in filter_report.get("excluded_mods", [])
+                if (m.get("file_name") or m.get("name"))
+            ]
+        except Exception as fe:
+            log.warning(f"Error running ModSideResolver filter: {fe}")
+
+        # Record metadata
+        new_installed_files = sorted([
+            p.relative_to(staging_dir).as_posix()
+            for p in staging_dir.rglob("*")
+            if p.is_file() and not is_path_protected(p.relative_to(staging_dir).as_posix())
+        ])
+        updated_meta = {
+            "provider": provider_id,
+            "pack_id": pack_id,
+            "version_id": str(payload.target_version_id),
+            "version_name": target_version_name,
+            "loader": loader,
+            "loader_version": loader_version,
+            "minecraft_version": mc_version,
+            "install_mode": modpack_info.get("install_mode", "server"),
+            "installed_at": modpack_info.get("installed_at") or datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "installed_files": new_installed_files,
+        }
+        save_server_modpack_info(server_name, updated_meta)
+
+        # Restart server if originally running
+        if was_running and container_id:
+            try:
+                await asyncio.to_thread(dm.start_server, container_id)
+            except Exception as se:
+                log.warning(f"Failed to restart container {container_id}: {se}")
+
+        return {
+            "status": "success",
+            "server_name": server_name,
+            "previous_version": previous_version_id,
+            "updated_version": str(payload.target_version_id),
+            "backup_created": backup_created,
+            "mods_cleaned": cleanup_res["mods_cleaned"],
+            "mods_added": sorted(list(set(mods_added))),
+            "client_mods_filtered": sorted(list(set(client_mods_filtered))),
+        }
     finally:
-        try:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-        except Exception:
-            pass
-    # Start server
-    dm.start_server(container_id)
-    return {"ok": True}
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@router.post("/update")
+async def update_modpack(
+    server_name: str,
+    provider: str,
+    pack_id: str,
+    version_id: str,
+    current_user: User = Depends(require_moderator),
+):
+    """Backward-compatible update route delegating to the new update engine."""
+    res = await update_server_modpack(
+        server_name=server_name,
+        payload=ModpackUpdateRequest(target_version_id=version_id, create_backup=True),
+        current_user=current_user,
+    )
+    return {"ok": True, **res}
 
 @router.get("/install/events/{task_id}")
 async def install_events(task_id: str):

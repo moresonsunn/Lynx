@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -144,6 +145,14 @@ class FTBProvider:
                     elif tgt.get("type") == "modloader" and tgt.get("name"):
                         loaders.append(str(tgt["name"]).lower())
 
+            raw_updated = v.get("updated")
+            date_published = None
+            if isinstance(raw_updated, (int, float)) and raw_updated > 0:
+                sec = raw_updated / 1000.0 if raw_updated > 1e11 else float(raw_updated)
+                date_published = datetime.fromtimestamp(sec, tz=timezone.utc).isoformat()
+            elif isinstance(raw_updated, str) and raw_updated:
+                date_published = raw_updated
+
             versions.append(
                 {
                     "id": vid,
@@ -151,7 +160,8 @@ class FTBProvider:
                     "version_number": v.get("name") or vid,
                     "game_versions": game_versions,
                     "loaders": loaders,
-                    "date_published": v.get("updated"),
+                    "date_published": date_published,
+                    "changelog": v.get("changelog") or v.get("description") or "",
                     "files": [],
                 }
             )

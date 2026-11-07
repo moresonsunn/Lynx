@@ -18,6 +18,7 @@ Sicherheitsregel:
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import logging
@@ -2012,10 +2013,13 @@ class ModSideResolver:
         modloader: Optional[str] = None,
         dry_run: bool = False,
         progress_callback: Optional[Callable[[int, int, ModAnalysisResult], None]] = None,
+        use_allowlist: bool = True,
+        allowlist_patterns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Analysiert alle Mods in `server_dir/mods` und verschiebt eindeutig als `CLIENT_ONLY`
-        identifizierte Mods sicher nach `server_dir/mods-disabled-client/` (beschädigt niemals Originaldateien).
+        identifizierte Mods sicher nach `server_dir/mods-disabled-client/` (beschädigt niemals Originaldateien),
+        sofern sie nicht auf der Allowlist stehen.
         Erstellt einen vollständigen Diagnosebericht unter `server_dir/.mod_side_report.json`.
         """
         server_dir = Path(server_dir)
@@ -2031,19 +2035,91 @@ class ModSideResolver:
         )
 
         moved_mods: List[Dict[str, Any]] = []
+        whitelisted_mods: List[Dict[str, Any]] = []
         errors: List[str] = []
 
-        if not dry_run and analysis["client_only_mods"]:
-            disabled_dir.mkdir(parents=True, exist_ok=True)
+        allowlist_checker = None
+        if allowlist_patterns is not None:
+            norm_patterns = [
+                p.strip()
+                for p in allowlist_patterns
+                if isinstance(p, str) and p.strip()
+            ]
+
+            def _pattern_checker(s_dir: Path, filename: str, mod_id: Optional[str] = None) -> bool:
+                from client_mod_filter import match_allowlist_pattern
+                for pat in norm_patterns:
+                    if match_allowlist_pattern(pat, filename=filename, mod_id=mod_id):
+                        return True
+                return False
+
+            allowlist_checker = _pattern_checker
+        elif use_allowlist:
+            try:
+                from client_mod_filter import is_mod_allowlisted
+                allowlist_checker = is_mod_allowlisted
+            except Exception as exc:
+                logger.warning(f"[ModSideResolver] Could not import is_mod_allowlisted: {exc}")
+
+        if analysis["client_only_mods"]:
+            if not dry_run:
+                disabled_dir.mkdir(parents=True, exist_ok=True)
+
             for mod_entry in analysis["client_only_mods"]:
                 src_path = Path(mod_entry["file_path"])
                 if not src_path.exists():
                     continue
-                dst_path = disabled_dir / src_path.name
-                try:
-                    if dst_path.exists():
-                        dst_path.unlink()
-                    shutil.move(str(src_path), str(dst_path))
+
+                is_allowlisted = False
+                if allowlist_checker:
+                    is_allowlisted = allowlist_checker(
+                        server_dir,
+                        filename=src_path.name,
+                        mod_id=mod_entry.get("mod_id"),
+                    )
+
+                if is_allowlisted:
+                    whitelisted_mods.append(
+                        {
+                            "file_name": src_path.name,
+                            "mod_id": mod_entry["mod_id"],
+                            "mod_name": mod_entry["mod_name"],
+                            "mod_version": mod_entry["mod_version"],
+                            "side": mod_entry["side"],
+                            "confidence": mod_entry["confidence"],
+                            "reason": "whitelisted",
+                            "detection_sources": mod_entry["detection_sources"],
+                        }
+                    )
+                    logger.info(f"[ModSideResolver] Allowlisted mod preserved: {src_path.name}")
+                    continue
+
+                if not dry_run:
+                    dst_path = disabled_dir / src_path.name
+                    try:
+                        if dst_path.exists():
+                            dst_path.unlink()
+                        shutil.move(str(src_path), str(dst_path))
+                        moved_mods.append(
+                            {
+                                "file_name": src_path.name,
+                                "mod_id": mod_entry["mod_id"],
+                                "mod_name": mod_entry["mod_name"],
+                                "mod_version": mod_entry["mod_version"],
+                                "side": mod_entry["side"],
+                                "confidence": mod_entry["confidence"],
+                                "reason": mod_entry["primary_reason"],
+                                "detection_sources": mod_entry["detection_sources"],
+                            }
+                        )
+                        logger.info(
+                            f"[ModSideResolver] Excluded CLIENT_ONLY mod: {src_path.name} ({mod_entry['primary_reason']})"
+                        )
+                    except Exception as exc:
+                        err_msg = f"Fehler beim Verschieben von {src_path.name}: {exc}"
+                        logger.warning(err_msg)
+                        errors.append(err_msg)
+                else:
                     moved_mods.append(
                         {
                             "file_name": src_path.name,
@@ -2056,13 +2132,6 @@ class ModSideResolver:
                             "detection_sources": mod_entry["detection_sources"],
                         }
                     )
-                    logger.info(
-                        f"[ModSideResolver] Excluded CLIENT_ONLY mod: {src_path.name} ({mod_entry['primary_reason']})"
-                    )
-                except Exception as exc:
-                    err_msg = f"Fehler beim Verschieben von {src_path.name}: {exc}"
-                    logger.warning(err_msg)
-                    errors.append(err_msg)
 
         report = {
             "timestamp": time.time(),
@@ -2072,10 +2141,12 @@ class ModSideResolver:
             "dry_run": dry_run,
             "total_mods": analysis["total_mods"],
             "client_only_count": analysis["client_only_count"],
-            "server_mods_kept_count": analysis["server_mods_kept_count"],
+            "server_mods_kept_count": analysis["server_mods_kept_count"] + len(whitelisted_mods),
+            "whitelisted_count": len(whitelisted_mods),
+            "whitelisted_mods": whitelisted_mods,
             "moved_count": len(moved_mods),
-            "excluded_mods": moved_mods if not dry_run else analysis["client_only_mods"],
-            "kept_mods": analysis["server_mods"],
+            "excluded_mods": moved_mods if not dry_run else [m for m in analysis["client_only_mods"] if m.get("file_name") not in {w["file_name"] for w in whitelisted_mods}],
+            "kept_mods": analysis["server_mods"] + whitelisted_mods,
             "conflicts": analysis["conflicts"],
             "errors": errors,
         }

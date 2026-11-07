@@ -234,18 +234,18 @@ def resolve_backup_archive(name: str, backup_file: str) -> Path:
 resolve_backup_path = resolve_backup_archive
 
 
-def create_backup(name: str, compression: str = 'zip') -> dict:
+def create_backup(name: str, compression: str = 'zip', tag: Optional[str] = None) -> dict:
     """Create a backup of the server synchronously (blocking)."""
-    return _create_backup_sync(name, compression)
+    return _create_backup_sync(name, compression, tag=tag)
 
 
-async def create_backup_async(name: str, compression: str = 'zip') -> dict:
+async def create_backup_async(name: str, compression: str = 'zip', tag: Optional[str] = None) -> dict:
     """Create a backup of the server asynchronously in a thread pool."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _create_backup_sync, name, compression)
+    return await loop.run_in_executor(None, _create_backup_sync, name, compression, tag)
 
 
-def _create_backup_sync(name: str, compression: str = 'zip') -> dict:
+def _create_backup_sync(name: str, compression: str = 'zip', tag: Optional[str] = None) -> dict:
     from settings_routes import get_backup_settings
     import logging as _logging
     _log = _logging.getLogger(__name__)
@@ -266,14 +266,15 @@ def _create_backup_sync(name: str, compression: str = 'zip') -> dict:
         fmt = compression if compression in {"zip", "gztar", "bztar", "tar"} else ('zip' if compress else 'tar')
         excludes = _backup_excludes()
 
+        prefix = f"{name}-{tag}" if tag else name
         started = time.time()
         if fmt == 'zip':
-            archive_path = dest_dir / f"{name}-{ts}.zip"
+            archive_path = dest_dir / f"{prefix}-{ts}.zip"
             _archive_zip(server_dir, archive_path, excludes)
         else:
             ext = {'gztar': '.tar.gz', 'bztar': '.tar.bz2', 'tar': '.tar'}[fmt]
             mode = {'gztar': 'w:gz', 'bztar': 'w:bz2', 'tar': 'w'}[fmt]
-            archive_path = dest_dir / f"{name}-{ts}{ext}"
+            archive_path = dest_dir / f"{prefix}-{ts}{ext}"
             _archive_tar(server_dir, archive_path, excludes, mode)
 
         size = archive_path.stat().st_size

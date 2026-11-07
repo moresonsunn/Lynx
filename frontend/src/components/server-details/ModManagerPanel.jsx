@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API, authHeaders } from '../../context/AppContext';
+import { useTranslation } from '../../i18n';
+import ModpackUpdateModal from './ModpackUpdateModal';
 import {
   FaSearch, FaSyncAlt, FaExclamationTriangle, FaCheckCircle,
   FaTimesCircle, FaSpinner, FaArrowUp, FaBoxOpen, FaDownload,
@@ -428,11 +430,124 @@ function ClientModpackSection({ serverName }) {
   );
 }
 
+// ─── Dedicated Installed Modpack Section ──────────────────
+
+function InstalledModpackSection({ serverName, onOpenUpdateModal, refreshKey }) {
+  const { t } = useTranslation();
+  const [info, setInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchVersions = useCallback(async () => {
+    if (!serverName) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/modpacks/server/${encodeURIComponent(serverName)}/versions`, {
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInfo(data);
+      } else {
+        setInfo(null);
+      }
+    } catch {
+      setInfo(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [serverName]);
+
+  useEffect(() => {
+    fetchVersions();
+  }, [fetchVersions, refreshKey]);
+
+  if (loading) {
+    return (
+      <div className="bg-white/5 border border-white/10 rounded-xl p-4 animate-pulse flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-white/10" />
+        <div className="flex-1 space-y-2">
+          <div className="h-4 w-40 bg-white/10 rounded" />
+          <div className="h-3 w-60 bg-white/5 rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!info || !info.provider) return null;
+
+  const currentVer = info.current_version_name || info.current_version_id || 'Unknown';
+  const latestVer = info.versions?.[0];
+  const hasUpdate = latestVer && info.current_version_id && String(latestVer.version_id) !== String(info.current_version_id);
+
+  const PROVIDER_COLORS = {
+    modrinth: 'from-emerald-950/40 via-ink-900 to-ink-900 border-emerald-500/30 text-emerald-300',
+    curseforge: 'from-amber-950/40 via-ink-900 to-ink-900 border-amber-500/30 text-amber-300',
+    ftb: 'from-blue-950/40 via-ink-900 to-ink-900 border-blue-500/30 text-blue-300',
+  };
+  const providerTheme = PROVIDER_COLORS[info.provider?.toLowerCase()] || 'from-purple-950/40 via-ink-900 to-ink-900 border-purple-500/30 text-purple-300';
+
+  return (
+    <div className={`bg-gradient-to-r border rounded-xl p-5 shadow-lg ${providerTheme}`}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="p-2.5 bg-white/10 rounded-xl flex items-center justify-center flex-shrink-0">
+            <FaCube className="w-5 h-5 text-brand-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-white/10 border border-white/10">
+                {info.provider}
+              </span>
+              <h3 className="text-base font-bold text-white">{info.pack_id}</h3>
+              {hasUpdate ? (
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 font-medium">
+                  <FaArrowUp className="w-2.5 h-2.5" />
+                  {t('modpackUpdate.updateToVersion', { version: latestVer.version_name || latestVer.version_number }) || `Update to ${latestVer.version_name || latestVer.version_number}`}
+                </span>
+              ) : (
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 font-medium">
+                  <FaCheckCircle className="w-2.5 h-2.5" /> {t('modpackUpdate.upToDate') || 'Up to date'}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-white/50 mt-1">
+              {t('modpackUpdate.currentVersion') || 'Current version'}: <span className="text-white font-medium">{currentVer}</span>
+              {hasUpdate && (
+                <span className="ml-2 text-amber-300">
+                  ({t('modpackUpdate.latestBadge') || 'Newest'}: {latestVer.version_name || latestVer.version_number})
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-start sm:self-center flex-shrink-0">
+          <button
+            type="button"
+            onClick={onOpenUpdateModal}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+              hasUpdate
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-lg shadow-amber-500/20 font-bold'
+                : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
+            }`}
+          >
+            <FaSyncAlt className="text-xs" />
+            <span>{hasUpdate ? (t('modpackUpdate.updateButton') || 'Update Modpack') : (t('modpackUpdate.changeVersion') || 'Change Version')}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Mod Manager Panel ────────────────────────────────
 
-export default function ModManagerPanel({ serverName }) {
+export default function ModManagerPanel({ serverName, onOpenModpackUpdate }) {
+  const { t } = useTranslation();
   const [mods, setMods] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showLocalModal, setShowLocalModal] = useState(false);
+  const [modpackRefreshKey, setModpackRefreshKey] = useState(0);
 
   const fetchMods = useCallback(async () => {
     try {
@@ -443,6 +558,19 @@ export default function ModManagerPanel({ serverName }) {
   }, [serverName]);
 
   useEffect(() => { fetchMods(); }, [fetchMods]);
+
+  const handleOpenUpdate = () => {
+    if (onOpenModpackUpdate) {
+      onOpenModpackUpdate();
+    } else {
+      setShowLocalModal(true);
+    }
+  };
+
+  const handleUpdateSuccess = () => {
+    fetchMods();
+    setModpackRefreshKey(k => k + 1);
+  };
 
   if (loading) {
     return (
@@ -465,6 +593,13 @@ export default function ModManagerPanel({ serverName }) {
         </div>
       </div>
 
+      {/* Installed Modpack Section */}
+      <InstalledModpackSection
+        serverName={serverName}
+        onOpenUpdateModal={handleOpenUpdate}
+        refreshKey={modpackRefreshKey}
+      />
+
       {/* Mod List */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-5">
         <ModListSection serverName={serverName} mods={mods} onRefresh={fetchMods} />
@@ -477,6 +612,16 @@ export default function ModManagerPanel({ serverName }) {
         <DependencyResolverSection serverName={serverName} />
         <ClientModpackSection serverName={serverName} />
       </div>
+
+      {/* Local Modal Mount if no parent handler */}
+      {!onOpenModpackUpdate && (
+        <ModpackUpdateModal
+          isOpen={showLocalModal}
+          onClose={() => setShowLocalModal(false)}
+          serverName={serverName}
+          onUpdateSuccess={handleUpdateSuccess}
+        />
+      )}
     </div>
   );
 }

@@ -37,6 +37,7 @@ export default {
     selectLanguage: 'Select Language',
     clearFilters: 'Clear filters',
     all: 'All',
+    tryAgain: 'Try Again',
   },
 
   // Auth / Login
@@ -182,6 +183,8 @@ export default {
     start: 'Start',
     stop: 'Stop',
     restart: 'Restart',
+    modpack: 'Modpack',
+    modpackVersion: 'Modpack Version',
   },
 
   // Templates
@@ -634,5 +637,142 @@ export default {
   // Worlds Panel
   worldsPanel: {
     uploadWorld: 'Upload World (.zip)',
+  },
+
+  // Modpack Update Flow
+  modpackUpdate: {
+    // Action Buttons & Badges
+    updateButton: 'Update Modpack',
+    updateAvailable: 'Update Available',
+    upToDate: 'Up to Date',
+    checkingUpdates: 'Checking for updates...',
+    startUpdate: 'Update Now',
+    updating: 'Updating...',
+
+    // Modal & Header
+    modalTitle: 'Update Modpack',
+    modalSubtitle: 'Update {{serverName}} to a new modpack version.',
+    installedVersion: 'Installed Version',
+    currentVersion: 'Currently Installed',
+    targetVersion: 'Target Update Version',
+    selectTargetVersion: 'Select a target version...',
+    provider: 'Provider',
+    packId: 'Pack ID',
+    noVersionsFound: 'No target versions available for this modpack.',
+    checkingVersions: 'Checking available modpack versions...',
+    notTrackedTitle: 'Not a Tracked Modpack Server',
+    notTrackedMessage: 'This server does not have active modpack metadata attached (e.g. Vanilla, Spigot, or custom server). Interactive updates are available for servers installed from Modrinth, CurseForge, or FTB.',
+    failedLoadTitle: 'Failed to Load Versions',
+    retryQuery: 'Retry Query',
+
+    // Version Badges
+    currentBadge: 'Current',
+    latestBadge: 'Latest',
+    activeRelease: 'Active Release',
+    reinstallWarning: '(Selected version is already installed — updating will reinstall/repair files)',
+    release: 'Release',
+    beta: 'Beta',
+    alpha: 'Alpha',
+    publishedOn: 'Published on {{date}}',
+
+    // Changelog
+    changelog: 'Changelog',
+    changelogTitle: 'Changelog & Release Notes',
+    noChangelog: 'No changelog or release notes provided for this version.',
+    viewChangelog: 'View Changelog',
+
+    // Safety & Notices
+    safetyBackup: 'Create safety backup before updating',
+    safetyBackupLabel: 'Create pre-update safety backup (Recommended)',
+    safetyBackupNotice: 'Automatically archives existing world, configurations, and mods before updating.',
+    cleanupNoticeTitle: 'Automatic Cleanup & Filtering',
+    cleanupNotice: 'Outdated or replaced mods from the previous version will be cleaned up, and client-side mods will be filtered while preserving your allowlist.',
+    duplicateCleanupTitle: 'Duplicate Cleanup:',
+    duplicateCleanupDesc: 'Outdated and replaced mod JARs from the old version will be cleaned up to avoid duplicate mod conflicts.',
+    clientFilterTitle: 'Client Mod Filter:',
+    clientFilterDesc: 'Post-update inspection will automatically filter client-only mods while strictly preserving your allowlist.',
+
+    // Progress Steps
+    progressTitle: 'Updating Modpack...',
+    progressSubtitle: 'Applying target release {{version}}. Please do not close this dialog.',
+    progressStopping: 'Stopping server container...',
+    progressBackup: 'Creating safety backup...',
+    progressDownloading: 'Downloading and staging modpack files...',
+    progressCleaning: 'Cleaning up obsolete mods and manifest files...',
+    progressFiltering: 'Running client-side mod detection & filtering...',
+    progressRestarting: 'Restarting server container...',
+
+    // Result Summary
+    updateSuccess: 'Modpack Updated Successfully',
+    completedTitle: 'Modpack Update Completed!',
+    updateSuccessDetail: 'Updated from version {{from}} to {{to}}.',
+    backupCreated: 'Backup created: {{filename}}',
+    backupSkipped: 'Disabled / Skipped',
+    modsCleanedCount: '{{count}} removed',
+    modsAddedCount: '{{count}} installed',
+    clientModsFilteredCount: '{{count}} filtered',
+    inspectFiles: 'Inspect Cleaned & Filtered Files',
+    updateError: 'Modpack Update Failed',
+    updateNowButton: 'Update Modpack Now',
+    updateToVersion: 'Update to {{version}}',
+    changeVersion: 'Change Version',
+    updateAvailableDesc: 'A newer release is available from {{provider}}. Click below to review changelog and update safely.',
+    cleanedModsTitle: 'Outdated Mods Cleaned',
+    newModsTitle: 'New Mods Added',
+    clientModsTitle: 'Client Mods Filtered',
+    cleanedModsListTitle: 'Cleaned Outdated Mods:',
+    isolatedClientModsTitle: 'Isolated Client-Only Mods:',
+  },
+
+  // Client Mod Filter & Allowlist Tracking
+  clientModFilter: {
+    title: 'Client Mod Filter',
+    subtitle: 'Automatically detect and filter client-only mods that cause server crashes, while preserving your allowlist.',
+    analyzeButton: 'Analyze Mods',
+    autoFilterButton: 'Auto-Filter Client Mods',
+    previewButton: 'Preview (Dry Run)',
+
+    // Allowlist Tracking Table
+    whitelist: {
+      title: 'Client-Only Allowlist',
+      subtitle: 'Recorded mods and filename patterns that are preserved and never filtered on this server.',
+      count: '{{count}} entries',
+      searchPlaceholder: 'Search patterns or mod names...',
+      addEntry: 'Add Entry',
+      noEntries: 'No allowlist entries recorded',
+      noEntriesDescription: 'Add patterns to ensure essential client-side mods are never disabled during server updates or filter runs.',
+
+      // Table Column Headers
+      colPattern: 'Pattern / Mod Name',
+      colAddedAt: 'Added At',
+      colAddedBy: 'Added By',
+      colStatus: 'Status',
+      colActions: 'Actions',
+
+      // Badges & Labels
+      statusActive: 'Active',
+      statusDisabled: 'Disabled',
+      systemUser: 'System',
+      removeTooltip: 'Remove pattern from allowlist',
+
+      // Add Entry Modal
+      addModalTitle: 'Add Allowlist Entry',
+      addModalSubtitle: 'Protect a mod or filename pattern from client-side mod filtering.',
+      patternLabel: 'Pattern / Filename / Mod ID',
+      patternPlaceholder: 'e.g. jei*, appleskin*, create',
+      patternHelp: 'Supports wildcards (*). Example: "appleskin*" matches any AppleSkin jar version.',
+      modNameLabel: 'Mod Display Name (Optional)',
+      modNamePlaceholder: 'e.g. AppleSkin',
+      notesLabel: 'Notes (Optional)',
+      notesPlaceholder: 'e.g. Allowed for player HUD convenience',
+      addButton: 'Add to Allowlist',
+      addingButton: 'Adding...',
+      cancelButton: 'Cancel',
+
+      // Confirmation Modal
+      confirmRemoveTitle: 'Remove Allowlist Pattern',
+      confirmRemoveMessage: 'Are you sure you want to remove pattern "{{pattern}}" from the allowlist? This mod may be filtered during future server updates or mod filter scans.',
+      confirmRemoveButton: 'Remove Pattern',
+    },
   },
 };
