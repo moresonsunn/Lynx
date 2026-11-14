@@ -235,7 +235,8 @@ function LiveConsolePreview({ serverId, isRunning, resetToken = 0, onOpenConsole
   );
 }
 
-function SettingsModalContent({ server, serverId, typeVersionData, isSteam }) {
+function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMulticoreUpdated }) {
+  const { t } = useTranslation();
   const serverType = (typeVersionData?.server_type || server?.type || '').toLowerCase();
 
   const [ramMax, setRamMax] = useState('4G');
@@ -247,6 +248,13 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam }) {
   const [cpuLoading, setCpuLoading] = useState(true);
   const [cpuSaving, setCpuSaving] = useState(false);
   const [cpuMsg, setCpuMsg] = useState('');
+  const [mcEnabled, setMcEnabled] = useState(true);
+  const [mcMode, setMcMode] = useState('auto');
+  const [mcAllocatedCores, setMcAllocatedCores] = useState(null);
+  const [mcWorkerThreads, setMcWorkerThreads] = useState(null);
+  const [mcLoading, setMcLoading] = useState(true);
+  const [mcSaving, setMcSaving] = useState(false);
+  const [mcMsg, setMcMsg] = useState('');
 
   useEffect(() => {
     if (isSteam || !serverId) return;
@@ -329,6 +337,72 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam }) {
     }
   };
 
+  useEffect(() => {
+    if (isSteam || !serverId) { setMcLoading(false); return; }
+    let cancelled = false;
+    async function loadMulticore() {
+      try {
+        const r = await fetch(`${API}/servers/${serverId}/multicore`, { headers: authHeaders() });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (!cancelled && d) {
+          const isEnabled = d.enabled !== false && d.mode !== 'single_core';
+          setMcEnabled(isEnabled);
+          setMcMode(d.mode && d.mode !== 'single_core' ? d.mode : 'auto');
+          if (d.allocated_cores != null) setMcAllocatedCores(d.allocated_cores);
+          if (d.worker_threads != null) setMcWorkerThreads(d.worker_threads);
+        }
+      } catch {
+        // keep defaults
+      } finally {
+        if (!cancelled) setMcLoading(false);
+      }
+    }
+    loadMulticore();
+    return () => { cancelled = true; };
+  }, [serverId, isSteam]);
+
+  const handleMulticoreSave = async (overrideEnabled, overrideMode) => {
+    const targetEnabled = typeof overrideEnabled === 'boolean' ? overrideEnabled : mcEnabled;
+    const rawMode = typeof overrideMode === 'string' ? overrideMode : mcMode;
+    const targetMode = targetEnabled ? (rawMode && rawMode !== 'single_core' ? rawMode : 'auto') : 'single_core';
+
+    setMcSaving(true);
+    setMcMsg('');
+    try {
+      const r = await fetch(`${API}/servers/${serverId}/multicore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ enabled: targetEnabled, mode: targetMode }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+      const respEnabled = d.enabled !== undefined ? d.enabled : targetEnabled;
+      setMcEnabled(respEnabled);
+      if (d.mode && d.mode !== 'single_core') setMcMode(d.mode);
+      if (d.allocated_cores != null) setMcAllocatedCores(d.allocated_cores);
+      if (d.worker_threads != null) setMcWorkerThreads(d.worker_threads);
+      if (onMulticoreUpdated) onMulticoreUpdated(d);
+      setMcMsg(
+        respEnabled
+          ? t('multicore.appliedMultiCore', { mode: d.mode || targetMode })
+          : t('multicore.appliedSingleCore')
+      );
+      setTimeout(() => setMcMsg(''), 4000);
+    } catch (e) {
+      setMcMsg(`Failed: ${e.message}`);
+    } finally {
+      setMcSaving(false);
+    }
+  };
+
+  const multicoreProfiles = [
+    { id: 'auto', label: t('multicore.modeAuto') },
+    { id: 'high_throughput', label: t('multicore.modeHighThroughput') },
+    { id: 'parallel_dimensions', label: t('multicore.modeParallelDimensions') },
+    { id: 'parallel_entities', label: t('multicore.modeParallelEntities') },
+  ];
+
   return (
     <div className="space-y-4">
       {!isSteam && (
@@ -361,6 +435,123 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam }) {
                   className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
                 >
                   {ramSaving ? 'Saving...' : 'Save & Restart'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {!isSteam && (
+        <div className="glassmorphism rounded-xl p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
+              <FaMicrochip className="text-brand-400" />
+              {t('multicore.title')}
+            </h4>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border ${
+              mcEnabled
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${mcEnabled ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              {mcEnabled ? t('multicore.multiCore') : t('multicore.singleCore')}
+            </span>
+          </div>
+          {mcLoading ? (
+            <div className="text-sm text-white/50">{t('multicore.loading')}</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 rounded-xl border border-white/10 mb-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMcEnabled(true);
+                    if (mcMode === 'single_core') setMcMode('auto');
+                  }}
+                  className={`p-2.5 rounded-lg text-left transition-all border ${
+                    mcEnabled
+                      ? 'bg-emerald-500/20 text-white border-emerald-500/40 shadow-sm'
+                      : 'text-white/60 hover:text-white hover:bg-white/5 border-transparent'
+                  }`}
+                >
+                  <div className="text-xs font-semibold flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${mcEnabled ? 'bg-emerald-400' : 'bg-white/30'}`} />
+                    {t('multicore.multiCore')}
+                  </div>
+                  <div className="text-[11px] text-white/50 mt-0.5 leading-snug">
+                    {t('multicore.multiCoreDesc')}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMcEnabled(false)}
+                  className={`p-2.5 rounded-lg text-left transition-all border ${
+                    !mcEnabled
+                      ? 'bg-amber-500/20 text-white border-amber-500/40 shadow-sm'
+                      : 'text-white/60 hover:text-white hover:bg-white/5 border-transparent'
+                  }`}
+                >
+                  <div className="text-xs font-semibold flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${!mcEnabled ? 'bg-amber-400' : 'bg-white/30'}`} />
+                    {t('multicore.singleCore')}
+                  </div>
+                  <div className="text-[11px] text-white/50 mt-0.5 leading-snug">
+                    {t('multicore.singleCoreDesc')}
+                  </div>
+                </button>
+              </div>
+
+              {mcEnabled && (
+                <div className="mb-3 space-y-2.5">
+                  <div>
+                    <div className="text-[11px] font-medium text-white/50 uppercase tracking-wider mb-1.5">
+                      {t('multicore.modeLabel')}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {multicoreProfiles.map((prof) => {
+                        const selected = mcMode === prof.id;
+                        return (
+                          <button
+                            key={prof.id}
+                            type="button"
+                            onClick={() => setMcMode(prof.id)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium text-left transition-all border ${
+                              selected
+                                ? 'bg-brand-500/20 text-brand-200 border-brand-500/40'
+                                : 'bg-white/5 text-white/65 hover:text-white hover:bg-white/10 border-white/10'
+                            }`}
+                          >
+                            {prof.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs bg-black/25 border border-white/5 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/50">{t('multicore.allocatedCores')}</span>
+                      <span className="text-white font-mono font-medium">{mcAllocatedCores ?? '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/50">{t('multicore.workerThreads')}</span>
+                      <span className="text-white font-mono font-medium">{mcWorkerThreads ?? '—'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-3">
+                <span className="text-xs text-white/50">
+                  {t('multicore.executionMode')}: {mcEnabled ? t('multicore.multiCore') : t('multicore.singleCore')}
+                  {mcMsg && <span className="ml-2 text-emerald-300">{mcMsg}</span>}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleMulticoreSave()}
+                  disabled={mcSaving}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+                >
+                  {mcSaving ? '...' : t('multicore.applyLive')}
                 </button>
               </div>
             </>
@@ -506,6 +697,73 @@ export default function ServerDetailsPage() {
   const typeVersionData = preloadedInfo || fetchedInfo || null;
   const runtimeKind = (typeVersionData?.server_kind || server?.server_kind || '').toLowerCase();
   const isSteam = runtimeKind === 'steam';
+
+  const [mcStatus, setMcStatus] = useState({
+    enabled: true,
+    mode: 'auto',
+    allocated_cores: null,
+    worker_threads: null,
+    loading: true,
+    saving: false,
+  });
+
+  useEffect(() => {
+    if (isSteam || !serverId) {
+      setMcStatus(prev => ({ ...prev, loading: false }));
+      return;
+    }
+    let cancelled = false;
+    async function loadServerMulticore() {
+      try {
+        const r = await fetch(`${API}/servers/${serverId}/multicore`, { headers: authHeaders() });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (!cancelled && d) {
+          const isEnabled = d.enabled !== false && d.mode !== 'single_core';
+          setMcStatus({
+            enabled: isEnabled,
+            mode: d.mode && d.mode !== 'single_core' ? d.mode : 'auto',
+            allocated_cores: d.allocated_cores ?? null,
+            worker_threads: d.worker_threads ?? null,
+            loading: false,
+            saving: false,
+          });
+        }
+      } catch {
+        if (!cancelled) setMcStatus(prev => ({ ...prev, loading: false }));
+      }
+    }
+    loadServerMulticore();
+    return () => { cancelled = true; };
+  }, [serverId, isSteam]);
+
+  const handleQuickMulticoreToggle = useCallback(async (nextEnabled) => {
+    if (!serverId || isSteam || mcStatus.saving) return;
+    setMcStatus(prev => ({ ...prev, saving: true }));
+    const targetMode = nextEnabled
+      ? (mcStatus.mode && mcStatus.mode !== 'single_core' ? mcStatus.mode : 'auto')
+      : 'single_core';
+    try {
+      const r = await fetch(`${API}/servers/${serverId}/multicore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ enabled: nextEnabled, mode: targetMode }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+      setMcStatus(prev => ({
+        ...prev,
+        enabled: d.enabled !== undefined ? d.enabled : nextEnabled,
+        mode: d.mode && d.mode !== 'single_core' ? d.mode : prev.mode,
+        allocated_cores: d.allocated_cores ?? prev.allocated_cores,
+        worker_threads: d.worker_threads ?? prev.worker_threads,
+        loading: false,
+        saving: false,
+      }));
+    } catch {
+      setMcStatus(prev => ({ ...prev, saving: false }));
+    }
+  }, [serverId, isSteam, mcStatus.saving, mcStatus.mode]);
 
   // Modpack Detection & Live Versions
   const [showModpackUpdateModal, setShowModpackUpdateModal] = useState(false);
@@ -814,6 +1072,16 @@ export default function ServerDetailsPage() {
                     <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
                     {server.status}
                   </span>
+                  {!isSteam && !mcStatus.loading && (
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                      mcStatus.enabled
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                    }`}>
+                      <FaMicrochip className="text-[10px]" />
+                      {mcStatus.enabled ? t('multicore.multiCore') : t('multicore.singleCore')}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2.5 text-xs sm:text-sm text-white/60 mt-1 flex-wrap">
                   <span>{displayType}</span>
@@ -1174,6 +1442,58 @@ export default function ServerDetailsPage() {
                       </button>
                     )}
                   </div>
+                  {!isSteam && (
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-white">{t('multicore.executionMode')}</span>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                            mcStatus.enabled
+                              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                              : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${mcStatus.enabled ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                            {mcStatus.enabled ? t('multicore.multiCore') : t('multicore.singleCore')}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-white/45 mt-0.5 truncate">
+                          {mcStatus.enabled
+                            ? (mcStatus.allocated_cores || mcStatus.worker_threads
+                                ? `${t('multicore.allocatedCores')}: ${mcStatus.allocated_cores ?? '—'} · ${t('multicore.workerThreads')}: ${mcStatus.worker_threads ?? '—'}`
+                                : t('multicore.multiCoreDesc'))
+                            : t('multicore.singleCoreDesc')}
+                        </p>
+                      </div>
+                      {access.canManage && (
+                        <div className="inline-flex p-1 bg-black/40 rounded-lg border border-white/10 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleQuickMulticoreToggle(true)}
+                            disabled={mcStatus.saving || mcStatus.loading}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-50 ${
+                              mcStatus.enabled
+                                ? 'bg-emerald-600 text-white shadow-sm'
+                                : 'text-white/60 hover:text-white'
+                            }`}
+                          >
+                            {t('multicore.multiCore')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickMulticoreToggle(false)}
+                            disabled={mcStatus.saving || mcStatus.loading}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-50 ${
+                              !mcStatus.enabled
+                                ? 'bg-amber-600 text-white shadow-sm'
+                                : 'text-white/60 hover:text-white'
+                            }`}
+                          >
+                            {t('multicore.singleCore')}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {stats && !stats.error && isRunning ? (
                     <div className="space-y-4 text-sm">
                       <div>
@@ -1639,7 +1959,15 @@ export default function ServerDetailsPage() {
       <ConfirmModal
         isOpen={showSettingsModal}
         title="Hardware & Runtime Allocation"
-        message={<SettingsModalContent server={server} serverId={serverId} typeVersionData={typeVersionData} isSteam={isSteam} />}
+        message={
+          <SettingsModalContent
+            server={server}
+            serverId={serverId}
+            typeVersionData={typeVersionData}
+            isSteam={isSteam}
+            onMulticoreUpdated={(d) => setMcStatus(prev => ({ ...prev, ...d, loading: false }))}
+          />
+        }
         confirmText={t('common.close') || 'Close'}
         cancelText={null}
         onConfirm={() => setShowSettingsModal(false)}

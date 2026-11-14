@@ -222,4 +222,39 @@ class NeoForgeProvider:
         """Get list of NeoForge version strings for a specific Minecraft version."""
         return self.get_neoforge_versions_for_minecraft(game_version)
 
+    def is_modern(self, version: str) -> bool:
+        """Return True as all NeoForge versions (MC 1.20.2+) use modern modular bootstrapper."""
+        return True
+
+    def get_expected_launch_type(self, version: str) -> str:
+        """Return 'run_script' for NeoForge servers."""
+        return "run_script"
+
+    def get_java_version(self, version: str) -> int:
+        """Return the required Java version for the given Minecraft or NeoForge version."""
+        v = (version or "").strip()
+        # Check if version is MC format e.g. "1.20.4", "1.21.1"
+        m = re.match(r"^1\.(\d+)(?:\.(\d+))?", v)
+        if m:
+            minor = int(m.group(1))
+            patch = int(m.group(2) or 0)
+            if minor == 20 and patch < 5:
+                return 17
+            elif minor >= 26:
+                return 25
+            else:
+                return 21
+        # Check if version is NeoForge format e.g. "20.4.253", "21.1.266"
+        m_nf = re.match(r"^(\d+)\.(\d+)", v)
+        if m_nf:
+            major = int(m_nf.group(1))
+            minor = int(m_nf.group(2))
+            if major == 20 and minor < 5:
+                return 17
+            elif major >= 26:
+                return 25
+            else:
+                return 21
+        return 21
+
 register_provider(NeoForgeProvider())

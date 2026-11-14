@@ -1,0 +1,3881 @@
+{
+  "overall_passed": true,
+  "summary_text": "Multi-Core Benchmark PASSED: Aggregate CPU=210.7%, Active Cores=32, TPS=20.00, MSPT=1.4ms, Threads=19",
+  "criteria": [
+    {
+      "name": "Aggregate Multi-Core CPU Utilization",
+      "expected": ">100.0% aggregate CPU",
+      "actual": "210.7% (peak: 210.7%, avg: 164.7%)",
+      "passed": true,
+      "details": "Un-clamped CPU exceeding single-core 100.0% boundary confirms parallel multi-core execution."
+    },
+    {
+      "name": "Active Core Distribution",
+      "expected": ">=2 active logical cores",
+      "actual": "32 cores",
+      "passed": true,
+      "details": "Measured parallel activity across 32 CPU cores."
+    },
+    {
+      "name": "Concurrent Worker Threads",
+      "expected": ">=2 worker threads",
+      "actual": "19 active threads",
+      "passed": true,
+      "details": "Thread scaling verified with 19 concurrent threads."
+    },
+    {
+      "name": "Stable Server Tick Rate (TPS)",
+      "expected": ">=19.8 TPS (20 TPS target)",
+      "actual": "20.00 TPS (min: 20.00)",
+      "passed": true,
+      "details": "Server maintains full 20 TPS tick rate under concurrent multi-client load."
+    },
+    {
+      "name": "Tick Time Bounding (MSPT)",
+      "expected": "<=50.0 ms",
+      "actual": "1.4 ms (max: 12.0 ms)",
+      "passed": true,
+      "details": "Tick processing finishes well within the 50ms budget for stable 20 TPS."
+    },
+    {
+      "name": "Zero Leaks & Operational Hygiene",
+      "expected": "0 crashes, 0 orphan processes, 0 port leaks",
+      "actual": "0 crashes, 0 orphans, 0 port leaks",
+      "passed": true,
+      "details": "Zero resource leaks, zero dangling processes, and clean socket closure."
+    }
+  ],
+  "metrics": {
+    "duration_sec": 5.68,
+    "samples_count": 29,
+    "peak_aggregate_cpu": 210.7,
+    "avg_aggregate_cpu": 164.7,
+    "active_cores_count": 32,
+    "per_core_avg_cpu": [
+      44.9,
+      14.0,
+      17.6,
+      11.8,
+      12.1,
+      5.3,
+      31.0,
+      28.4,
+      2.5,
+      0.9,
+      7.7,
+      2.8,
+      6.5,
+      2.6,
+      31.4,
+      17.6,
+      4.4,
+      5.6,
+      1.4,
+      1.5,
+      3.0,
+      1.9,
+      1.9,
+      0.6,
+      0.6,
+      0.3,
+      22.5,
+      29.9,
+      5.1,
+      4.0,
+      8.4,
+      6.8
+    ],
+    "peak_active_threads": 19,
+    "avg_active_threads": 18.2,
+    "min_tps": 20.0,
+    "avg_tps": 20.0,
+    "max_mspt": 12.0,
+    "avg_mspt": 1.4,
+    "thread_distribution": [
+      {
+        "id": 14884,
+        "name": "worker-14884",
+        "cpu_percent": 10.4,
+        "user_time": 0.09375,
+        "system_time": 0.203125
+      },
+      {
+        "id": 6832,
+        "name": "worker-6832",
+        "cpu_percent": 10.4,
+        "user_time": 0.0,
+        "system_time": 0.0
+      },
+      {
+        "id": 8740,
+        "name": "worker-8740",
+        "cpu_percent": 10.4,
+        "user_time": 0.0,
+        "system_time": 0.0
+      },
+      {
+        "id": 31564,
+        "name": "worker-31564",
+        "cpu_percent": 10.4,
+        "user_time": 0.0,
+        "system_time": 0.0
+      },
+      {
+        "id": 5840,
+        "name": "worker-5840",
+        "cpu_percent": 10.4,
+        "user_time": 0.765625,
+        "system_time": 1.046875
+      },
+      {
+        "id": 28932,
+        "name": "worker-28932",
+        "cpu_percent": 10.4,
+        "user_time": 0.984375,
+        "system_time": 1.046875
+      },
+      {
+        "id": 13676,
+        "name": "worker-13676",
+        "cpu_percent": 10.4,
+        "user_time": 0.796875,
+        "system_time": 1.234375
+      },
+      {
+        "id": 4248,
+        "name": "worker-4248",
+        "cpu_percent": 10.4,
+        "user_time": 1.046875,
+        "system_time": 0.921875
+      },
+      {
+        "id": 21936,
+        "name": "worker-21936",
+        "cpu_percent": 10.4,
+        "user_time": 0.0,
+        "system_time": 0.0
+      },
+      {
+        "id": 13540,
+        "name": "worker-13540",
+        "cpu_percent": 10.4,
+        "user_time": 0.15625,
+        "system_time": 1.078125
+      },
+      {
+        "id": 31404,
+        "name": "worker-31404",
+        "cpu_percent": 10.4,
+        "user_time": 0.0,
+        "system_time": 0.0
+      },
+      {
+        "id": 7124,
+        "name": "worker-7124",
+        "cpu_percent": 10.4,
+        "user_time": 0.015625,
+        "system_time": 0.015625
+      }
+    ],
+    "snapshots": [
+      {
+        "timestamp": 1794658628.365861,
+        "aggregate_cpu": 0.0,
+        "per_core_cpu": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 0,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 0.0,
+            "user_time": 0.0625,
+            "system_time": 0.03125
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 0.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 0.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 0.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 0.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 0.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 0.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 0.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 0.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 0.0,
+            "user_time": 0.015625,
+            "system_time": 0.03125
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 12.0,
+        "memory_mb": 24.6
+      },
+      {
+        "timestamp": 1794658628.5586388,
+        "aggregate_cpu": 210.7,
+        "per_core_cpu": [
+          42.9,
+          15.4,
+          23.1,
+          16.7,
+          23.1,
+          0.0,
+          46.2,
+          38.5,
+          0.0,
+          0.0,
+          7.7,
+          0.0,
+          7.7,
+          0.0,
+          61.5,
+          15.4,
+          0.0,
+          0.0,
+          7.1,
+          0.0,
+          0.0,
+          0.0,
+          6.7,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          15.4,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 11.1,
+            "user_time": 0.0625,
+            "system_time": 0.03125
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 11.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 11.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 11.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 11.1,
+            "user_time": 0.03125,
+            "system_time": 0.046875
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 11.1,
+            "user_time": 0.0625,
+            "system_time": 0.015625
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 11.1,
+            "user_time": 0.046875,
+            "system_time": 0.0625
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 11.1,
+            "user_time": 0.046875,
+            "system_time": 0.046875
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 11.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 11.1,
+            "user_time": 0.03125,
+            "system_time": 0.046875
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 11.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 11.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 10.6,
+        "memory_mb": 24.2
+      },
+      {
+        "timestamp": 1794658628.7494264,
+        "aggregate_cpu": 163.8,
+        "per_core_cpu": [
+          64.3,
+          16.7,
+          16.7,
+          15.4,
+          33.3,
+          25.0,
+          41.7,
+          58.3,
+          7.7,
+          8.3,
+          0.0,
+          25.0,
+          16.7,
+          8.3,
+          41.7,
+          38.5,
+          5.0,
+          0.0,
+          7.7,
+          7.7,
+          0.0,
+          7.7,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          28.6,
+          33.3,
+          7.7,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.6,
+            "user_time": 0.0625,
+            "system_time": 0.03125
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.6,
+            "user_time": 0.0625,
+            "system_time": 0.078125
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.6,
+            "user_time": 0.109375,
+            "system_time": 0.09375
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.6,
+            "user_time": 0.0625,
+            "system_time": 0.109375
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.6,
+            "user_time": 0.0625,
+            "system_time": 0.0625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.6,
+            "user_time": 0.03125,
+            "system_time": 0.078125
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 6.2,
+        "memory_mb": 24.2
+      },
+      {
+        "timestamp": 1794658628.9409666,
+        "aggregate_cpu": 195.8,
+        "per_core_cpu": [
+          50.0,
+          25.0,
+          25.0,
+          16.7,
+          8.3,
+          0.0,
+          57.1,
+          33.3,
+          0.0,
+          0.0,
+          8.3,
+          8.3,
+          0.0,
+          0.0,
+          50.0,
+          33.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 10.3,
+            "user_time": 0.0625,
+            "system_time": 0.03125
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 10.3,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 10.3,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 10.3,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 10.3,
+            "user_time": 0.125,
+            "system_time": 0.109375
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 10.3,
+            "user_time": 0.15625,
+            "system_time": 0.140625
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 10.3,
+            "user_time": 0.09375,
+            "system_time": 0.15625
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 10.3,
+            "user_time": 0.09375,
+            "system_time": 0.109375
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 10.3,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 10.3,
+            "user_time": 0.03125,
+            "system_time": 0.125
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 10.3,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 10.3,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 4.3,
+        "memory_mb": 24.2
+      },
+      {
+        "timestamp": 1794658629.1323788,
+        "aggregate_cpu": 163.3,
+        "per_core_cpu": [
+          57.1,
+          33.3,
+          25.0,
+          16.7,
+          16.7,
+          16.7,
+          41.7,
+          16.7,
+          8.3,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          8.3,
+          33.3,
+          50.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          9.1,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.6,
+            "user_time": 0.0625,
+            "system_time": 0.03125
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.6,
+            "user_time": 0.140625,
+            "system_time": 0.140625
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.6,
+            "user_time": 0.171875,
+            "system_time": 0.21875
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.6,
+            "user_time": 0.09375,
+            "system_time": 0.203125
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.6,
+            "user_time": 0.125,
+            "system_time": 0.15625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.6,
+            "user_time": 0.03125,
+            "system_time": 0.171875
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 3.3,
+        "memory_mb": 24.2
+      },
+      {
+        "timestamp": 1794658629.3240163,
+        "aggregate_cpu": 187.5,
+        "per_core_cpu": [
+          35.7,
+          15.4,
+          15.4,
+          0.0,
+          15.4,
+          16.7,
+          38.5,
+          46.2,
+          0.0,
+          0.0,
+          15.4,
+          7.7,
+          16.7,
+          0.0,
+          57.1,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 9.9,
+            "user_time": 0.0625,
+            "system_time": 0.03125
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 9.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 9.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 9.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 9.9,
+            "user_time": 0.1875,
+            "system_time": 0.171875
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 9.9,
+            "user_time": 0.203125,
+            "system_time": 0.25
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 9.9,
+            "user_time": 0.140625,
+            "system_time": 0.21875
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 9.9,
+            "user_time": 0.1875,
+            "system_time": 0.203125
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 9.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 9.9,
+            "user_time": 0.03125,
+            "system_time": 0.203125
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 9.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 9.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 2.7,
+        "memory_mb": 24.2
+      },
+      {
+        "timestamp": 1794658629.5147493,
+        "aggregate_cpu": 209.4,
+        "per_core_cpu": [
+          50.0,
+          8.3,
+          8.3,
+          23.1,
+          8.3,
+          0.0,
+          25.0,
+          53.8,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          75.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 11.0,
+            "user_time": 0.078125,
+            "system_time": 0.0625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 11.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 11.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 11.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 11.0,
+            "user_time": 0.25,
+            "system_time": 0.203125
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 11.0,
+            "user_time": 0.234375,
+            "system_time": 0.28125
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 11.0,
+            "user_time": 0.171875,
+            "system_time": 0.265625
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 11.0,
+            "user_time": 0.21875,
+            "system_time": 0.234375
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 11.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 11.0,
+            "user_time": 0.03125,
+            "system_time": 0.234375
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 11.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 11.0,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 2.2,
+        "memory_mb": 24.2
+      },
+      {
+        "timestamp": 1794658629.706026,
+        "aggregate_cpu": 179.7,
+        "per_core_cpu": [
+          61.5,
+          8.3,
+          41.7,
+          16.7,
+          8.3,
+          8.3,
+          38.5,
+          50.0,
+          8.3,
+          0.0,
+          8.3,
+          8.3,
+          0.0,
+          0.0,
+          50.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 9.5,
+            "user_time": 0.078125,
+            "system_time": 0.0625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 9.5,
+            "user_time": 0.25,
+            "system_time": 0.234375
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 9.5,
+            "user_time": 0.28125,
+            "system_time": 0.296875
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 9.5,
+            "user_time": 0.21875,
+            "system_time": 0.328125
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 9.5,
+            "user_time": 0.28125,
+            "system_time": 0.28125
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 9.5,
+            "user_time": 0.03125,
+            "system_time": 0.28125
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.2
+      },
+      {
+        "timestamp": 1794658629.897697,
+        "aggregate_cpu": 163.0,
+        "per_core_cpu": [
+          73.3,
+          8.3,
+          16.7,
+          25.0,
+          16.7,
+          8.3,
+          35.7,
+          46.2,
+          0.0,
+          8.3,
+          16.7,
+          8.3,
+          0.0,
+          8.3,
+          50.0,
+          8.3,
+          0.0,
+          0.0,
+          9.1,
+          0.0,
+          16.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.6,
+            "user_time": 0.078125,
+            "system_time": 0.0625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.6,
+            "user_time": 0.296875,
+            "system_time": 0.265625
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.6,
+            "user_time": 0.296875,
+            "system_time": 0.359375
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.6,
+            "user_time": 0.234375,
+            "system_time": 0.390625
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.6,
+            "user_time": 0.28125,
+            "system_time": 0.3125
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.6,
+            "user_time": 0.03125,
+            "system_time": 0.328125
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.2
+      },
+      {
+        "timestamp": 1794658630.088806,
+        "aggregate_cpu": 179.9,
+        "per_core_cpu": [
+          50.0,
+          16.7,
+          46.2,
+          23.1,
+          16.7,
+          0.0,
+          38.5,
+          41.7,
+          0.0,
+          8.3,
+          16.7,
+          0.0,
+          25.0,
+          16.7,
+          58.3,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          15.4,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 9.5,
+            "user_time": 0.078125,
+            "system_time": 0.0625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 9.5,
+            "user_time": 0.328125,
+            "system_time": 0.3125
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 9.5,
+            "user_time": 0.3125,
+            "system_time": 0.390625
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 9.5,
+            "user_time": 0.265625,
+            "system_time": 0.453125
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 9.5,
+            "user_time": 0.296875,
+            "system_time": 0.375
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 9.5,
+            "user_time": 0.03125,
+            "system_time": 0.375
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.2
+      },
+      {
+        "timestamp": 1794658630.280504,
+        "aggregate_cpu": 179.3,
+        "per_core_cpu": [
+          35.7,
+          23.1,
+          28.6,
+          0.0,
+          0.0,
+          7.7,
+          53.8,
+          38.5,
+          0.0,
+          0.0,
+          7.7,
+          7.7,
+          7.7,
+          0.0,
+          30.8,
+          21.4,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 9.4,
+            "user_time": 0.078125,
+            "system_time": 0.0625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 9.4,
+            "user_time": 0.328125,
+            "system_time": 0.359375
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 9.4,
+            "user_time": 0.34375,
+            "system_time": 0.453125
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 9.4,
+            "user_time": 0.3125,
+            "system_time": 0.5
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 9.4,
+            "user_time": 0.34375,
+            "system_time": 0.390625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 9.4,
+            "user_time": 0.03125,
+            "system_time": 0.40625
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658630.5014093,
+        "aggregate_cpu": 181.0,
+        "per_core_cpu": [
+          61.1,
+          21.4,
+          14.3,
+          0.0,
+          14.3,
+          7.1,
+          53.3,
+          50.0,
+          0.0,
+          0.0,
+          7.1,
+          0.0,
+          0.0,
+          0.0,
+          78.6,
+          28.6,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          7.1,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 9.5,
+            "user_time": 0.078125,
+            "system_time": 0.109375
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 9.5,
+            "user_time": 0.34375,
+            "system_time": 0.421875
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 9.5,
+            "user_time": 0.40625,
+            "system_time": 0.46875
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 9.5,
+            "user_time": 0.34375,
+            "system_time": 0.546875
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 9.5,
+            "user_time": 0.359375,
+            "system_time": 0.453125
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 9.5,
+            "user_time": 0.046875,
+            "system_time": 0.421875
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 9.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658630.6930761,
+        "aggregate_cpu": 142.8,
+        "per_core_cpu": [
+          40.0,
+          16.7,
+          16.7,
+          0.0,
+          16.7,
+          8.3,
+          41.7,
+          33.3,
+          0.0,
+          0.0,
+          16.7,
+          0.0,
+          0.0,
+          0.0,
+          41.7,
+          16.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 7.5,
+            "user_time": 0.078125,
+            "system_time": 0.109375
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 7.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 7.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 7.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 7.5,
+            "user_time": 0.390625,
+            "system_time": 0.4375
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 7.5,
+            "user_time": 0.421875,
+            "system_time": 0.515625
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 7.5,
+            "user_time": 0.34375,
+            "system_time": 0.609375
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 7.5,
+            "user_time": 0.390625,
+            "system_time": 0.484375
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 7.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 7.5,
+            "user_time": 0.046875,
+            "system_time": 0.484375
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 7.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 7.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658630.8845847,
+        "aggregate_cpu": 163.2,
+        "per_core_cpu": [
+          57.1,
+          16.7,
+          33.3,
+          8.3,
+          25.0,
+          8.3,
+          53.8,
+          25.0,
+          33.3,
+          0.0,
+          25.0,
+          0.0,
+          25.0,
+          16.7,
+          50.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.6,
+            "user_time": 0.078125,
+            "system_time": 0.109375
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.6,
+            "user_time": 0.40625,
+            "system_time": 0.484375
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.6,
+            "user_time": 0.46875,
+            "system_time": 0.546875
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.6,
+            "user_time": 0.375,
+            "system_time": 0.640625
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.6,
+            "user_time": 0.421875,
+            "system_time": 0.5
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.6,
+            "user_time": 0.0625,
+            "system_time": 0.515625
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658631.076704,
+        "aggregate_cpu": 178.9,
+        "per_core_cpu": [
+          57.1,
+          7.7,
+          21.4,
+          15.4,
+          21.4,
+          0.0,
+          46.2,
+          38.5,
+          7.7,
+          0.0,
+          30.8,
+          0.0,
+          15.4,
+          7.7,
+          61.5,
+          14.3,
+          0.0,
+          0.0,
+          0.0,
+          7.7,
+          7.7,
+          7.7,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 9.4,
+            "user_time": 0.078125,
+            "system_time": 0.109375
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 9.4,
+            "user_time": 0.421875,
+            "system_time": 0.546875
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 9.4,
+            "user_time": 0.5,
+            "system_time": 0.59375
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 9.4,
+            "user_time": 0.40625,
+            "system_time": 0.703125
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 9.4,
+            "user_time": 0.453125,
+            "system_time": 0.515625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 9.4,
+            "user_time": 0.0625,
+            "system_time": 0.5625
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658631.2734878,
+        "aggregate_cpu": 182.6,
+        "per_core_cpu": [
+          68.8,
+          0.0,
+          46.2,
+          16.7,
+          16.7,
+          8.3,
+          33.3,
+          41.7,
+          8.3,
+          0.0,
+          16.7,
+          0.0,
+          8.3,
+          0.0,
+          53.8,
+          16.7,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          16.7,
+          0.0,
+          0.0,
+          0.0,
+          7.7
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 9.6,
+            "user_time": 0.078125,
+            "system_time": 0.109375
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 9.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 9.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 9.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 9.6,
+            "user_time": 0.4375,
+            "system_time": 0.5625
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 9.6,
+            "user_time": 0.5625,
+            "system_time": 0.640625
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 9.6,
+            "user_time": 0.4375,
+            "system_time": 0.734375
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 9.6,
+            "user_time": 0.515625,
+            "system_time": 0.5625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 9.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 9.6,
+            "user_time": 0.0625,
+            "system_time": 0.609375
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 9.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 9.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658631.4693418,
+        "aggregate_cpu": 191.5,
+        "per_core_cpu": [
+          26.7,
+          7.7,
+          7.7,
+          7.7,
+          0.0,
+          0.0,
+          42.9,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          7.7,
+          0.0,
+          23.1,
+          7.7,
+          7.7,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          78.6,
+          53.8,
+          7.7,
+          0.0,
+          15.4,
+          15.4
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 10.1,
+            "user_time": 0.078125,
+            "system_time": 0.109375
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 10.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 10.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 10.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 10.1,
+            "user_time": 0.453125,
+            "system_time": 0.625
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 10.1,
+            "user_time": 0.625,
+            "system_time": 0.671875
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 10.1,
+            "user_time": 0.484375,
+            "system_time": 0.75
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 10.1,
+            "user_time": 0.5625,
+            "system_time": 0.609375
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 10.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 10.1,
+            "user_time": 0.078125,
+            "system_time": 0.640625
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 10.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 10.1,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658631.6651878,
+        "aggregate_cpu": 179.0,
+        "per_core_cpu": [
+          42.9,
+          16.7,
+          30.8,
+          16.7,
+          8.3,
+          8.3,
+          16.7,
+          23.1,
+          0.0,
+          0.0,
+          8.3,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          25.0,
+          8.3,
+          16.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          50.0,
+          58.3,
+          23.1,
+          8.3,
+          16.7,
+          33.3
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 9.4,
+            "user_time": 0.078125,
+            "system_time": 0.140625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 9.4,
+            "user_time": 0.46875,
+            "system_time": 0.671875
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 9.4,
+            "user_time": 0.640625,
+            "system_time": 0.703125
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 9.4,
+            "user_time": 0.484375,
+            "system_time": 0.78125
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 9.4,
+            "user_time": 0.640625,
+            "system_time": 0.625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 9.4,
+            "user_time": 0.078125,
+            "system_time": 0.6875
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 9.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658631.8603446,
+        "aggregate_cpu": 168.1,
+        "per_core_cpu": [
+          53.3,
+          23.1,
+          7.7,
+          21.4,
+          15.4,
+          7.7,
+          0.0,
+          15.4,
+          0.0,
+          0.0,
+          7.7,
+          7.7,
+          0.0,
+          0.0,
+          7.7,
+          23.1,
+          0.0,
+          0.0,
+          15.4,
+          21.4,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          7.7,
+          46.2,
+          78.6,
+          15.4,
+          7.7,
+          30.8,
+          7.7
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.8,
+            "user_time": 0.078125,
+            "system_time": 0.140625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.8,
+            "user_time": 0.484375,
+            "system_time": 0.703125
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.8,
+            "user_time": 0.65625,
+            "system_time": 0.75
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.8,
+            "user_time": 0.5,
+            "system_time": 0.84375
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.8,
+            "user_time": 0.671875,
+            "system_time": 0.6875
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.8,
+            "user_time": 0.078125,
+            "system_time": 0.734375
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658632.0547194,
+        "aggregate_cpu": 168.8,
+        "per_core_cpu": [
+          23.1,
+          0.0,
+          8.3,
+          0.0,
+          8.3,
+          0.0,
+          16.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          25.0,
+          0.0,
+          16.7,
+          0.0,
+          0.0,
+          15.4,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          41.7,
+          75.0,
+          15.4,
+          16.7,
+          8.3,
+          8.3
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.9,
+            "user_time": 0.078125,
+            "system_time": 0.140625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.9,
+            "user_time": 0.515625,
+            "system_time": 0.703125
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.9,
+            "user_time": 0.6875,
+            "system_time": 0.796875
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.9,
+            "user_time": 0.515625,
+            "system_time": 0.890625
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.9,
+            "user_time": 0.703125,
+            "system_time": 0.75
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.9,
+            "user_time": 0.109375,
+            "system_time": 0.75
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.9,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658632.2485902,
+        "aggregate_cpu": 145.1,
+        "per_core_cpu": [
+          47.1,
+          7.7,
+          7.7,
+          14.3,
+          7.7,
+          0.0,
+          0.0,
+          30.8,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          7.7,
+          0.0,
+          23.1,
+          28.6,
+          21.4,
+          28.6,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          38.5,
+          46.2,
+          15.4,
+          15.4,
+          7.7,
+          7.7
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 7.6,
+            "user_time": 0.078125,
+            "system_time": 0.140625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 7.6,
+            "user_time": 0.5625,
+            "system_time": 0.765625
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 7.6,
+            "user_time": 0.703125,
+            "system_time": 0.8125
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 7.6,
+            "user_time": 0.5625,
+            "system_time": 0.921875
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 7.6,
+            "user_time": 0.703125,
+            "system_time": 0.765625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 7.6,
+            "user_time": 0.109375,
+            "system_time": 0.78125
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658632.4415662,
+        "aggregate_cpu": 161.9,
+        "per_core_cpu": [
+          58.8,
+          8.3,
+          16.7,
+          25.0,
+          16.7,
+          8.3,
+          8.3,
+          16.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          16.7,
+          0.0,
+          8.3,
+          25.0,
+          15.4,
+          16.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          8.3,
+          0.0,
+          0.0,
+          58.3,
+          50.0,
+          8.3,
+          8.3,
+          16.7,
+          8.3
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.5,
+            "user_time": 0.078125,
+            "system_time": 0.140625
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.5,
+            "user_time": 0.578125,
+            "system_time": 0.8125
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.5,
+            "user_time": 0.703125,
+            "system_time": 0.859375
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.5,
+            "user_time": 0.625,
+            "system_time": 0.953125
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.5,
+            "user_time": 0.75,
+            "system_time": 0.796875
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.5,
+            "user_time": 0.109375,
+            "system_time": 0.828125
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658632.636403,
+        "aggregate_cpu": 155.5,
+        "per_core_cpu": [
+          46.7,
+          7.7,
+          15.4,
+          15.4,
+          0.0,
+          0.0,
+          33.3,
+          15.4,
+          0.0,
+          0.0,
+          16.7,
+          7.7,
+          7.7,
+          0.0,
+          15.4,
+          7.7,
+          15.4,
+          7.7,
+          0.0,
+          0.0,
+          8.3,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          61.5,
+          46.2,
+          0.0,
+          14.3,
+          0.0,
+          7.7
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.2,
+            "user_time": 0.09375,
+            "system_time": 0.171875
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.2,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.2,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.2,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.2,
+            "user_time": 0.59375,
+            "system_time": 0.828125
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.2,
+            "user_time": 0.734375,
+            "system_time": 0.890625
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.2,
+            "user_time": 0.625,
+            "system_time": 1.0
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.2,
+            "user_time": 0.78125,
+            "system_time": 0.828125
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.2,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.2,
+            "user_time": 0.125,
+            "system_time": 0.84375
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.2,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.2,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658632.829405,
+        "aggregate_cpu": 161.9,
+        "per_core_cpu": [
+          42.9,
+          25.0,
+          0.0,
+          16.7,
+          8.3,
+          0.0,
+          7.7,
+          16.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          9.1,
+          9.1,
+          8.3,
+          16.7,
+          8.3,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          41.7,
+          75.0,
+          16.7,
+          0.0,
+          23.1,
+          16.7
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.5,
+            "user_time": 0.09375,
+            "system_time": 0.171875
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.5,
+            "user_time": 0.625,
+            "system_time": 0.875
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.5,
+            "user_time": 0.75,
+            "system_time": 0.921875
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.5,
+            "user_time": 0.65625,
+            "system_time": 1.078125
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.5,
+            "user_time": 0.8125,
+            "system_time": 0.84375
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.5,
+            "user_time": 0.140625,
+            "system_time": 0.875
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.5,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658633.0240705,
+        "aggregate_cpu": 144.5,
+        "per_core_cpu": [
+          30.8,
+          30.8,
+          0.0,
+          16.7,
+          0.0,
+          0.0,
+          8.3,
+          15.4,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          7.7,
+          0.0,
+          8.3,
+          8.3,
+          0.0,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          30.8,
+          61.5,
+          16.7,
+          23.1,
+          16.7,
+          8.3
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 7.6,
+            "user_time": 0.09375,
+            "system_time": 0.171875
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 7.6,
+            "user_time": 0.65625,
+            "system_time": 0.890625
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 7.6,
+            "user_time": 0.78125,
+            "system_time": 0.96875
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 7.6,
+            "user_time": 0.65625,
+            "system_time": 1.109375
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 7.6,
+            "user_time": 0.875,
+            "system_time": 0.859375
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 7.6,
+            "user_time": 0.140625,
+            "system_time": 0.921875
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 7.6,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.3
+      },
+      {
+        "timestamp": 1794658633.2195063,
+        "aggregate_cpu": 183.9,
+        "per_core_cpu": [
+          26.7,
+          0.0,
+          7.7,
+          0.0,
+          7.7,
+          7.7,
+          38.5,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          15.4,
+          7.7,
+          14.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          14.3,
+          7.7,
+          7.7,
+          0.0,
+          30.8,
+          61.5,
+          0.0,
+          0.0,
+          53.8,
+          42.9
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 9.7,
+            "user_time": 0.09375,
+            "system_time": 0.171875
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 9.7,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 9.7,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 9.7,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 9.7,
+            "user_time": 0.703125,
+            "system_time": 0.953125
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 9.7,
+            "user_time": 0.84375,
+            "system_time": 0.984375
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 9.7,
+            "user_time": 0.671875,
+            "system_time": 1.125
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 9.7,
+            "user_time": 0.9375,
+            "system_time": 0.890625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 9.7,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 9.7,
+            "user_time": 0.140625,
+            "system_time": 0.96875
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 9.7,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 9.7,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.4
+      },
+      {
+        "timestamp": 1794658633.4133296,
+        "aggregate_cpu": 129.0,
+        "per_core_cpu": [
+          42.9,
+          16.7,
+          16.7,
+          0.0,
+          0.0,
+          8.3,
+          25.0,
+          23.1,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          8.3,
+          8.3,
+          8.3,
+          8.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          58.3,
+          33.3,
+          0.0,
+          8.3,
+          25.0,
+          8.3
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 6.8,
+            "user_time": 0.09375,
+            "system_time": 0.171875
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 6.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 6.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 6.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 6.8,
+            "user_time": 0.734375,
+            "system_time": 1.0
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 6.8,
+            "user_time": 0.859375,
+            "system_time": 1.0
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 6.8,
+            "user_time": 0.703125,
+            "system_time": 1.1875
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 6.8,
+            "user_time": 0.9375,
+            "system_time": 0.890625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 6.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 6.8,
+            "user_time": 0.140625,
+            "system_time": 1.015625
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 6.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 6.8,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.4
+      },
+      {
+        "timestamp": 1794658633.6080103,
+        "aggregate_cpu": 160.5,
+        "per_core_cpu": [
+          7.7,
+          15.4,
+          7.7,
+          7.7,
+          23.1,
+          0.0,
+          23.1,
+          14.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          7.7,
+          30.8,
+          15.4,
+          15.4,
+          0.0,
+          7.7,
+          7.7,
+          7.7,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          40.0,
+          53.8,
+          15.4,
+          7.7,
+          15.4,
+          0.0
+        ],
+        "active_threads": 19,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 8.4,
+            "user_time": 0.09375,
+            "system_time": 0.171875
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 8.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 8.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 8.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 8.4,
+            "user_time": 0.75,
+            "system_time": 1.046875
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 8.4,
+            "user_time": 0.9375,
+            "system_time": 1.03125
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 8.4,
+            "user_time": 0.71875,
+            "system_time": 1.203125
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 8.4,
+            "user_time": 1.0,
+            "system_time": 0.890625
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 8.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 8.4,
+            "user_time": 0.140625,
+            "system_time": 1.046875
+          },
+          {
+            "id": 3952,
+            "name": "worker-3952",
+            "cpu_percent": 8.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 18620,
+            "name": "worker-18620",
+            "cpu_percent": 8.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 24.4
+      },
+      {
+        "timestamp": 1794658633.844,
+        "aggregate_cpu": 145.7,
+        "per_core_cpu": [
+          47.4,
+          13.3,
+          6.7,
+          6.7,
+          13.3,
+          0.0,
+          33.3,
+          25.0,
+          0.0,
+          0.0,
+          6.2,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          13.3,
+          6.7,
+          13.3,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          13.3,
+          60.0,
+          6.7,
+          6.7,
+          13.3,
+          25.0
+        ],
+        "active_threads": 14,
+        "thread_metrics": [
+          {
+            "id": 14884,
+            "name": "worker-14884",
+            "cpu_percent": 10.4,
+            "user_time": 0.09375,
+            "system_time": 0.203125
+          },
+          {
+            "id": 6832,
+            "name": "worker-6832",
+            "cpu_percent": 10.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 8740,
+            "name": "worker-8740",
+            "cpu_percent": 10.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 31564,
+            "name": "worker-31564",
+            "cpu_percent": 10.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 5840,
+            "name": "worker-5840",
+            "cpu_percent": 10.4,
+            "user_time": 0.765625,
+            "system_time": 1.046875
+          },
+          {
+            "id": 28932,
+            "name": "worker-28932",
+            "cpu_percent": 10.4,
+            "user_time": 0.984375,
+            "system_time": 1.046875
+          },
+          {
+            "id": 13676,
+            "name": "worker-13676",
+            "cpu_percent": 10.4,
+            "user_time": 0.796875,
+            "system_time": 1.234375
+          },
+          {
+            "id": 4248,
+            "name": "worker-4248",
+            "cpu_percent": 10.4,
+            "user_time": 1.046875,
+            "system_time": 0.921875
+          },
+          {
+            "id": 21936,
+            "name": "worker-21936",
+            "cpu_percent": 10.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 13540,
+            "name": "worker-13540",
+            "cpu_percent": 10.4,
+            "user_time": 0.15625,
+            "system_time": 1.078125
+          },
+          {
+            "id": 31404,
+            "name": "worker-31404",
+            "cpu_percent": 10.4,
+            "user_time": 0.0,
+            "system_time": 0.0
+          },
+          {
+            "id": 7124,
+            "name": "worker-7124",
+            "cpu_percent": 10.4,
+            "user_time": 0.015625,
+            "system_time": 0.015625
+          }
+        ],
+        "tps": 20.0,
+        "mspt": 0.0,
+        "memory_mb": 25.0
+      }
+    ]
+  }
+}

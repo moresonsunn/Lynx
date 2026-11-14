@@ -70,7 +70,7 @@ from plugins_routes import router as plugins_router
 from realtime_routes import router as realtime_router
 from advanced_api_routes import router as advanced_api_router
 from client_mod_routes import router as client_mod_router
-from server_permissions import router as permissions_router
+from server_permissions import router as permissions_router, require_server_permission
 from auth import require_auth, get_current_user, require_admin, require_moderator, require_permission, get_password_hash, verify_token, get_user_by_username
 from scheduler import get_scheduler
 from stats_history import start_collector as start_stats_collector, stop_collector as stop_stats_collector, get_stats_history
@@ -79,7 +79,7 @@ from backup_scheduler import (
     get_remote_config, set_remote_config, test_remote_connection,
     start_backup_scheduler, stop_backup_scheduler,
 )
-from models import User
+from models import User, ThreadMetric, ServerStatsResponse, ServerPerformanceDetailResponse
 from config import SERVERS_ROOT, APP_NAME, APP_VERSION, safe_child_path
 import json
 import asyncio
@@ -306,7 +306,7 @@ async def startup_event():
                     logging.warning("ADMIN_PASSWORD env var present but too short (<8); ignoring for security.")
                 else:
                     db_sess = SessionLocal()
-                    from models import User
+                    from models import User, ThreadMetric, ServerStatsResponse, ServerPerformanceDetailResponse
                     admin_user = db_sess.query(User).filter(User.username == 'admin').first()
                     if admin_user:
                         # Use bulk update pattern to avoid ORM attribute typing issues under some analyzers
@@ -520,24 +520,12 @@ def suggest_port(
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-class ServerCreateRequest(BaseModel):
-    name: str
-    type: str  # e.g. vanilla, paper, purpur, fabric, forge, neoforge
-    version: str  # minecraft version (e.g. 1.21.1)
-    host_port: int | None = None  # if omitted/None we will auto-pick an available port
-    loader_version: str | None = None  # specific loader build (fabric/forge/etc.)
-    installer_version: str | None = None  # for installers that have separate versioning
-    min_ram: int | str | None = None  # MB or string like "512M"; None = use Settings > Server Defaults
-    max_ram: int | str | None = None  # MB or string like "2G";  None = use Settings > Server Defaults
-    cpu_cores: int | None = None  # max CPU cores this server may use; None = unlimited
-
-class ServerImportRequest(BaseModel):
-    name: str  # Must match existing directory under SERVERS_CONTAINER_ROOT
-    host_port: int | None = None
-    min_ram: int | str = 1024
-    max_ram: int | str = 2048
-    java_version: str | None = None  # optional preferred Java version (8/11/17/21)
-    cpu_cores: int | None = None  # max CPU cores; None = unlimited
+from models import (
+    ServerCreateRequest,
+    ServerImportRequest,
+    ServerMulticoreUpdateRequest,
+    ServerMulticoreStatusResponse,
+)
 
 @app.post("/api/servers/import")
 def import_server(req: ServerImportRequest, current_user: User = Depends(require_permission("server.create"))):
@@ -645,14 +633,55 @@ def import_server(req: ServerImportRequest, current_user: User = Depends(require
             # Detection should never block an import.
             pass
 
-        result = dm.create_server_from_existing(
-            name=req.name,
-            host_port=req.host_port,
-            min_ram=min_ram,
-            max_ram=max_ram,
-            extra_env=extra_env or None,
-            cpu_cores=req.cpu_cores,
-        )
+        # Wire multicore environment preparation for imported server
+        try:
+            from multicore import get_concurrency_profile, prepare_server_multicore_env
+            from local_runtime import _infer_java_version
+            st_type = detected_type or "vanilla"
+            jv_val = _infer_java_version(server_dir, st_type, detected_version, explicit_jvm=req.java_version)
+            ram_mb_val = req.max_ram if isinstance(req.max_ram, int) else 2048
+            profile = get_concurrency_profile(
+                cpu_cores=req.cpu_cores,
+                ram_mb=ram_mb_val,
+                java_version=jv_val,
+                mode=req.multicore_mode or "auto",
+                enforce_multicore=req.multicore_enabled,
+            )
+            if req.worker_threads is not None and req.worker_threads >= 1:
+                profile.worker_threads = req.worker_threads
+            multicore_env = prepare_server_multicore_env(server_dir, profile, st_type)
+            extra_env.update(multicore_env)
+
+            meta["multicore_enabled"] = req.multicore_enabled
+            meta["multicore_mode"] = profile.mode
+            meta["multicore_threads"] = profile.worker_threads
+            meta["allocated_cores"] = profile.allocated_cores
+            meta["jvm_flags"] = profile.jvm_flags
+            meta["agent_path"] = profile.agent_path
+            if req.worker_threads is not None:
+                meta["worker_threads"] = req.worker_threads
+            meta_path.write_text(_json.dumps(meta, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.debug(f"Multicore prep during import notice: {e}")
+
+        existing_kwargs = {
+            "name": req.name,
+            "host_port": req.host_port,
+            "min_ram": min_ram,
+            "max_ram": max_ram,
+            "extra_env": extra_env or None,
+            "cpu_cores": req.cpu_cores,
+        }
+        import inspect
+        sig = inspect.signature(dm.create_server_from_existing)
+        if "multicore_enabled" in sig.parameters:
+            existing_kwargs["multicore_enabled"] = req.multicore_enabled
+        if "multicore_mode" in sig.parameters:
+            existing_kwargs["multicore_mode"] = req.multicore_mode
+        if "worker_threads" in sig.parameters:
+            existing_kwargs["worker_threads"] = req.worker_threads
+
+        result = dm.create_server_from_existing(**existing_kwargs)
         # Enrich with host_port lookup (best effort)
         try:
             if isinstance(result, dict) and 'id' in result and 'host_port' not in result:
@@ -696,11 +725,73 @@ def create_server(req: ServerCreateRequest, current_user: User = Depends(require
         
         min_ram = format_ram(effective_min_ram)
         max_ram = format_ram(effective_max_ram)
-        
+
+        # Wire multicore env & prepare files before launch
+        server_dir = safe_child_path(SERVERS_ROOT, req.name)
+        server_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            from multicore import get_concurrency_profile, prepare_server_multicore_env
+            from local_runtime import _infer_java_version
+            jv_val = _infer_java_version(server_dir, req.type, req.version)
+            ram_mb_val = effective_max_ram if isinstance(effective_max_ram, int) else 2048
+            profile = get_concurrency_profile(
+                cpu_cores=req.cpu_cores,
+                ram_mb=ram_mb_val,
+                java_version=jv_val,
+                mode=req.multicore_mode or "auto",
+                enforce_multicore=req.multicore_enabled,
+            )
+            if req.worker_threads is not None and req.worker_threads >= 1:
+                profile.worker_threads = req.worker_threads
+            prepare_server_multicore_env(server_dir, profile, req.type)
+
+            meta_path = server_dir / "server_meta.json"
+            meta = {}
+            if meta_path.exists():
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    meta = {}
+            meta.update({
+                "name": req.name,
+                "type": req.type,
+                "version": req.version,
+                "java_version": jv_val,
+                "multicore_enabled": req.multicore_enabled,
+                "multicore_mode": profile.mode,
+                "multicore_threads": profile.worker_threads,
+                "allocated_cores": profile.allocated_cores,
+                "jvm_flags": profile.jvm_flags,
+                "agent_path": profile.agent_path,
+            })
+            if req.cpu_cores:
+                meta["cpu_cores"] = req.cpu_cores
+            if req.worker_threads:
+                meta["worker_threads"] = req.worker_threads
+            meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Failed to prepare multicore env during create_server: {e}")
+
         # Pass loader_version if present, otherwise None
-        result = get_docker_manager().create_server(
-            req.name, req.type, req.version, req.host_port, req.loader_version, min_ram, max_ram, req.installer_version,
-            cpu_cores=req.cpu_cores,
+        dm = get_docker_manager()
+        create_kwargs = {
+            "loader_version": req.loader_version,
+            "installer_version": req.installer_version,
+            "min_ram": min_ram,
+            "max_ram": max_ram,
+            "cpu_cores": req.cpu_cores,
+        }
+        import inspect
+        sig = inspect.signature(dm.create_server)
+        if "multicore_enabled" in sig.parameters:
+            create_kwargs["multicore_enabled"] = req.multicore_enabled
+        if "multicore_mode" in sig.parameters:
+            create_kwargs["multicore_mode"] = req.multicore_mode
+        if "worker_threads" in sig.parameters:
+            create_kwargs["worker_threads"] = req.worker_threads
+
+        result = dm.create_server(
+            req.name, req.type, req.version, req.host_port, **create_kwargs
         )
         # Enrich with selected host port if possible (best effort)
         try:
@@ -719,6 +810,194 @@ def create_server(req: ServerCreateRequest, current_user: User = Depends(require
         return result
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Docker unavailable: {e}")
+
+
+@app.get("/api/servers/{id}/multicore")
+@app.get("/servers/{id}/multicore")
+def get_server_multicore_status(
+    id: str,
+    current_user: User = Depends(require_server_permission("view", param_name="id")),
+):
+    try:
+        server_dir = safe_child_path(SERVERS_ROOT, id)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Server {id} not found")
+
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Server {id} not found")
+
+    meta_file = server_dir / "server_meta.json"
+    meta = {}
+    if meta_file.exists():
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+
+    import psutil
+    is_active = False
+    pid_file = server_dir / ".server.pid"
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text().strip())
+            is_active = psutil.pid_exists(pid)
+        except Exception:
+            is_active = False
+    else:
+        try:
+            dm = get_docker_manager()
+            if dm.__class__.__name__ == "DockerManager":
+                info = dm.get_server_info(id)
+                if info and info.get("status") in ("running", "online"):
+                    is_active = True
+        except Exception:
+            pass
+
+    enabled = meta.get("multicore_enabled", True)
+    mode = meta.get("multicore_mode", "auto")
+    allocated_cores = meta.get("allocated_cores")
+    worker_threads = meta.get("worker_threads") or meta.get("multicore_threads")
+    jvm_flags = meta.get("jvm_flags") or []
+
+    if allocated_cores is None or not jvm_flags or worker_threads is None:
+        from multicore import get_concurrency_profile
+        jv = meta.get("java_version", 21)
+        cores = meta.get("cpu_cores")
+        ram_mb = meta.get("max_ram_mb", 2048)
+        profile = get_concurrency_profile(
+            cpu_cores=cores,
+            ram_mb=ram_mb,
+            java_version=jv,
+            mode=mode,
+            enforce_multicore=enabled,
+        )
+        allocated_cores = profile.allocated_cores
+        worker_threads = profile.worker_threads
+        jvm_flags = profile.jvm_flags
+
+    return {
+        "enabled": enabled,
+        "mode": mode,
+        "allocated_cores": allocated_cores,
+        "worker_threads": worker_threads,
+        "jvm_flags": jvm_flags,
+        "active": is_active,
+    }
+
+
+@app.post("/api/servers/{id}/multicore")
+@app.post("/servers/{id}/multicore")
+def update_server_multicore_status(
+    id: str,
+    req: ServerMulticoreUpdateRequest,
+    current_user: User = Depends(require_server_permission("manage", param_name="id")),
+):
+    try:
+        server_dir = safe_child_path(SERVERS_ROOT, id)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Server {id} not found")
+
+    if not server_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Server {id} not found")
+
+    VALID_MODES = {"auto", "parallel_dimensions", "parallel_entities", "high_throughput", "single_core"}
+    cleaned_mode = None
+    if req.mode is not None:
+        cleaned_mode = req.mode.strip().lower()
+        if cleaned_mode not in VALID_MODES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid multicore mode: '{req.mode}'. Allowed modes: {sorted(list(VALID_MODES))}",
+            )
+
+    if req.worker_threads is not None and req.worker_threads < 1:
+        raise HTTPException(status_code=400, detail="worker_threads must be >= 1")
+
+    if req.cpu_cores is not None and req.cpu_cores < 1:
+        raise HTTPException(status_code=400, detail="cpu_cores must be >= 1")
+
+    meta_file = server_dir / "server_meta.json"
+    meta = {}
+    if meta_file.exists():
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+
+    if req.enabled is not None:
+        meta["multicore_enabled"] = req.enabled
+    if cleaned_mode is not None:
+        meta["multicore_mode"] = cleaned_mode
+    if req.worker_threads is not None:
+        meta["worker_threads"] = req.worker_threads
+    if req.cpu_cores is not None:
+        meta["cpu_cores"] = req.cpu_cores
+
+    from multicore import get_concurrency_profile, prepare_server_multicore_env
+
+    cores = meta.get("cpu_cores")
+    ram_mb = meta.get("max_ram_mb", 2048)
+    jv = meta.get("java_version", 21)
+    enabled = meta.get("multicore_enabled", True)
+    mode = meta.get("multicore_mode", "auto")
+
+    profile = get_concurrency_profile(
+        cpu_cores=cores,
+        ram_mb=ram_mb,
+        java_version=jv,
+        mode=mode,
+        enforce_multicore=enabled,
+    )
+    if meta.get("worker_threads"):
+        profile.worker_threads = int(meta["worker_threads"])
+
+    server_type = meta.get("type") or meta.get("server_type") or "vanilla"
+    prepare_server_multicore_env(server_dir, profile, server_type)
+
+    meta["allocated_cores"] = profile.allocated_cores
+    meta["multicore_threads"] = profile.worker_threads
+    meta["jvm_flags"] = profile.jvm_flags
+    meta["agent_path"] = profile.agent_path
+    meta_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    import psutil
+    is_active = False
+    live_applied = False
+    pid_file = server_dir / ".server.pid"
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text().strip())
+            if psutil.pid_exists(pid):
+                is_active = True
+                from local_runtime import _apply_cpu_affinity
+                live_applied = _apply_cpu_affinity(
+                    pid, profile.allocated_cores if enabled else 1
+                )
+        except Exception as e:
+            logger.debug(f"Failed to apply live affinity for {id}: {e}")
+    else:
+        try:
+            dm = get_docker_manager()
+            if dm.__class__.__name__ == "DockerManager":
+                info = dm.get_server_info(id)
+                if info and info.get("status") in ("running", "online"):
+                    is_active = True
+                    if hasattr(dm, "update_server_cpu"):
+                        dm.update_server_cpu(id, profile.allocated_cores if enabled else 1)
+                        live_applied = True
+        except Exception:
+            pass
+
+    return {
+        "enabled": enabled,
+        "mode": profile.mode,
+        "allocated_cores": profile.allocated_cores,
+        "worker_threads": profile.worker_threads,
+        "jvm_flags": profile.jvm_flags,
+        "active": is_active,
+        "live_applied": live_applied,
+    }
+
 
 from server_permissions import require_server_permission
 
@@ -845,14 +1124,28 @@ def get_server_resources(container_id: str, current_user: User = Depends(require
         response = {
             "id": stats.get("id", container_id),
             "cpu_percent": stats.get("cpu_percent", 0.0),
+            "cpu_percent_aggregate": stats.get("cpu_percent_aggregate", stats.get("cpu_percent", 0.0)),
+            "cpu_percent_normalized": stats.get("cpu_percent_normalized", 0.0),
+            "per_core_cpu": stats.get("per_core_cpu", []),
+            "active_threads": stats.get("active_threads", 0),
+            "thread_metrics": stats.get("thread_metrics", []),
             "memory_usage_mb": stats.get("memory_usage_mb", 0.0),
+            "memory_used_mb": stats.get("memory_used_mb", stats.get("memory_usage_mb", 0.0)),
             "memory_limit_mb": stats.get("memory_limit_mb", 0.0),
             "memory_percent": stats.get("memory_percent", 0.0),
             "network_rx_mb": stats.get("network_rx_mb", 0.0),
             "network_tx_mb": stats.get("network_tx_mb", 0.0),
             "player_count": players.get("online", 0),
+            "tps": stats.get("tps"),
+            "mspt": stats.get("mspt"),
             "resources": {
                 "cpu_percent": stats.get("cpu_percent", 0.0),
+                "cpu_percent_normalized": stats.get("cpu_percent_normalized", 0.0),
+                "per_core_cpu": stats.get("per_core_cpu", []),
+                "active_threads": stats.get("active_threads", 0),
+                "thread_metrics": stats.get("thread_metrics", []),
+                "tps": stats.get("tps"),
+                "mspt": stats.get("mspt"),
                 "memory": {
                     "used_mb": stats.get("memory_usage_mb", 0.0),
                     "limit_mb": stats.get("memory_limit_mb", 0.0),
@@ -911,6 +1204,110 @@ def get_server_stats(container_id: str, current_user: User = Depends(require_ser
         return get_docker_manager().get_server_stats(container_id)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Stats unavailable: {e}")
+
+@app.get("/api/servers/{container_id}/performance", response_model=ServerPerformanceDetailResponse)
+def get_server_performance_detail(
+    container_id: str,
+    current_user: User = Depends(require_server_permission("view")),
+):
+    try:
+        dm = get_docker_manager()
+        srv_info = None
+        try:
+            srv_info = dm.get_server_info(container_id)
+        except Exception:
+            srv_info = None
+
+        if srv_info is None or not srv_info.get("exists", True):
+            if hasattr(dm, "server_exists") and not dm.server_exists(container_id):
+                raise HTTPException(status_code=404, detail="Server not found")
+
+        stats = dm.get_server_stats(container_id)
+        if stats.get("error") and (stats.get("status") == "error" or "not found" in str(stats.get("error")).lower()):
+            raise HTTPException(status_code=404, detail=stats.get("error"))
+
+        # Multicore status
+        multicore_mode = "auto"
+        allocated_cores = 1
+        worker_threads = 1
+        try:
+            if hasattr(dm, "get_server_multicore_status"):
+                mc_status = dm.get_server_multicore_status(container_id)
+                multicore_mode = mc_status.get("mode", "auto")
+                allocated_cores = mc_status.get("allocated_cores", 1)
+                worker_threads = mc_status.get("worker_threads", 1)
+        except Exception:
+            pass
+
+        # Multicore efficiency: ratio of active worker thread load to total load
+        multicore_efficiency = 1.0
+        th_metrics = stats.get("thread_metrics") or []
+        cpu_pct = stats.get("cpu_percent") or 0.0
+        if cpu_pct > 0 and th_metrics:
+            worker_sum = sum(th.get("cpu_percent", 0.0) for th in th_metrics)
+            multicore_efficiency = round(min(1.0, max(0.0, worker_sum / cpu_pct)), 2)
+
+        # Recent TPS / MSPT window from history
+        tps_history_sample = []
+        mspt_history_sample = []
+        try:
+            from stats_history import get_stats_history
+            hist = get_stats_history(container_id, hours=1, resolution=0)
+            if hist:
+                tps_history_sample = [r["tps"] for r in hist[-5:] if r.get("tps") is not None]
+                mspt_history_sample = [r["mspt"] for r in hist[-5:] if r.get("mspt") is not None]
+        except Exception:
+            pass
+        if not tps_history_sample and stats.get("tps") is not None:
+            tps_history_sample = [stats["tps"]]
+        if not mspt_history_sample and stats.get("mspt") is not None:
+            mspt_history_sample = [stats["mspt"]]
+
+        server_name = (srv_info.get("name") if srv_info else None) or stats.get("server_name") or container_id
+        status = (srv_info.get("status") if srv_info else None) or stats.get("health_status") or "running"
+
+        stats_obj = ServerStatsResponse(
+            id=container_id,
+            server_name=server_name,
+            status=status,
+            cpu_percent=stats.get("cpu_percent", 0.0),
+            cpu_percent_aggregate=stats.get("cpu_percent_aggregate", stats.get("cpu_percent", 0.0)),
+            cpu_percent_normalized=stats.get("cpu_percent_normalized", 0.0),
+            per_core_cpu=stats.get("per_core_cpu", []),
+            active_threads=stats.get("active_threads", 0),
+            thread_metrics=[ThreadMetric(**tm) if isinstance(tm, dict) else tm for tm in th_metrics],
+            memory_usage_mb=stats.get("memory_usage_mb", 0.0),
+            memory_used_mb=stats.get("memory_used_mb", stats.get("memory_usage_mb", 0.0)),
+            memory_limit_mb=stats.get("memory_limit_mb", 0.0),
+            memory_percent=stats.get("memory_percent", 0.0),
+            network_rx_mb=stats.get("network_rx_mb", 0.0),
+            network_tx_mb=stats.get("network_tx_mb", 0.0),
+            uptime_seconds=stats.get("uptime_seconds", 0),
+            restart_count=stats.get("restart_count", 0),
+            health_status=stats.get("health_status", "unknown"),
+            player_count=stats.get("player_count", 0),
+            tps=stats.get("tps"),
+            mspt=stats.get("mspt"),
+            multicore_enabled=True,
+            error=stats.get("error"),
+        )
+
+        return ServerPerformanceDetailResponse(
+            server_id=container_id,
+            server_name=server_name,
+            status=status,
+            stats=stats_obj,
+            multicore_mode=multicore_mode,
+            allocated_cores=allocated_cores,
+            worker_threads=worker_threads,
+            multicore_efficiency=multicore_efficiency,
+            tps_history_sample=tps_history_sample,
+            mspt_history_sample=mspt_history_sample,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Performance stats unavailable: {e}")
 
 @app.get("/api/servers/{container_id}/stats/history")
 def get_server_stats_history(

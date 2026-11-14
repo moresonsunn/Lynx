@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Premain-Class: com.lynx.multicore.agent.MultiCoreAgent
+Agent-Class: com.lynx.multicore.agent.MultiCoreAgent
+Can-Redefine-Classes: true
+Can-Retransform-Classes: true
+Created-By: Minecraft-Controller LMCE
+

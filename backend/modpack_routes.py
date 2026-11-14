@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, HttpUrl
-from typing import Optional, Dict, Any, List, Set
+from typing import Optional, Dict, Any, List, Set, Union, Tuple
 from pathlib import Path
 import asyncio
 from datetime import datetime, timezone
@@ -13,6 +13,7 @@ import threading
 import time
 import json
 import uuid
+import hashlib
 from urllib.parse import urlparse
 import os
 import re
@@ -30,6 +31,11 @@ from client_mod_detector import (
     process_client_pack,
     is_client_only_jar,
 )
+try:
+    from client_mod_filter import is_mod_allowlisted
+except ImportError:
+    def is_mod_allowlisted(server_dir, filename, mod_id=None):
+        return False
 
 log = logging.getLogger(__name__)
 
@@ -94,10 +100,36 @@ def get_docker_manager():
     return get_runtime_manager_or_docker()
 
 
+def _get_server_level_name(server_dir: Optional[Union[Path, str]]) -> str:
+    """Reads level-name from server.properties in server_dir, defaulting to 'world'."""
+    if not server_dir:
+        return "world"
+    props_path = Path(server_dir) / "server.properties"
+    if props_path.is_file():
+        try:
+            content = props_path.read_text(encoding="utf-8", errors="ignore")
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    if k.strip().lower() == "level-name":
+                        val = v.strip().strip('"').strip("'")
+                        if val:
+                            return val
+        except Exception:
+            pass
+    return "world"
+
+get_server_level_name = _get_server_level_name
+
+
 PROTECTED_PREFIXES = (
     "world",
     "world_nether",
     "world_the_end",
+    "saves",
     "backups",
     "logs",
     "crash-reports",
@@ -113,21 +145,70 @@ PROTECTED_EXACT_FILES = {
     "usercache.json",
     "server-icon.png",
     "modpack.meta.json",
+    "server_meta.json",
+    "user_jvm_args.txt",
+    "mc-multicore-agent.jar",
     ".mod_side_report.json",
     "client-only-allow.json",
     "client-only-allow.txt",
 }
 
 
-def is_path_protected(rel_path: str) -> bool:
+def is_world_path(rel_path: str, level_name: Optional[str] = None) -> bool:
+    """Determines whether a relative path points to a world or save directory."""
+    norm = rel_path.replace("\\", "/").strip("/").lower()
+    first_part = norm.split("/")[0]
+
+    if first_part.startswith("world") or first_part == "saves":
+        return True
+
+    if level_name:
+        ln = level_name.strip().lower()
+        if ln and (first_part == ln or first_part.startswith(ln + "_")):
+            return True
+
+    return False
+
+
+def is_path_protected(
+    rel_path: str,
+    server_dir: Optional[Union[Path, str]] = None,
+    level_name: Optional[str] = None,
+) -> bool:
+    """
+    Determines whether rel_path is protected from deletion or overwrite.
+    Resolves dynamic level-name from server_dir / 'server.properties' if server_dir is provided.
+    """
+    if level_name is None and server_dir is not None:
+        level_name = _get_server_level_name(server_dir)
+
     norm = rel_path.replace("\\", "/").strip("/").lower()
     base_name = norm.split("/")[-1]
-    if base_name in {f.lower() for f in PROTECTED_EXACT_FILES} or norm in {f.lower() for f in PROTECTED_EXACT_FILES}:
+
+    # Exact protected files
+    exact_set = {f.lower() for f in PROTECTED_EXACT_FILES}
+    if base_name in exact_set or norm in exact_set:
         return True
+
+    # Wildcards: banned-*.json, client-only-allow.* (.json, .txt, .yaml, .yml)
+    if base_name.startswith("banned-") and base_name.endswith(".json"):
+        return True
+    if base_name.startswith("client-only-allow.") and any(
+        base_name.endswith(ext) for ext in (".json", ".txt", ".yaml", ".yml")
+    ):
+        return True
+
+    # World paths (dynamic level_name, level_name_nether, world*, saves)
+    if is_world_path(rel_path, level_name=level_name):
+        return True
+
+    # Standard protected prefixes
     first_part = norm.split("/")[0]
     for prefix in PROTECTED_PREFIXES:
-        if first_part == prefix.lower() or norm.startswith(prefix.lower() + "/"):
+        p_low = prefix.lower()
+        if first_part == p_low or norm.startswith(p_low + "/"):
             return True
+
     return False
 
 
@@ -283,6 +364,53 @@ def save_server_modpack_info(server_name: str, meta: dict) -> Path:
     return meta_path
 
 
+def _safe_is_mod_allowlisted(server_dir: Path, filename: str) -> bool:
+    """
+    Read-only check whether filename matches any allowlist pattern in
+    client-only-allow.json or client-only-allow.txt without mutating files on disk.
+    """
+    import fnmatch
+    s_dir = Path(server_dir)
+    patterns = []
+
+    # 1. Check client-only-allow.json (pure read)
+    jp = s_dir / "client-only-allow.json"
+    if jp.is_file():
+        try:
+            data = json.loads(jp.read_text(encoding="utf-8", errors="ignore"))
+            if isinstance(data, dict) and isinstance(data.get("entries"), list):
+                for e in data["entries"]:
+                    if isinstance(e, dict) and e.get("status", "active") == "active":
+                        p = e.get("pattern")
+                        if isinstance(p, str) and p.strip():
+                            patterns.append(p.strip().lower())
+        except Exception:
+            pass
+
+    # 2. Check client-only-allow.txt (pure read)
+    tp = s_dir / "client-only-allow.txt"
+    if tp.is_file():
+        try:
+            for line in tp.read_text(encoding="utf-8", errors="ignore").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    patterns.append(line.lower())
+        except Exception:
+            pass
+
+    if not patterns:
+        return False
+
+    fn_low = filename.lower()
+    fn_stem = Path(filename).stem.lower()
+    for pat in patterns:
+        if pat == fn_low or pat == fn_stem:
+            return True
+        if fnmatch.fnmatch(fn_low, pat) or fnmatch.fnmatch(fn_stem, pat):
+            return True
+    return False
+
+
 def reconcile_and_cleanup_modpack(
     server_dir: Path,
     staging_dir: Path,
@@ -310,7 +438,7 @@ def reconcile_and_cleanup_modpack(
     for target_d in scan_dirs:
         if not target_d.exists():
             continue
-        for jar_path in target_d.glob("*.jar"):
+        for jar_path in [p for p in target_d.iterdir() if p.is_file() and p.name.lower().endswith(".jar")]:
             try:
                 info = inspect_jar_metadata(jar_path)
                 mod_ids = set()
@@ -325,9 +453,21 @@ def reconcile_and_cleanup_modpack(
                 pass
 
     # 2. Method B: Inspect incoming jars in staging_dir
-    staged_mods = list(staging_dir.rglob("*.jar"))
+    staged_mods = [p for p in staging_dir.rglob("*") if p.is_file() and p.name.lower().endswith(".jar")]
     for s_jar in staged_mods:
         try:
+            # Check quarantine duplicate with exact same filename in disabled_dir
+            if disabled_dir.exists():
+                dup_quarantine = disabled_dir / s_jar.name
+                if dup_quarantine.is_file() and str(dup_quarantine.resolve()) not in deleted_paths:
+                    try:
+                        dup_quarantine.unlink()
+                        deleted_paths.add(str(dup_quarantine.resolve()))
+                        if dup_quarantine.name not in mods_cleaned:
+                            mods_cleaned.append(dup_quarantine.name)
+                    except OSError:
+                        pass
+
             s_info = inspect_jar_metadata(s_jar)
             s_mod_id = (s_info.get("mod_id") or "").strip().lower()
             incoming_mids = set()
@@ -340,30 +480,85 @@ def reconcile_and_cleanup_modpack(
             for mid in incoming_mids:
                 if mid in existing_mod_map:
                     for existing_jar in existing_mod_map[mid]:
-                        if existing_jar.name != s_jar.name and existing_jar.exists():
-                            try:
-                                existing_jar.unlink()
-                                deleted_paths.add(str(existing_jar.resolve()))
-                                if existing_jar.name not in mods_cleaned:
-                                    mods_cleaned.append(existing_jar.name)
-                            except OSError:
-                                pass
+                        is_in_disabled = disabled_dir.exists() and existing_jar.parent.resolve() == disabled_dir.resolve()
+                        if (existing_jar.name != s_jar.name or is_in_disabled) and existing_jar.exists():
+                            if str(existing_jar.resolve()) not in deleted_paths:
+                                try:
+                                    existing_jar.unlink()
+                                    deleted_paths.add(str(existing_jar.resolve()))
+                                    if existing_jar.name not in mods_cleaned:
+                                        mods_cleaned.append(existing_jar.name)
+                                except OSError:
+                                    pass
         except Exception:
             pass
 
-    # 3. Method A: Manifest-based file tracking from previous_meta
+    # 3. Method A: Manifest-based file tracking
     new_staged_files = {
         p.relative_to(staging_dir).as_posix()
         for p in staging_dir.rglob("*")
         if p.is_file()
     }
 
-    if previous_meta and isinstance(previous_meta.get("installed_files"), list):
+    old_files = set()
+    if previous_meta and isinstance(previous_meta.get("installed_files"), list) and previous_meta["installed_files"]:
         old_files = set(previous_meta["installed_files"])
+
+    if not old_files:
+        # Tier 1: server_dir / ".mod_side_report.json"
+        rep_p = server_dir / ".mod_side_report.json"
+        if rep_p.is_file():
+            try:
+                rep_data = json.loads(rep_p.read_text(encoding="utf-8", errors="ignore"))
+                for m in (rep_data.get("kept_mods", []) + rep_data.get("excluded_mods", [])):
+                    if isinstance(m, dict):
+                        fn = m.get("file_name") or m.get("name")
+                        if fn:
+                            old_files.add(f"mods/{fn}")
+            except Exception:
+                pass
+
+    if not old_files:
+        # Tier 2: server_dir / "server_meta.json"
+        sm_p = server_dir / "server_meta.json"
+        if sm_p.is_file():
+            try:
+                sm_data = json.loads(sm_p.read_text(encoding="utf-8", errors="ignore"))
+                if isinstance(sm_data.get("installed_files"), list) and sm_data["installed_files"]:
+                    old_files = set(sm_data["installed_files"])
+            except Exception:
+                pass
+
+    if not old_files:
+        # Tier 3: server_dir / "modpack.meta.json"
+        mm_p = server_dir / "modpack.meta.json"
+        if mm_p.is_file():
+            try:
+                mm_data = json.loads(mm_p.read_text(encoding="utf-8", errors="ignore"))
+                if isinstance(mm_data.get("installed_files"), list) and mm_data["installed_files"]:
+                    old_files = set(mm_data["installed_files"])
+            except Exception:
+                pass
+
+    # For managed modpacks with staged mods: fallback to prune removed mod JARs
+    is_managed = bool(
+        (previous_meta and (previous_meta.get("pack_id") or previous_meta.get("provider")))
+        or (server_dir / "modpack.meta.json").is_file()
+    )
+    if is_managed and staged_mods and not old_files:
+        staged_jar_names = {p.name for p in staged_mods}
+        for scan_d in scan_dirs:
+            if not scan_d.exists():
+                continue
+            for j in [p for p in scan_d.iterdir() if p.is_file() and p.name.lower().endswith(".jar")]:
+                if j.name not in staged_jar_names:
+                    old_files.add(f"mods/{j.name}")
+
+    if old_files:
         candidates_to_prune = old_files - new_staged_files
 
         for rel_str in candidates_to_prune:
-            if is_path_protected(rel_str):
+            if is_path_protected(rel_str, server_dir=server_dir):
                 continue
 
             norm_rel = Path(rel_str).as_posix().lstrip("/")
@@ -371,6 +566,9 @@ def reconcile_and_cleanup_modpack(
                 continue
 
             target_file = safe_child_path(server_dir, norm_rel)
+            if _safe_is_mod_allowlisted(server_dir, target_file.name):
+                continue
+
             if str(target_file.resolve()) in deleted_paths:
                 continue
 
@@ -388,13 +586,14 @@ def reconcile_and_cleanup_modpack(
             elif norm_rel.startswith("mods/"):
                 disabled_file = server_dir / "mods-disabled-client" / target_file.name
                 if disabled_file.is_file() and str(disabled_file.resolve()) not in deleted_paths:
-                    try:
-                        disabled_file.unlink()
-                        deleted_paths.add(str(disabled_file.resolve()))
-                        if disabled_file.name not in mods_cleaned:
-                            mods_cleaned.append(disabled_file.name)
-                    except OSError:
-                        pass
+                    if not _safe_is_mod_allowlisted(server_dir, disabled_file.name) and not is_path_protected(f"mods-disabled-client/{disabled_file.name}", server_dir=server_dir):
+                        try:
+                            disabled_file.unlink()
+                            deleted_paths.add(str(disabled_file.resolve()))
+                            if disabled_file.name not in mods_cleaned:
+                                mods_cleaned.append(disabled_file.name)
+                        except OSError:
+                            pass
 
     return {
         "mods_cleaned": sorted(mods_cleaned),
@@ -719,19 +918,21 @@ def _ensure_server_jar(
     loader: Optional[str],
     mc_version: Optional[str],
     loader_version: Optional[str],
-    push_event=lambda ev: None
+    push_event=lambda ev: None,
+    force: bool = False,
 ):
     """Ensure a runnable server jar or installer exists in target_dir.
     Attempts for known loaders; falls back to vanilla server.jar.
     """
     # Quick check for existing jar or run.sh
-    patterns = [
-        "server.jar", "run.sh", "neoforge-*-universal.jar", "*forge-*-universal.jar",
-        "forge-*-server.jar", "forge-*.jar", "*paper*.jar", "*purpur*.jar", "*fabric*.jar", "*server*.jar"
-    ]
-    for pat in patterns:
-        if list(target_dir.glob(pat)):
-            return  # something present already
+    if not force:
+        patterns = [
+            "server.jar", "run.sh", "neoforge-*-universal.jar", "*forge-*-universal.jar",
+            "forge-*-server.jar", "forge-*.jar", "*paper*.jar", "*purpur*.jar", "*fabric*.jar", "*server*.jar"
+        ]
+        for pat in patterns:
+            if list(target_dir.glob(pat)):
+                return  # something present already
 
     try:
         ldr = (loader or "").lower()
@@ -837,6 +1038,122 @@ def _ensure_server_jar(
                 pass
     except Exception as e:
         push_event({"type": "progress", "step": "server", "message": f"Auto-download failed: {e}", "progress": 63})
+
+
+def clean_obsolete_loader_artifacts(
+    server_dir: Union[Path, str],
+    current_loader: str,
+    target_loader: str,
+    mc_version_changed: bool = False,
+) -> List[str]:
+    """
+    Cleans obsolete launcher jars, run scripts, and loader libraries
+    when switching modloaders or updating Minecraft version.
+    Never touches world directories or protected config files.
+    """
+    s_dir = Path(server_dir)
+    cleaned = []
+    c_loader = (current_loader or "").strip().lower()
+    t_loader = (target_loader or "").strip().lower()
+    loader_changed = bool(c_loader and t_loader and c_loader != t_loader)
+
+    if not loader_changed and not mc_version_changed:
+        return cleaned
+
+    # 1. Clean obsolete execution scripts
+    script_patterns = ["run.sh", "run.bat", "run.ps1", "win_args.txt", "unix_args.txt"]
+    for sp in script_patterns:
+        f = s_dir / sp
+        if f.is_file() and not is_path_protected(sp, server_dir=s_dir):
+            try:
+                f.unlink()
+                cleaned.append(sp)
+            except OSError:
+                pass
+
+    # 2. Clean obsolete launcher JARs
+    jar_patterns = []
+    if loader_changed:
+        jar_patterns.extend([
+            "forge-*.jar", "neoforge-*.jar", "fabric-*.jar",
+            "fabric-server-launch.jar", "*installer*.jar", "server.jar"
+        ])
+    elif mc_version_changed:
+        jar_patterns.extend([
+            "forge-*.jar", "neoforge-*.jar", "fabric-server-launch.jar", "*installer*.jar"
+        ])
+
+    for pat in jar_patterns:
+        for jf in s_dir.glob(pat):
+            if jf.is_file() and not is_path_protected(jf.name, server_dir=s_dir):
+                try:
+                    jf.unlink()
+                    cleaned.append(jf.name)
+                except OSError:
+                    pass
+
+    # 3. Clean obsolete loader libraries in libraries/
+    libs_dir = s_dir / "libraries"
+    if libs_dir.is_dir():
+        if loader_changed:
+            if c_loader == "forge" and t_loader != "forge":
+                shutil.rmtree(libs_dir / "net" / "minecraftforge", ignore_errors=True)
+                cleaned.append("libraries/net/minecraftforge")
+            elif c_loader == "neoforge" and t_loader != "neoforge":
+                shutil.rmtree(libs_dir / "net" / "neoforged", ignore_errors=True)
+                cleaned.append("libraries/net/neoforged")
+            elif c_loader == "fabric" and t_loader != "fabric":
+                shutil.rmtree(libs_dir / "net" / "fabricmc", ignore_errors=True)
+                cleaned.append("libraries/net/fabricmc")
+
+    # Clean .fabric directory if switching away from Fabric
+    if c_loader == "fabric" and t_loader != "fabric":
+        fab_dir = s_dir / ".fabric"
+        if fab_dir.is_dir():
+            shutil.rmtree(fab_dir, ignore_errors=True)
+            cleaned.append(".fabric")
+
+    log.info(f"Cleaned obsolete loader artifacts in {s_dir.name}: {cleaned}")
+    return cleaned
+
+
+def _infer_java_version(server_dir: Optional[Union[Path, str]], loader: str, mc_version: str) -> int:
+    """Infers appropriate Java version (8, 17, 21, 25) based on target loader and MC version."""
+    st = (loader or "").strip().lower()
+    ver_str = (mc_version or "").strip()
+    m = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", ver_str)
+    if m:
+        major = int(m.group(1))
+        minor = int(m.group(2))
+        patch = int(m.group(3) or 0)
+        if major >= 26 or (major == 1 and minor >= 26):
+            return 25
+        if major == 1:
+            if st == "forge":
+                if minor <= 16:
+                    return 8
+                elif minor < 20 or (minor == 20 and patch < 5):
+                    return 17
+                else:
+                    return 21
+            elif st == "neoforge":
+                if minor == 20 and patch < 5:
+                    return 17
+                else:
+                    return 21
+            else:
+                if minor <= 16:
+                    return 8
+                elif minor < 20 or (minor == 20 and patch < 5):
+                    return 17
+                else:
+                    return 21
+        elif st == "neoforge" and major >= 20:
+            if major == 20 and minor < 5:
+                return 17
+            else:
+                return 21
+    return 21
 
 class ImportServerPackRequest(BaseModel):
     server_name: str
@@ -1835,6 +2152,72 @@ async def list_updates():
             continue
     return {"updates": updates}
 
+def _index_local_server_mods(server_dir: Optional[Union[Path, str]]) -> Dict[str, Any]:
+    """
+    Scans server_dir/mods and server_dir/mods-disabled-client.
+    Returns lookup tables by sha1, sha256, (name.lower(), size), and murmur2.
+    """
+    index: Dict[str, Any] = {
+        "by_sha1": {},
+        "by_sha256": {},
+        "by_name_and_size": {},
+        "by_murmur2": {},
+        "all_mods": [],
+    }
+    if not server_dir:
+        return index
+
+    s_dir = Path(server_dir)
+    if not s_dir.exists():
+        return index
+
+    scan_dirs = [s_dir / "mods"]
+    dis_dir = s_dir / "mods-disabled-client"
+    if dis_dir.exists():
+        scan_dirs.append(dis_dir)
+
+    for target_d in scan_dirs:
+        if not target_d.exists():
+            continue
+        for jar_path in [p for p in target_d.iterdir() if p.is_file() and p.name.lower().endswith(".jar")]:
+            try:
+                st = jar_path.stat()
+                size = st.st_size
+                h256 = hashlib.sha256()
+                h1 = hashlib.sha1()
+                with open(jar_path, "rb") as f:
+                    while chunk := f.read(65536):
+                        h256.update(chunk)
+                        h1.update(chunk)
+                sha256 = h256.hexdigest().lower()
+                sha1 = h1.hexdigest().lower()
+
+                murmur2 = None
+                try:
+                    from compat.evidence.collectors.remote import _cf_fingerprint
+                    murmur2 = _cf_fingerprint(str(jar_path))
+                except Exception:
+                    pass
+
+                entry = {
+                    "path": jar_path,
+                    "name": jar_path.name,
+                    "size": size,
+                    "sha1": sha1,
+                    "sha256": sha256,
+                    "murmur2": murmur2,
+                }
+                index["all_mods"].append(entry)
+                index["by_sha1"][sha1] = jar_path
+                index["by_sha256"][sha256] = jar_path
+                index["by_name_and_size"][(jar_path.name.lower(), size)] = jar_path
+                if murmur2 is not None:
+                    index["by_murmur2"][murmur2] = jar_path
+            except Exception as exc:
+                log.debug(f"Could not index mod jar {jar_path}: {exc}")
+    return index
+
+
 def _stage_modpack_version(
     provider_id: str,
     provider: Any,
@@ -1842,15 +2225,19 @@ def _stage_modpack_version(
     target_version_obj: Dict[str, Any],
     staging_dir: Path,
     tmpdir: Path,
+    server_dir: Optional[Union[Path, str]] = None,
 ) -> Dict[str, Any]:
     """
     Downloads and stages the target modpack version files into staging_dir.
-    Returns metadata dict: {"loader": ..., "minecraft_version": ..., "loader_version": ...}
+    Reuses unchanged mod JARs locally from server_dir when matching hashes/names.
+    Returns metadata dict: {"loader": ..., "minecraft_version": ..., "loader_version": ..., "reused_mods_count": ...}
     """
     staging_dir.mkdir(parents=True, exist_ok=True)
     loader = None
     mc_version = None
     loader_version = None
+    reused_mods_count = 0
+    local_index = _index_local_server_mods(server_dir) if server_dir else None
 
     if target_version_obj.get("loaders"):
         loader = target_version_obj["loaders"][0]
@@ -1879,8 +2266,33 @@ def _stage_modpack_version(
             f_name = str(f_entry.get("name") or Path(f_url).name)
             dest_file = safe_child_path(staging_dir, rel_path, f_name)
             dest_file.parent.mkdir(parents=True, exist_ok=True)
-            _download_to(dest_file, f_url, timeout=120)
-        return {"loader": loader, "minecraft_version": mc_version, "loader_version": loader_version}
+
+            # Incremental reuse check
+            matched_jar = None
+            f_sha1 = (f_entry.get("sha1") or "").lower()
+            f_size = f_entry.get("size")
+            if local_index:
+                if f_sha1:
+                    if f_sha1 in local_index["by_sha1"]:
+                        matched_jar = local_index["by_sha1"][f_sha1]
+                elif f_size and (f_name.lower(), f_size) in local_index["by_name_and_size"]:
+                    matched_jar = local_index["by_name_and_size"][(f_name.lower(), f_size)]
+                elif server_dir:
+                    cand = safe_child_path(Path(server_dir), rel_path, f_name)
+                    if cand.is_file() and (not f_size or cand.stat().st_size == f_size):
+                        matched_jar = cand
+
+            if matched_jar and matched_jar.is_file():
+                shutil.copy2(matched_jar, dest_file)
+                reused_mods_count += 1
+            else:
+                _download_to(dest_file, f_url, timeout=120)
+        return {
+            "loader": loader,
+            "minecraft_version": mc_version,
+            "loader_version": loader_version,
+            "reused_mods_count": reused_mods_count,
+        }
 
     # Path B: Modrinth / CurseForge / Zip archives
     files = target_version_obj.get("files") or []
@@ -1981,10 +2393,42 @@ def _stage_modpack_version(
                     continue
                 dest_p = safe_child_path(staging_dir, rel_p)
                 dest_p.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    _download_to(dest_p, downloads[0], timeout=120)
-                except Exception as de:
-                    log.warning(f"Failed Modrinth download {rel_p}: {de}")
+
+                # Incremental reuse check
+                hashes = entry.get("hashes") or {}
+                sha1_val = (hashes.get("sha1") or "").lower()
+                sha512_val = (hashes.get("sha512") or "").lower()
+                fsize = entry.get("fileSize") or entry.get("size")
+                fname = Path(rel_p).name
+                matched_jar = None
+
+                if local_index:
+                    if sha1_val:
+                        if sha1_val in local_index["by_sha1"]:
+                            matched_jar = local_index["by_sha1"][sha1_val]
+                    elif sha512_val and server_dir:
+                        cand = safe_child_path(Path(server_dir), rel_p)
+                        if cand.is_file():
+                            try:
+                                if hashlib.sha512(cand.read_bytes()).hexdigest().lower() == sha512_val:
+                                    matched_jar = cand
+                            except Exception:
+                                pass
+                    elif fsize and (fname.lower(), fsize) in local_index["by_name_and_size"]:
+                        matched_jar = local_index["by_name_and_size"][(fname.lower(), fsize)]
+                    elif server_dir:
+                        cand = safe_child_path(Path(server_dir), rel_p)
+                        if cand.is_file() and (not fsize or cand.stat().st_size == fsize):
+                            matched_jar = cand
+
+                if matched_jar and matched_jar.is_file():
+                    shutil.copy2(matched_jar, dest_p)
+                    reused_mods_count += 1
+                else:
+                    try:
+                        _download_to(dest_p, downloads[0], timeout=120)
+                    except Exception as de:
+                        log.warning(f"Failed Modrinth download {rel_p}: {de}")
         except Exception as e:
             log.warning(f"Failed parsing Modrinth index: {e}")
 
@@ -2009,18 +2453,48 @@ def _stage_modpack_version(
                             loader = "neoforge"
                             loader_version = ml_id[len("neoforge-"):]
 
+            resolved_files = []
             if hasattr(provider, "expand_manifest_files"):
                 try:
-                    resolved_files = provider.expand_manifest_files(cf_mani)
-                    for rf in resolved_files:
-                        dl = rf.get("downloadUrl")
-                        fname = rf.get("fileName") or f"{rf.get('id')}.jar"
-                        if dl:
-                            dest_mod = safe_child_path(staging_dir, "mods", fname)
-                            dest_mod.parent.mkdir(parents=True, exist_ok=True)
-                            _download_to(dest_mod, dl, timeout=120)
+                    resolved_files = provider.expand_manifest_files(cf_mani) or []
                 except Exception as cf_err:
                     log.warning(f"CurseForge expand_manifest_files error: {cf_err}")
+
+            if resolved_files:
+                for rf in resolved_files:
+                    dl = rf.get("downloadUrl")
+                    fname = rf.get("fileName") or f"{rf.get('id')}.jar"
+                    dest_mod = safe_child_path(staging_dir, "mods", fname)
+                    dest_mod.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Incremental reuse check
+                    matched_jar = None
+                    rf_hashes = rf.get("hashes") or []
+                    rf_sha1 = ""
+                    for h in rf_hashes:
+                        if isinstance(h, dict) and h.get("algo") == 1:
+                            rf_sha1 = (h.get("value") or "").lower()
+                    rf_fingerprint = rf.get("fingerprint")
+                    rf_size = rf.get("fileLength") or rf.get("size")
+
+                    if local_index:
+                        if rf_sha1 or rf_fingerprint:
+                            if rf_sha1 and rf_sha1 in local_index["by_sha1"]:
+                                matched_jar = local_index["by_sha1"][rf_sha1]
+                            elif rf_fingerprint and rf_fingerprint in local_index["by_murmur2"]:
+                                matched_jar = local_index["by_murmur2"][rf_fingerprint]
+                        elif rf_size and (fname.lower(), rf_size) in local_index["by_name_and_size"]:
+                            matched_jar = local_index["by_name_and_size"][(fname.lower(), rf_size)]
+                        elif server_dir:
+                            direct = Path(server_dir) / "mods" / fname
+                            if direct.is_file() and (not rf_size or direct.stat().st_size == rf_size):
+                                matched_jar = direct
+
+                    if matched_jar and matched_jar.is_file():
+                        shutil.copy2(matched_jar, dest_mod)
+                        reused_mods_count += 1
+                    elif dl:
+                        _download_to(dest_mod, dl, timeout=120)
             elif cf_mani.get("files"):
                 from modpack_providers.curseforge import CURSE_API_BASE
                 for cf_entry in cf_mani.get("files") or []:
@@ -2034,9 +2508,36 @@ def _stage_modpack_version(
                                 fd = fr.json().get("data") or {}
                                 dl = fd.get("downloadUrl")
                                 fname = fd.get("fileName") or f"{proj_id}-{file_id}.jar"
-                                if dl:
-                                    dest_mod = safe_child_path(staging_dir, "mods", fname)
-                                    dest_mod.parent.mkdir(parents=True, exist_ok=True)
+                                dest_mod = safe_child_path(staging_dir, "mods", fname)
+                                dest_mod.parent.mkdir(parents=True, exist_ok=True)
+
+                                # Incremental reuse check
+                                fd_size = fd.get("fileLength")
+                                fd_hashes = fd.get("hashes") or []
+                                fd_sha1 = ""
+                                for h in fd_hashes:
+                                    if isinstance(h, dict) and h.get("algo") == 1:
+                                        fd_sha1 = (h.get("value") or "").lower()
+                                fd_fp = fd.get("fingerprint")
+                                matched_jar = None
+
+                                if local_index:
+                                    if fd_sha1 or fd_fp:
+                                        if fd_sha1 and fd_sha1 in local_index["by_sha1"]:
+                                            matched_jar = local_index["by_sha1"][fd_sha1]
+                                        elif fd_fp and fd_fp in local_index["by_murmur2"]:
+                                            matched_jar = local_index["by_murmur2"][fd_fp]
+                                    elif fd_size and (fname.lower(), fd_size) in local_index["by_name_and_size"]:
+                                        matched_jar = local_index["by_name_and_size"][(fname.lower(), fd_size)]
+                                    elif server_dir:
+                                        direct = Path(server_dir) / "mods" / fname
+                                        if direct.is_file() and (not fd_size or direct.stat().st_size == fd_size):
+                                            matched_jar = direct
+
+                                if matched_jar and matched_jar.is_file():
+                                    shutil.copy2(matched_jar, dest_mod)
+                                    reused_mods_count += 1
+                                elif dl:
                                     _download_to(dest_mod, dl, timeout=120)
                         except Exception as de:
                             log.warning(f"Failed CurseForge file download {proj_id}/{file_id}: {de}")
@@ -2052,7 +2553,12 @@ def _stage_modpack_version(
     if not loader_version and meta_detect.get("loader_version"):
         loader_version = meta_detect.get("loader_version")
 
-    return {"loader": loader, "minecraft_version": mc_version, "loader_version": loader_version}
+    return {
+        "loader": loader,
+        "minecraft_version": mc_version,
+        "loader_version": loader_version,
+        "reused_mods_count": reused_mods_count,
+    }
 
 
 @router.get("/server/{server_name}/versions")
@@ -2109,12 +2615,19 @@ async def get_server_modpack_versions(
     if not current_ver_name and current_ver:
         current_ver_name = current_ver
 
+    current_loader = (info.get("loader") or "").strip().lower() or None
+    current_loader_version = (info.get("loader_version") or "").strip() or None
+    current_mc_version = (info.get("minecraft_version") or "").strip() or None
+
     return {
         "server_name": server_name,
         "provider": info["provider"],
         "pack_id": info["pack_id"],
         "current_version_id": current_ver or None,
         "current_version_name": current_ver_name or None,
+        "current_loader": current_loader,
+        "current_loader_version": current_loader_version,
+        "current_minecraft_version": current_mc_version,
         "versions": versions,
     }
 
@@ -2204,11 +2717,42 @@ async def update_server_modpack(
             target_version_obj=target_version_obj,
             staging_dir=staging_dir,
             tmpdir=tmpdir,
+            server_dir=server_dir,
         )
 
-        loader = staged_meta.get("loader") or modpack_info.get("loader")
-        loader_version = staged_meta.get("loader_version") or modpack_info.get("loader_version")
-        mc_version = staged_meta.get("minecraft_version") or modpack_info.get("minecraft_version")
+        current_loader = (modpack_info.get("loader") or "").strip().lower()
+        current_loader_version = (modpack_info.get("loader_version") or "").strip()
+        current_mc_version = (modpack_info.get("minecraft_version") or "").strip()
+
+        target_loader = (staged_meta.get("loader") or current_loader or "").strip().lower()
+        target_loader_version = (staged_meta.get("loader_version") or "").strip()
+        target_mc_version = (staged_meta.get("minecraft_version") or current_mc_version or "").strip()
+
+        loader_changed = bool(current_loader and target_loader and current_loader != target_loader)
+        mc_version_changed = bool(current_mc_version and target_mc_version and current_mc_version != target_mc_version)
+        migration_required = loader_changed or mc_version_changed
+
+        if migration_required:
+            log.info(
+                f"Modloader/MC migration detected for {server_name}: "
+                f"loader {current_loader} -> {target_loader}, mc {current_mc_version} -> {target_mc_version}"
+            )
+            clean_obsolete_loader_artifacts(
+                server_dir=server_dir,
+                current_loader=current_loader,
+                target_loader=target_loader,
+                mc_version_changed=mc_version_changed,
+            )
+            try:
+                _ensure_server_jar(
+                    target_dir=server_dir,
+                    loader=target_loader,
+                    mc_version=target_mc_version,
+                    loader_version=target_loader_version,
+                    force=True,
+                )
+            except Exception as eje:
+                log.warning(f"Error provisioning target loader jar for {server_name}: {eje}")
 
         # Cleanup: Method B + Method A
         cleanup_res = reconcile_and_cleanup_modpack(
@@ -2217,12 +2761,16 @@ async def update_server_modpack(
             previous_meta=modpack_info,
         )
 
-        # Copy staged files to server_dir
+        # Copy staged files to server_dir with strict world & protected path preservation
         mods_added = []
         for p in staging_dir.rglob("*"):
             if p.is_file():
                 rel = p.relative_to(staging_dir)
-                dest = safe_child_path(server_dir, rel.as_posix())
+                rel_str = rel.as_posix()
+                if is_path_protected(rel_str, server_dir=server_dir):
+                    log.info(f"Preserving protected path, skipping staging copy: {rel_str}")
+                    continue
+                dest = safe_child_path(server_dir, rel_str)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 is_jar = rel.parts and rel.parts[0] == "mods" and rel.suffix.lower() == ".jar"
                 if is_jar:
@@ -2236,13 +2784,13 @@ async def update_server_modpack(
         client_mods_filtered = []
         try:
             resolver = ModSideResolver(
-                minecraft_version=mc_version or "unknown",
-                modloader=loader or "unknown",
+                minecraft_version=target_mc_version or "unknown",
+                modloader=target_loader or "unknown",
             )
             filter_report = resolver.filter_server_mods(
                 server_dir=server_dir,
-                minecraft_version=mc_version,
-                modloader=loader,
+                minecraft_version=target_mc_version,
+                modloader=target_loader,
                 use_allowlist=True,
                 dry_run=False,
             )
@@ -2258,22 +2806,82 @@ async def update_server_modpack(
         new_installed_files = sorted([
             p.relative_to(staging_dir).as_posix()
             for p in staging_dir.rglob("*")
-            if p.is_file() and not is_path_protected(p.relative_to(staging_dir).as_posix())
+            if p.is_file() and not is_path_protected(p.relative_to(staging_dir).as_posix(), server_dir=server_dir)
         ])
         updated_meta = {
             "provider": provider_id,
             "pack_id": pack_id,
             "version_id": str(payload.target_version_id),
             "version_name": target_version_name,
-            "loader": loader,
-            "loader_version": loader_version,
-            "minecraft_version": mc_version,
+            "loader": target_loader,
+            "loader_version": target_loader_version or loader_version,
+            "minecraft_version": target_mc_version,
             "install_mode": modpack_info.get("install_mode", "server"),
             "installed_at": modpack_info.get("installed_at") or datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "installed_files": new_installed_files,
         }
         save_server_modpack_info(server_name, updated_meta)
+
+        # Update server_meta.json
+        sm_path = server_dir / "server_meta.json"
+        server_meta = {}
+        if sm_path.is_file():
+            try:
+                server_meta = json.loads(sm_path.read_text(encoding="utf-8"))
+            except Exception:
+                server_meta = {}
+
+        new_java_version = _infer_java_version(server_dir, target_loader, target_mc_version)
+        server_meta["server_type"] = target_loader
+        server_meta["mc_type"] = target_loader
+        server_meta["server_version"] = target_mc_version
+        server_meta["mc_version"] = target_mc_version
+        if target_loader_version:
+            server_meta["loader_version"] = target_loader_version
+        server_meta["java_version"] = str(new_java_version)
+        server_meta["modpack_version_id"] = str(payload.target_version_id)
+        server_meta["modpack_version_name"] = target_version_name
+        server_meta["installed_files"] = new_installed_files
+        server_meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            sm_path.write_text(json.dumps(server_meta, indent=2), encoding="utf-8")
+        except Exception as sme:
+            log.warning(f"Failed writing server_meta.json for {server_name}: {sme}")
+
+        # Re-apply Multi-Core concurrency profile & user_jvm_args.txt
+        try:
+            from multicore import get_concurrency_profile, prepare_server_multicore_env
+            mc_profile = get_concurrency_profile(
+                cpu_cores=server_meta.get("cpu_cores"),
+                ram_mb=server_meta.get("max_ram_mb", 2048),
+                java_version=new_java_version,
+                mode=server_meta.get("multicore_mode", "auto"),
+                enforce_multicore=server_meta.get("multicore_enabled", True),
+            )
+            prepare_server_multicore_env(
+                server_dir=server_dir,
+                profile=mc_profile,
+                server_type=target_loader,
+            )
+        except Exception as mce:
+            log.warning(f"Failed re-applying multicore environment for {server_name}: {mce}")
+
+        # If Docker container environment recreation is supported and migration occurred:
+        if was_running and container_id and migration_required:
+            if hasattr(dm, "recreate_server_with_env"):
+                try:
+                    await asyncio.to_thread(
+                        dm.recreate_server_with_env,
+                        container_id,
+                        env_overrides={
+                            "SERVER_TYPE": target_loader,
+                            "SERVER_VERSION": target_mc_version,
+                            "JAVA_VERSION": str(new_java_version),
+                        },
+                    )
+                except Exception as de:
+                    log.warning(f"Failed recreating Docker container for {server_name}: {de}")
 
         # Restart server if originally running
         if was_running and container_id:
@@ -2288,8 +2896,13 @@ async def update_server_modpack(
             "previous_version": previous_version_id,
             "updated_version": str(payload.target_version_id),
             "backup_created": backup_created,
+            "loader": target_loader,
+            "loader_migrated": loader_changed,
+            "minecraft_version": target_mc_version,
+            "mc_version_changed": mc_version_changed,
             "mods_cleaned": cleanup_res["mods_cleaned"],
             "mods_added": sorted(list(set(mods_added))),
+            "mods_reused": staged_meta.get("reused_mods_count", 0),
             "client_mods_filtered": sorted(list(set(client_mods_filtered))),
         }
     finally:

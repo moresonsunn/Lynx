@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  FaSyncAlt, FaCheckCircle, FaExclamationTriangle, FaTimes, FaSpinner
+  FaSyncAlt, FaCheckCircle, FaExclamationTriangle, FaTimes, FaSpinner, FaInfoCircle
 } from 'react-icons/fa';
 import { API, authHeaders } from '../../context/AppContext';
 import { useTranslation } from '../../i18n';
@@ -77,6 +77,30 @@ export default function ModpackUpdateModal({
     if (!modpackData?.versions) return null;
     return modpackData.versions.find(v => String(v.version_id) === String(selectedVersionId)) || null;
   }, [modpackData, selectedVersionId]);
+
+  const migrationInfo = useMemo(() => {
+    if (!modpackData || !selectedVersionObj) return null;
+    const curLoader = (modpackData.current_loader || '').toLowerCase().trim();
+    const curMC = (modpackData.current_minecraft_version || '').trim();
+
+    const targetLoaders = (selectedVersionObj.loaders || []).map(l => String(l).toLowerCase().trim());
+    const targetLoader = targetLoaders[0] || '';
+
+    const targetMCs = (selectedVersionObj.game_versions || []).map(v => String(v).trim());
+    const targetMC = targetMCs[0] || '';
+
+    const loaderMigrated = Boolean(curLoader && targetLoader && curLoader !== targetLoader);
+    const mcMigrated = Boolean(curMC && targetMC && curMC !== targetMC);
+
+    return {
+      loaderMigrated,
+      mcMigrated,
+      currentLoader: curLoader,
+      targetLoader,
+      currentMC: curMC,
+      targetMC,
+    };
+  }, [modpackData, selectedVersionObj]);
 
   const handleStartUpdate = async () => {
     if (!selectedVersionId || updateState === 'updating') return;
@@ -186,7 +210,19 @@ export default function ModpackUpdateModal({
             <>
               <div className="flex items-center justify-between text-sm bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5">
                 <span className="text-white/50">{t('modpackUpdate.currentVersion') || 'Current version'}</span>
-                <span className="text-white font-mono text-xs">{installedLabel}</span>
+                <div className="flex items-center gap-2">
+                  {modpackData?.current_loader && (
+                    <span className="px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300 text-[10px] uppercase font-mono font-bold">
+                      {modpackData.current_loader}
+                    </span>
+                  )}
+                  {modpackData?.current_minecraft_version && (
+                    <span className="text-white/40 text-xs font-mono">
+                      MC {modpackData.current_minecraft_version}
+                    </span>
+                  )}
+                  <span className="text-white font-mono text-xs">{installedLabel}</span>
+                </div>
               </div>
 
               <div>
@@ -208,6 +244,28 @@ export default function ModpackUpdateModal({
                   ))}
                 </select>
               </div>
+
+              {migrationInfo?.loaderMigrated && updateState !== 'success' && (
+                <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-200 space-y-1">
+                  <div className="font-semibold flex items-center gap-1.5 text-amber-300">
+                    <FaExclamationTriangle /> Modloader Migration: {migrationInfo.currentLoader} → {migrationInfo.targetLoader}
+                  </div>
+                  <p className="text-amber-200/80">
+                    The target modpack version uses a different modloader ({migrationInfo.targetLoader}). Obsolete loader files will be cleanly removed and the new loader environment will be provisioned automatically. All world saves, player data, and server settings are strictly preserved.
+                  </p>
+                </div>
+              )}
+
+              {migrationInfo?.mcMigrated && updateState !== 'success' && (
+                <div className="p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-lg text-xs text-blue-200 space-y-1">
+                  <div className="font-semibold flex items-center gap-1.5 text-blue-300">
+                    <FaInfoCircle /> Minecraft Version Update: MC {migrationInfo.currentMC} → {migrationInfo.targetMC}
+                  </div>
+                  <p className="text-blue-200/80">
+                    The Minecraft server version will be updated. Pre-update safety backup is automatically enabled to protect your world.
+                  </p>
+                </div>
+              )}
 
               {selectedVersionObj?.changelog?.trim() && updateState !== 'success' && (
                 <div>
@@ -256,12 +314,24 @@ export default function ModpackUpdateModal({
                       to: updateResult.updated_version,
                     })}
                   </div>
+                  {updateResult.loader_migrated && (
+                    <div className="text-amber-300/90 flex items-center gap-1.5 font-medium">
+                      <FaCheckCircle className="text-xs" />
+                      <span>Modloader migrated to {updateResult.loader}</span>
+                    </div>
+                  )}
                   <div className="text-white/60 flex flex-wrap gap-x-2.5 gap-y-1">
                     <span>{t('modpackUpdate.modsAddedCount', { count: updateResult.mods_added?.length || 0 })}</span>
                     <span>·</span>
                     <span>{t('modpackUpdate.modsCleanedCount', { count: updateResult.mods_cleaned?.length || 0 })}</span>
                     <span>·</span>
                     <span>{t('modpackUpdate.clientModsFilteredCount', { count: updateResult.client_mods_filtered?.length || 0 })}</span>
+                    {updateResult.mods_reused > 0 && (
+                      <>
+                        <span>·</span>
+                        <span className="text-brand-300">{updateResult.mods_reused} mods reused</span>
+                      </>
+                    )}
                   </div>
                   {updateResult.backup_created && (
                     <div className="text-white/40 font-mono truncate">

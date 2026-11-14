@@ -11,7 +11,7 @@ select_java_version() {
   echo "DEBUG: select_java_version: type='${server_type}', version='${version}'" >&2
     
     case "$server_type" in
-    "vanilla"|"paper"|"purpur")
+    "vanilla"|"paper"|"purpur"|"folia")
       # 1.8-1.16 -> Java 8; 1.17-1.18 -> Java 17; 1.19-1.21 -> Java 21; 26+ -> Java 25
             if [[ "$version" == 1.8* ]] || [[ "$version" == 1.9* ]] || [[ "$version" == 1.10* ]] || [[ "$version" == 1.11* ]] || [[ "$version" == 1.12* ]] || [[ "$version" == 1.13* ]] || [[ "$version" == 1.14* ]] || [[ "$version" == 1.15* ]] || [[ "$version" == 1.16* ]]; then
                 echo "DEBUG: select_java_version: vanilla/paper/purpur matched 1.8-1.16 -> Java 8" >&2
@@ -46,18 +46,18 @@ select_java_version() {
       fi
       ;;
   "forge"|"neoforge"|"mohist"|"magma"|"catserver"|"spongeforge")
-      # Forge-based hybrids: <=1.12 -> Java 8; 1.13-1.20.4 -> Java 17; 1.20.5+/1.21 -> Java 21; 26+ -> Java 25
+      # Forge-based hybrids: <=1.16 -> Java 8; 1.17-1.20.4 -> Java 17; 1.20.5+/1.21 -> Java 21; 26+ -> Java 25
       if [[ "$version" == 26* ]]; then
   echo "DEBUG: select_java_version: forge-hybrid matched 26+ -> Java 25" >&2
         java_version="25"
-      elif [[ "$version" == 1.8* ]] || [[ "$version" == 1.9* ]] || [[ "$version" == 1.10* ]] || [[ "$version" == 1.11* ]] || [[ "$version" == 1.12* ]]; then
-                echo "DEBUG: select_java_version: forge-hybrid matched <=1.12 -> Java 8" >&2
+      elif [[ "$version" == 1.8* ]] || [[ "$version" == 1.9* ]] || [[ "$version" == 1.10* ]] || [[ "$version" == 1.11* ]] || [[ "$version" == 1.12* ]] || [[ "$version" == 1.13* ]] || [[ "$version" == 1.14* ]] || [[ "$version" == 1.15* ]] || [[ "$version" == 1.16* ]]; then
+                echo "DEBUG: select_java_version: forge-hybrid matched <=1.16 -> Java 8" >&2
                 java_version="8"
       elif [[ "$version" == 1.20.5* ]] || [[ "$version" == 1.20.6* ]] || [[ "$version" == 1.21* ]]; then
   echo "DEBUG: select_java_version: forge-hybrid matched 1.20.5+/1.21+ -> Java 21" >&2
         java_version="21"
             else
-                echo "DEBUG: select_java_version: forge-hybrid matched 1.13-1.20.4 -> Java 17" >&2
+                echo "DEBUG: select_java_version: forge-hybrid matched 1.17-1.20.4 -> Java 17" >&2
                 java_version="17"
             fi
             ;;
@@ -257,7 +257,12 @@ echo "DEBUG: Cleaned JAVA_OPTS: $JAVA_OPTS"
 echo "DEBUG: Extra server args: $EXTRA_SERVER_ARGS"
 # ========================================================
 
+# Preserve incoming ALL_JAVA_ARGS from controller
+INCOMING_JAVA_ARGS="${ALL_JAVA_ARGS:-}"
 ALL_JAVA_ARGS="$MEM_ARGS $JAVA_OPTS"
+if [ -n "$INCOMING_JAVA_ARGS" ]; then
+  ALL_JAVA_ARGS="$ALL_JAVA_ARGS $INCOMING_JAVA_ARGS"
+fi
 
 echo "DEBUG: Memory configuration - Min: $MIN_RAM, Max: $MAX_RAM"
 echo "DEBUG: Java memory args: $MEM_ARGS"
@@ -302,6 +307,39 @@ else
   cd "/data"
   echo "DEBUG: Changed to /data: $(pwd)"
 fi
+
+# ==============================================================================
+# Lynx Multi-Core Engine (LMCE) - Agent Auto-Detection & Injection
+# ==============================================================================
+find_multicore_agent() {
+  local candidates=(
+    "${MC_MULTICORE_AGENT_PATH:-}"
+    "$(pwd)/mc-multicore-agent.jar"
+    "/data/mc-multicore-agent.jar"
+    "${SERVER_DIR_NAME:+/data/servers/$SERVER_DIR_NAME/mc-multicore-agent.jar}"
+    "/opt/multicore/mc-multicore-agent.jar"
+  )
+  for c in "${candidates[@]}"; do
+    if [ -n "$c" ] && [ -f "$c" ] && [ -s "$c" ]; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+RESOLVED_AGENT_JAR=$(find_multicore_agent || true)
+if [ -n "$RESOLVED_AGENT_JAR" ]; then
+  export MC_MULTICORE_AGENT_PATH="$RESOLVED_AGENT_JAR"
+  echo "INFO: [LMCE] Universal Multi-Core Agent located at: $RESOLVED_AGENT_JAR"
+  if [[ "$ALL_JAVA_ARGS" != *"-javaagent:"*"mc-multicore-agent.jar"* ]]; then
+    ALL_JAVA_ARGS="$ALL_JAVA_ARGS -javaagent:$RESOLVED_AGENT_JAR"
+    echo "INFO: [LMCE] Injected -javaagent:$RESOLVED_AGENT_JAR into ALL_JAVA_ARGS"
+  fi
+fi
+
+# Ensure JAVA_TOOL_OPTIONS is exported for child JVM processes
+export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-}"
 
 # Ensure the Minecraft server binds to the expected container port.
 # Lynx always publishes container port ${SERVER_PORT} (defaults to 25565).
@@ -987,11 +1025,11 @@ fi
 # Check for specific JAR patterns in order of preference, tailored by server type
 if [ -z "$start_jar" ]; then
   if [ "$SERVER_TYPE" = "forge" ] || [ "$SERVER_TYPE" = "neoforge" ] || [ "$SERVER_TYPE" = "mohist" ] || [ "$SERVER_TYPE" = "magma" ] || [ "$SERVER_TYPE" = "catserver" ] || [ "$SERVER_TYPE" = "spongeforge" ]; then
-    patterns="server.jar neoforge-*-universal.jar *forge-*-universal.jar forge-*-server.jar *mohist*.jar *magma*.jar *catserver*.jar *spongeforge*.jar *server*.jar"
+    patterns="server.jar neoforge-*-universal.jar *forge-*-universal.jar forge-*-server.jar forge-*.jar *mohist*.jar *magma*.jar *catserver*.jar *spongeforge*.jar *server*.jar"
   elif [ "$SERVER_TYPE" = "fabric" ] || [ "$SERVER_TYPE" = "quilt" ] || [ "$SERVER_TYPE" = "banner" ]; then
     patterns="server.jar *fabric*.jar *quilt*.jar *banner*.jar *server*.jar"
   else
-    patterns="server.jar *paper*.jar *purpur*.jar *server*.jar"
+    patterns="server.jar *paper*.jar *purpur*.jar *folia*.jar *server*.jar"
   fi
   for pattern in $patterns; do
     echo "DEBUG: Checking pattern: $pattern"
@@ -1117,7 +1155,7 @@ start_server_with_recovery() {
     set +e
     case "$cmd_type" in
       "runsh")
-        tail -f -n +1 console.in | bash ./run.sh
+        tail -f -n +1 console.in | bash ./run.sh "${effective_args[@]}" $EXTRA_SERVER_ARGS
         ;;
       "java")
         tail -f -n +1 console.in | "$JAVA_BIN" $ALL_JAVA_ARGS "${effective_args[@]}" $EXTRA_SERVER_ARGS
@@ -1166,10 +1204,71 @@ start_server_with_recovery() {
   done
 }
 
-if { [ "$SERVER_TYPE" = "forge" ] || [ "$SERVER_TYPE" = "neoforge" ]; }; then
+# ==============================================================================
+# Forge / NeoForge user_jvm_args.txt Synchronization
+# ==============================================================================
+sync_user_jvm_args() {
+  local target="user_jvm_args.txt"
+  local temp="user_jvm_args.txt.tmp.$$"
+  local has_xmx=0
+
+  if [ -f "$target" ]; then
+    awk '
+      /^# --- Lynx Multi-Core Engine \(LMCE\) Configuration ---/ { in_lmce=1; next }
+      /^# --- End Lynx Multi-Core Engine Configuration ---/ { in_lmce=0; next }
+      !in_lmce { print }
+    ' "$target" | grep -v '^# Generated by Minecraft-Controller' | grep -v '^# DO NOT REMOVE: Enables parallel' > "$temp" || true
+
+    if grep -qE '^\s*-Xmx' "$temp"; then
+      has_xmx=1
+    fi
+  else
+    touch "$temp"
+  fi
+
+  if [ "$has_xmx" -eq 0 ]; then
+    echo "$MEM_ARGS" >> "$temp"
+  fi
+
+  cat << 'EOF' >> "$temp"
+# --- Lynx Multi-Core Engine (LMCE) Configuration ---
+# Generated by Minecraft-Controller Lynx Multi-Core Engine (LMCE)
+# DO NOT REMOVE: Enables parallel CPU execution across multiple cores
+EOF
+
+  if [ -n "${INCOMING_JAVA_ARGS:-}" ]; then
+    for f in $INCOMING_JAVA_ARGS; do
+      if [[ "$f" != "-Xmx"* ]] && [[ "$f" != "-Xms"* ]]; then
+        echo "$f" >> "$temp"
+      fi
+    done
+  fi
+
+  if [ -n "$RESOLVED_AGENT_JAR" ]; then
+    if ! grep -q -- "-javaagent:$RESOLVED_AGENT_JAR" "$temp"; then
+      echo "-javaagent:$RESOLVED_AGENT_JAR" >> "$temp"
+    fi
+  fi
+
+  cat << 'EOF' >> "$temp"
+# --- End Lynx Multi-Core Engine Configuration ---
+EOF
+
+  mv -f "$temp" "$target" 2>/dev/null || {
+    echo "WARNING: [LMCE] Cannot write user_jvm_args.txt (read-only filesystem). Falling back to JAVA_TOOL_OPTIONS."
+    rm -f "$temp" 2>/dev/null || true
+  }
+}
+
+if { [ "$SERVER_TYPE" = "forge" ] || [ "$SERVER_TYPE" = "neoforge" ]; } || [ -f run.sh ]; then
   if [ -f run.sh ]; then
     echo "Starting Forge/NeoForge via run.sh"
     chmod +x run.sh || true
+    sync_user_jvm_args
+    # Propagate multicore flags into JAVA_TOOL_OPTIONS for run.sh
+    if [ -n "${INCOMING_JAVA_ARGS:-}" ]; then
+      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} ${INCOMING_JAVA_ARGS}"
+    fi
     TMP_JAVA_DIR="/tmp/java-override"
     mkdir -p "$TMP_JAVA_DIR"
     ln -sf "$JAVA_BIN" "$TMP_JAVA_DIR/java"
