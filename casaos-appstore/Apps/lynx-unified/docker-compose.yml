@@ -59,6 +59,7 @@ services:
       DOCKER_TLS_CERTDIR: ""
     command:
       - "dockerd"
+      - "--tls=false"
       - "--host=unix:///data/servers/.steam-docker.sock"
       - "--host=unix:///var/run/docker.sock"
     volumes:

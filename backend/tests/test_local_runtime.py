@@ -180,3 +180,114 @@ class TestLocalRuntimeLifecycle:
         res = mgr.send_command(srv_name, "   ")
         assert res["ok"] is False
         assert "Empty command" in res["error"]
+
+    def test_is_running_posix_linux_container_does_not_raise_name_error(self, monkeypatch):
+        """Regression: sys was missing on Linux/POSIX because os.name == 'nt' short-circuited on Windows."""
+        import local_runtime
+        mgr = LocalRuntimeManager()
+        monkeypatch.setattr(local_runtime.os, "name", "posix")
+
+        with patch("local_runtime.os.kill", return_value=None) as mock_kill:
+            assert mgr._is_running(43210) is True
+            mock_kill.assert_called_once_with(43210, 0)
+
+        with patch("local_runtime.os.kill", side_effect=ProcessLookupError("no such process")):
+            assert mgr._is_running(43210) is False
+
+    def test_list_servers_discovers_existing_and_isolates_broken_dirs(self, temp_servers_root):
+        """Pre-existing servers without server_meta.json and broken siblings must not hide valid servers."""
+        mgr = LocalRuntimeManager()
+
+        # 1. Hidden dot-directory should be skipped
+        (temp_servers_root / ".cache").mkdir()
+
+        # 2. Pre-existing vanilla/paper directory WITHOUT server_meta.json, WITH server.properties & jar
+        legacy_dir = temp_servers_root / "survival_legacy"
+        legacy_dir.mkdir()
+        (legacy_dir / "paper-1.20.4-496.jar").write_bytes(b"")
+        (legacy_dir / "server.properties").write_text("server-port=25577\n", encoding="utf-8")
+
+        # 3. Directory with corrupt JSON in server_meta.json and stale .server.pid
+        corrupt_dir = temp_servers_root / "corrupt_meta_srv"
+        corrupt_dir.mkdir()
+        (corrupt_dir / "server_meta.json").write_text("{not-valid-json", encoding="utf-8")
+        (corrupt_dir / ".server.pid").write_text("not-an-int", encoding="utf-8")
+
+        # 4. Directory with modern metadata & running PID
+        running_dir = temp_servers_root / "modded_live"
+        running_dir.mkdir()
+        (running_dir / "server_meta.json").write_text(
+            json.dumps({"server_type": "neoforge", "server_version": "1.21.1", "host_port": 25588}),
+            encoding="utf-8",
+        )
+        (running_dir / ".server.pid").write_text("55555", encoding="utf-8")
+
+        with patch("local_runtime.os.kill", return_value=None), \
+             patch("local_runtime.psutil.pid_exists", side_effect=lambda pid: pid == 55555):
+            servers = mgr.list_servers()
+
+        by_name = {s["name"]: s for s in servers}
+        assert ".cache" not in by_name
+        assert "survival_legacy" in by_name
+        assert by_name["survival_legacy"]["type"] == "paper"
+        assert by_name["survival_legacy"]["version"] == "1.20.4"
+        assert by_name["survival_legacy"]["host_port"] == 25577
+        assert by_name["survival_legacy"]["status"] == "exited"
+        # Detected metadata persisted so subsequent scans are instant
+        assert (legacy_dir / "server_meta.json").exists()
+
+        assert "corrupt_meta_srv" in by_name
+        assert by_name["corrupt_meta_srv"]["status"] == "exited"
+
+        assert "modded_live" in by_name
+        assert by_name["modded_live"]["type"] == "neoforge"
+        assert by_name["modded_live"]["version"] == "1.21.1"
+        assert by_name["modded_live"]["host_port"] == 25588
+        assert by_name["modded_live"]["status"] == "running"
+
+    def test_runtime_adapter_fast_paths_and_docker_cooldown(self, temp_servers_root, monkeypatch):
+        """LocalAdapter avoids Docker queries for local servers, caches bulk stats/list, and reports real status."""
+        import runtime_adapter
+        import docker_manager
+        monkeypatch.setattr(runtime_adapter, "SERVERS_ROOT", temp_servers_root)
+        monkeypatch.delenv("STEAM_DOCKER_HOST", raising=False)
+
+        srv_dir = temp_servers_root / "fast_mc"
+        srv_dir.mkdir()
+        (srv_dir / "server_meta.json").write_text(
+            json.dumps({"type": "paper", "version": "1.21.4", "max_ram": "4G", "host_port": 25565}),
+            encoding="utf-8",
+        )
+
+        adapter = runtime_adapter.LocalAdapter()
+        with patch.object(adapter, "_get_docker", side_effect=AssertionError("Should not touch Docker for local server")):
+            assert adapter._resolve_steam_id("fast_mc") is None
+            listed = adapter.list_servers()
+            assert len(listed) == 1
+            # Cached second call also avoids re-scanning
+            with patch.object(adapter.local, "list_servers", side_effect=AssertionError("Should hit _list_cache")):
+                listed_cached = adapter.list_servers()
+                assert len(listed_cached) == 1
+
+            bulk = adapter.get_bulk_server_stats(ttl_seconds=3, include_players=False)
+            assert "fast_mc" in bulk
+            assert bulk["fast_mc"]["memory_limit_mb"] == 4096.0
+            assert bulk["fast_mc"]["cpu_percent"] == 0.0
+
+            info = adapter.get_server_info("fast_mc")
+            assert info["status"] == "exited"
+
+        # Steam client failure triggers 30s cooldown instead of stalling every request
+        dm = docker_manager.DockerManager.__new__(docker_manager.DockerManager)
+        dm._steam_docker_host = "tcp://127.0.0.1:23750"
+        dm._steam_client = None
+        dm._steam_fail_until = 0.0
+        dm._steam_warned = False
+
+        with patch("docker_manager.docker.DockerClient", side_effect=ConnectionError("refused")) as mock_dc, \
+             patch("docker_manager.Path.exists", return_value=False):
+            assert dm._get_steam_client() is None
+            assert dm._get_steam_client() is None
+            # Second call within cooldown must NOT retry DockerClient
+            mock_dc.assert_called_once()
+

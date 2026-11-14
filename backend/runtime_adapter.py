@@ -115,7 +115,7 @@ def _probe_server_tps(server_name: str, server_dir: Optional[Path] = None, serve
 
         try:
             from mcrcon import MCRcon
-            with MCRcon("localhost", rcon_password, port=rcon_port, timeout=1.5) as mcr:
+            with MCRcon("localhost", rcon_password, port=rcon_port, timeout=0.35) as mcr:
                 for cmd in candidates:
                     try:
                         clean_cmd = cmd.lstrip("/")
@@ -302,6 +302,12 @@ class LocalAdapter:
         self.local = LocalRuntimeManager()
         self._docker = None
         self._steam_index: Dict[str, Dict[str, Any]] = {}
+        self._list_cache: Optional[Tuple[float, str, List[Dict[str, Any]]]] = None
+        self._bulk_stats_cache: Dict[bool, Tuple[float, Dict[str, Dict]]] = {}
+
+    def _invalidate_caches(self) -> None:
+        self._list_cache = None
+        self._bulk_stats_cache.clear()
 
     def _get_docker(self):
         if self._docker is None:
@@ -333,6 +339,23 @@ class LocalAdapter:
         cached = self._steam_index.get(container_id)
         if cached and str(cached.get("server_kind", "")).lower() == "steam":
             return str(cached.get("id"))
+        # Fast-path: local server directory exists and is not marked server_kind == "steam"
+        try:
+            srv_dir = safe_child_path(SERVERS_ROOT, container_id)
+            if srv_dir.exists() and srv_dir.is_dir():
+                meta_path = srv_dir / "server_meta.json"
+                is_steam = False
+                if meta_path.is_file():
+                    try:
+                        meta = json.loads(meta_path.read_text(encoding="utf-8", errors="ignore") or "{}")
+                        if isinstance(meta, dict) and str(meta.get("server_kind", "")).lower() == "steam":
+                            is_steam = True
+                    except Exception:
+                        pass
+                if not is_steam:
+                    return None
+        except Exception:
+            pass
         try:
             docker = self._get_docker()
         except Exception:
@@ -357,6 +380,15 @@ class LocalAdapter:
 
     
     def list_servers(self) -> List[Dict]:
+        now = time.time()
+        root_key = str(SERVERS_ROOT)
+        if (
+            self._list_cache is not None
+            and (now - self._list_cache[0]) <= 1.5
+            and self._list_cache[1] == root_key
+        ):
+            return [dict(x) for x in self._list_cache[2]]
+
         items = self.local.list_servers()
         for it in items:
             it.setdefault("server_kind", "minecraft")
@@ -390,25 +422,32 @@ class LocalAdapter:
                 pass
 
         steam_entries: List[Dict[str, Any]] = []
-        try:
-            docker = self._get_docker()
-            docker_servers = docker.list_servers()
-            for entry in docker_servers:
-                try:
-                    if str(entry.get("server_kind", "")).lower() != "steam":
+        steam_enabled = bool(
+            (os.getenv("STEAM_DOCKER_HOST") or "").strip()
+            or Path("/data/servers/.steam-docker.sock").exists()
+            or self._docker is not None
+        )
+        if steam_enabled:
+            try:
+                docker = self._get_docker()
+                docker_servers = docker.list_servers()
+                for entry in docker_servers:
+                    try:
+                        if str(entry.get("server_kind", "")).lower() != "steam":
+                            continue
+                        steam_entry = dict(entry)
+                        steam_entries.append(steam_entry)
+                    except Exception:
                         continue
-                    steam_entry = dict(entry)
-                    steam_entries.append(steam_entry)
-                except Exception:
-                    continue
-        except Exception:
-            steam_entries = []
+            except Exception:
+                steam_entries = []
 
         if steam_entries:
             self._refresh_steam_index(steam_entries)
             items.extend(steam_entries)
         else:
             self._steam_index = {}
+        self._list_cache = (time.time(), root_key, [dict(x) for x in items])
         return items
 
     def create_server(
@@ -450,6 +489,7 @@ class LocalAdapter:
                     self.local.update_metadata(name, **meta_updates)
         except Exception:
             pass
+        self._invalidate_caches()
         return result
 
     def create_server_from_existing(
@@ -485,17 +525,18 @@ class LocalAdapter:
                     self.local.update_metadata(name, **meta_updates)
         except Exception:
             pass
+        self._invalidate_caches()
         return result
 
     def stop_server(self, container_id: str) -> Dict:
+        self._invalidate_caches()
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
             return self._get_docker().stop_server(steam_id)
         return self.local.stop_server(container_id)
 
     def start_server(self, container_id: str) -> Dict:
-        
-        
+        self._invalidate_caches()
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
             return self._get_docker().start_server(steam_id)
@@ -510,6 +551,7 @@ class LocalAdapter:
         handles full process-tree kill + port verification internally, and
         we add a final safety check before re-spawning.
         """
+        self._invalidate_caches()
         try:
             steam_id = self._resolve_steam_id(container_id)
         except Exception:
@@ -531,18 +573,21 @@ class LocalAdapter:
 
 
     def kill_server(self, container_id: str) -> Dict:
+        self._invalidate_caches()
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
             return self._get_docker().kill_server(steam_id)
         return self.local.stop_server(container_id)
 
     def delete_server(self, container_id: str) -> Dict:
+        self._invalidate_caches()
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
             return self._get_docker().delete_server(steam_id)
         return self.local.delete_server(container_id)
 
     def update_metadata(self, container_id: str, **fields: Any) -> None:
+        self._invalidate_caches()
         self.local.update_metadata(container_id, **fields)
 
     
@@ -665,8 +710,8 @@ class LocalAdapter:
                     except Exception:
                         pass
 
-                # If non-blocking cached baseline exists within 0.05s-10.0s window:
-                if prev_snap and (0.05 <= (now - prev_snap["timestamp"]) <= 10.0) and prev_snap.get("proc_times"):
+                # If non-blocking cached baseline exists within 0.05s-60.0s window:
+                if prev_snap and (0.05 <= (now - prev_snap["timestamp"]) <= 60.0) and prev_snap.get("proc_times"):
                     dt = max(0.001, now - prev_snap["timestamp"])
                     total_cpu_delta = 0.0
                     for p_id, curr_t in curr_proc_times.items():
@@ -857,26 +902,82 @@ class LocalAdapter:
             "mspt": mspt,
         }
 
+    def _stopped_local_stats(self, container_id: str, total_ram_mb: float) -> Dict[str, Any]:
+        p = safe_child_path(SERVERS_ROOT, container_id)
+        mem_limit_mb = total_ram_mb
+        restart_count = 0
+        health_status = "unknown"
+        try:
+            meta_path = p / "server_meta.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                if isinstance(meta, dict):
+                    mem_limit_mb = _parse_ram_to_mb(meta.get("max_ram_mb") or meta.get("max_ram"), mem_limit_mb)
+                    restart_count = meta.get("restart_count", 0)
+                    health_status = "unhealthy"
+        except Exception:
+            pass
+        if mem_limit_mb <= 0:
+            mem_limit_mb = 1.0
+        return {
+            "id": container_id,
+            "cpu_percent": 0.0,
+            "cpu_percent_aggregate": 0.0,
+            "cpu_percent_normalized": 0.0,
+            "per_core_cpu": [],
+            "active_threads": 0,
+            "thread_metrics": [],
+            "memory_usage_mb": 0.0,
+            "memory_used_mb": 0.0,
+            "memory_limit_mb": round(mem_limit_mb, 2),
+            "memory_percent": 0.0,
+            "network_rx_mb": 0.0,
+            "network_tx_mb": 0.0,
+            "uptime_seconds": 0,
+            "restart_count": restart_count,
+            "health_status": health_status,
+            "player_count": 0,
+            "tps": None,
+            "mspt": None,
+        }
+
     def get_bulk_server_stats(self, ttl_seconds: int = 3, include_players: bool = False) -> Dict:
-        # Hot path for the global 5s poll: no player probes, servers in parallel.
-        # (get_server_stats still sleeps 0.15s for CPU sampling — parallel keeps
-        # the whole call at ~0.2s instead of 0.15s × N servers + probe chains.)
+        # Hot path for the global 5s poll: honor TTL cache, short-circuit stopped
+        # local servers, and run live servers in parallel.
+        now = time.time()
+        cache_key = bool(include_players)
+        cached = self._bulk_stats_cache.get(cache_key)
+        if cached and ttl_seconds > 0 and (now - cached[0]) <= ttl_seconds:
+            return dict(cached[1])
+
         from concurrent.futures import ThreadPoolExecutor
-        ids: List[str] = []
+        results: Dict[str, Dict] = {}
+        running_ids: List[str] = []
+        total_ram_mb: Optional[float] = None
+
         for it in self.list_servers():
             container_id = it.get("id") or it.get("name")
-            if container_id:
-                ids.append(str(container_id))
-        results: Dict[str, Dict] = {}
-        if not ids:
-            return results
-        with ThreadPoolExecutor(max_workers=min(8, len(ids))) as ex:
-            futs = {ex.submit(self.get_server_stats, cid, include_players): cid for cid in ids}
-            for fut, cid in futs.items():
-                try:
-                    results[cid] = fut.result(timeout=15)
-                except Exception:
-                    results[cid] = {"id": cid, "error": "stats timeout"}
+            if not container_id:
+                continue
+            cid = str(container_id)
+            is_steam = str(it.get("server_kind", "")).lower() == "steam"
+            if not is_steam and it.get("status") != "running":
+                if total_ram_mb is None:
+                    total_ram_mb = float(psutil.virtual_memory().total) / (1024 * 1024)
+                results[cid] = self._stopped_local_stats(cid, total_ram_mb)
+            else:
+                running_ids.append(cid)
+
+        if running_ids:
+            with ThreadPoolExecutor(max_workers=min(8, len(running_ids))) as ex:
+                futs = {ex.submit(self.get_server_stats, cid, include_players): cid for cid in running_ids}
+                for fut, cid in futs.items():
+                    try:
+                        results[cid] = fut.result(timeout=15)
+                    except Exception:
+                        results[cid] = {"id": cid, "error": "stats timeout"}
+
+        self._bulk_stats_cache[cache_key] = (time.time(), dict(results))
         return results
 
     def get_player_info(self, container_id: str) -> Dict:
@@ -994,31 +1095,66 @@ class LocalAdapter:
             return info
         p = safe_child_path(SERVERS_ROOT, container_id)
         exists = p.exists()
-        meta: Dict[str, Any] = {}
+        pid = None
         try:
-            mp = p / "server_meta.json"
+            pid_file = p / ".server.pid"
+            if pid_file.exists():
+                pid_txt = pid_file.read_text(encoding="utf-8", errors="ignore").strip()
+                pid = int(pid_txt) if pid_txt else None
+        except Exception:
+            pid = None
+        status = "running" if (pid and self.local._is_running(pid)) else "exited"
+
+        meta: Dict[str, Any] = {}
+        mp = p / "server_meta.json"
+        try:
             if mp.exists():
-                meta = json.loads(mp.read_text(encoding="utf-8"))
+                parsed = json.loads(mp.read_text(encoding="utf-8"))
+                if isinstance(parsed, dict):
+                    meta = parsed
         except Exception:
             meta = {}
 
         host_port = meta.get("host_port") or MINECRAFT_PORT
-        server_type = meta.get("type")
-        version = meta.get("version")
-        # Fill gaps from the server directory itself (jars, latest.log head).
-        # Meta-only lookup is why imported/ZIP servers always showed Unknown.
+        server_type = (
+            meta.get("type")
+            or meta.get("server_type")
+            or meta.get("loader")
+            or meta.get("detected_type")
+        )
+        version = (
+            meta.get("version")
+            or meta.get("server_version")
+            or meta.get("mc_version")
+            or meta.get("detected_version")
+        )
+        # Fill gaps from the server directory itself (jars, latest.log head) and persist once.
+        meta_dirty = False
         try:
             srv_dir = resolve_server_dir(container_id)
             if srv_dir is not None:
                 files = detect_server_from_files(srv_dir)
-                if not server_type or str(server_type).lower() in ("", "custom", "unknown"):
-                    server_type = files.get("server_type") or server_type
-                if not version:
-                    version = files.get("server_version") or version
+                if (not server_type or str(server_type).lower() in ("", "custom", "unknown")) and files.get("server_type"):
+                    server_type = files["server_type"]
+                    meta["type"] = server_type
+                    meta_dirty = True
+                if not version and files.get("server_version"):
+                    version = files["server_version"]
+                    meta["version"] = version
+                    meta_dirty = True
                 if not meta.get("loader_version") and files.get("loader_version"):
                     meta["loader_version"] = files["loader_version"]
+                    meta_dirty = True
                 if (not meta.get("java_version") or meta.get("java_version") == "unknown") and files.get("java_version"):
                     meta["java_version"] = files["java_version"]
+                    meta_dirty = True
+                if meta_dirty and exists:
+                    try:
+                        meta.setdefault("name", container_id)
+                        mp.write_text(json.dumps(meta), encoding="utf-8")
+                        self._invalidate_caches()
+                    except Exception:
+                        pass
         except Exception:
             pass
         created_at = meta.get("created_at")
@@ -1048,7 +1184,7 @@ class LocalAdapter:
         info = {
             "id": container_id,
             "name": container_id,
-            "status": "running",
+            "status": status,
             "type": server_type,
             "version": version,
             "created_at": created_at,
@@ -1302,8 +1438,10 @@ class LocalAdapter:
                 extra_env=env_overrides or None,
             )
         except Exception as e:
+            self._invalidate_caches()
             return {"ok": False, "error": "Failed to recreate server"}
 
+        self._invalidate_caches()
         return {"ok": True, "old_name": old_name, "new_name": new_name, "result": result}
 
     
