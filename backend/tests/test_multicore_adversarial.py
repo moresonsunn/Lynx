@@ -100,15 +100,20 @@ class TestCombinatorialPropertyMatrix:
                             )
                             assert "-XX:+UseG1GC" in flags
 
-                        # 4. Invariant: Java 21+ with RAM >= 4096 must emit Generational ZGC
+                        # 4. Invariant: Java 21+ with RAM >= 4096 must emit ZGC (and ZGenerational only on Java < 24)
                         effective_ram = ram if (ram is not None and ram > 0) else 2048
                         if java_ver >= 21 and effective_ram >= 4096:
                             assert "-XX:+UseZGC" in flags, (
                                 f"Java {java_ver} RAM {ram} missing -XX:+UseZGC"
                             )
-                            assert "-XX:+ZGenerational" in flags, (
-                                f"Java {java_ver} RAM {ram} missing -XX:+ZGenerational"
-                            )
+                            if java_ver < 24:
+                                assert "-XX:+ZGenerational" in flags, (
+                                    f"Java {java_ver} RAM {ram} missing -XX:+ZGenerational"
+                                )
+                            else:
+                                assert "-XX:+ZGenerational" not in flags, (
+                                    f"Java {java_ver} removed -XX:+ZGenerational must not be emitted"
+                                )
                         elif java_ver >= 21 and effective_ram < 4096:
                             # Low-RAM fallback to G1GC
                             assert "-XX:+UseG1GC" in flags

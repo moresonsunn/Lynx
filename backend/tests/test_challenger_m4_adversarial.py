@@ -428,6 +428,48 @@ class TestUserJvmArgsRobustnessAdversarial:
         assert quote_jvm_arg("'-Xmx4G -Xms2G'") == "'-Xmx4G -Xms2G'"
         assert quote_jvm_arg('-Dprop="val with space"') == '-Dprop="val with space"'
 
+    def test_strips_legacy_conflicting_gc_flags_outside_lmce_block(self):
+        """Regression: legacy -XX:+UseG1GC outside LMCE block must be stripped to prevent 'Multiple garbage collectors selected'."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            srv = Path(tmpdir)
+            target = srv / "user_jvm_args.txt"
+            target.write_text(
+                "# Modpack defaults\n"
+                "-Xmx24G\n"
+                "-Xms12G\n"
+                "-XX:+UseG1GC\n"
+                "-XX:+ParallelRefProcEnabled\n"
+                "-XX:MaxGCPauseMillis=200\n"
+                "-XX:G1HeapRegionSize=16m\n"
+                "-XX:+HeapDumpOnOutOfMemoryError\n"
+                "-XX:+DisableExplicitGC\n",
+                encoding="utf-8",
+            )
+
+            prof = get_concurrency_profile(cpu_cores=16, ram_mb=24576, java_version=25)
+            flags = build_multicore_jvm_args(prof, server_type="neoforge")
+            write_user_jvm_args(srv, flags)
+
+            res = target.read_text(encoding="utf-8")
+            assert "-Xmx24G" in res
+            assert "-Xms12G" in res
+            assert "-XX:+HeapDumpOnOutOfMemoryError" in res
+            assert "-XX:+DisableExplicitGC" in res
+            assert "-XX:+UseZGC" in res
+            assert "-XX:+UseG1GC" not in res
+            assert "-XX:+ParallelRefProcEnabled" not in res
+            assert "-XX:MaxGCPauseMillis=200" not in res
+            assert "-XX:G1HeapRegionSize=16m" not in res
+            assert "-XX:+ZGenerational" not in res
+
+    def test_java25_zgc_omits_removed_zgenerational(self):
+        """Regression: Java 25 (Minecraft 26.x) must emit -XX:+UseZGC without removed -XX:+ZGenerational."""
+        prof = get_concurrency_profile(cpu_cores=16, ram_mb=24576, java_version=25)
+        flags = build_multicore_jvm_args(prof, server_type="neoforge")
+        assert "-XX:+UseZGC" in flags
+        assert "-XX:+ZGenerational" not in flags
+        assert "-XX:+UseG1GC" not in flags
+
 
 # ==============================================================================
 # 5. Java GC Safety Across Matrix (Exhaustive Combinatorial Challenge)

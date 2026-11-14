@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
@@ -47,7 +48,9 @@ def build_multicore_jvm_args(
     if jv >= 21 and ram >= 4096:
         # Generational ZGC: Ultra-low latency concurrent collection for Java 21+ with >=4GB RAM
         flags.append("-XX:+UseZGC")
-        flags.append("-XX:+ZGenerational")
+        if jv < 24:
+            # -XX:+ZGenerational was removed in Java 24+ where ZGC is unconditionally generational
+            flags.append("-XX:+ZGenerational")
         flags.append(f"-XX:ConcGCThreads={profile.conc_gc_threads}")
         flags.append(f"-XX:ParallelGCThreads={profile.gc_threads}")
     elif jv >= 17:
@@ -124,6 +127,37 @@ def quote_jvm_arg(arg: str) -> str:
     return cleaned
 
 
+_CONFLICTING_GC_TOKEN_RE = re.compile(
+    r"^(?:"
+    r"-XX:[+-]Use[A-Za-z0-9]+GC"
+    r"|-XX:[+-]ZGenerational"
+    r"|-XX:G1.*"
+    r"|-XX:InitiatingHeapOccupancyPercent(?:=.*)?"
+    r"|-XX:MaxGCPauseMillis(?:=.*)?"
+    r"|-XX:SurvivorRatio(?:=.*)?"
+    r"|-XX:[+-]ParallelRefProcEnabled"
+    r"|-XX:ConcGCThreads=.*"
+    r"|-XX:ParallelGCThreads=.*"
+    r"|-XX:CICompilerCount=.*"
+    r"|-XX:[+-]TieredCompilation"
+    r"|-XX:[+-]UseStringDeduplication"
+    r"|-XX:[+-]UnlockExperimentalVMOptions"
+    r")$"
+)
+
+
+def _strip_conflicting_gc_tokens_from_line(line: str) -> str:
+    """Strip GC selector and LMCE-managed tuning tokens from a preserved user_jvm_args line."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return line
+    tokens = re.findall(r'"[^"]*"|\'[^\']*\'|\S+', stripped)
+    kept = [t for t in tokens if not _CONFLICTING_GC_TOKEN_RE.match(t.strip("\"'"))]
+    if len(kept) == len(tokens):
+        return line
+    return " ".join(kept)
+
+
 def format_user_jvm_args(jvm_args: List[str]) -> str:
     """Format JVM arguments according to official user_jvm_args.txt specification."""
     lines: List[str] = [
@@ -174,7 +208,10 @@ def write_user_jvm_args(server_dir: Union[Path, str], jvm_args: List[str]) -> Pa
                         "# DO NOT REMOVE: Enables parallel"
                     ):
                         continue
-                    preserved_lines.append(line)
+                    cleaned_line = _strip_conflicting_gc_tokens_from_line(line)
+                    if cleaned_line == "" and stripped:
+                        continue
+                    preserved_lines.append(cleaned_line)
         except Exception as e:
             logger.debug("Failed reading existing user_jvm_args.txt: %s", e)
 
@@ -249,9 +286,9 @@ def prepare_server_multicore_env(
     # 2. Synthesize complete JVM arguments
     profile.jvm_flags = build_multicore_jvm_args(profile, server_type=server_type)
 
-    # 3. If Forge or NeoForge, write user_jvm_args.txt
+    # 3. If Forge/NeoForge or run.sh/user_jvm_args.txt already present, write & sanitize user_jvm_args.txt
     st = server_type.strip().lower() if server_type else ""
-    if st in ("forge", "neoforge"):
+    if st in ("forge", "neoforge") or (target_dir / "run.sh").is_file() or (target_dir / "user_jvm_args.txt").is_file():
         try:
             write_user_jvm_args(target_dir, profile.jvm_flags)
         except (PermissionError, OSError) as e:
