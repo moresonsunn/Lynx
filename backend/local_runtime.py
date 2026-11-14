@@ -3,6 +3,7 @@ import shutil
 import socket
 import stat
 import subprocess
+import sys
 import time
 import logging
 import json
@@ -11,7 +12,7 @@ from typing import Optional, Dict, List, Any
 import re
 import psutil
 
-from config import SERVERS_ROOT, safe_child_path
+from config import SERVERS_ROOT, safe_child_path, detect_server_from_files
 from download_manager import prepare_server_files
 
 logger = logging.getLogger(__name__)
@@ -977,39 +978,106 @@ class LocalRuntimeManager:
 
     def list_servers(self) -> List[Dict]:
         items: List[Dict] = []
+        if not SERVERS_ROOT.exists():
+            return items
         try:
-            for child in SERVERS_ROOT.iterdir():
-                if not child.is_dir():
+            children = list(SERVERS_ROOT.iterdir())
+        except Exception as e:
+            logger.warning(f"Local list_servers failed to read root: {e}")
+            return items
+
+        for child in children:
+            try:
+                if not child.is_dir() or child.name.startswith("."):
                     continue
                 name = child.name
                 pid = None
                 try:
-                    pid_txt = self._pid_file(name).read_text().strip()
-                    pid = int(pid_txt) if pid_txt else None
+                    pid_file = self._pid_file(name)
+                    if pid_file.exists():
+                        pid_txt = pid_file.read_text(encoding="utf-8", errors="ignore").strip()
+                        pid = int(pid_txt) if pid_txt else None
                 except Exception:
                     pid = None
                 status = "running" if (pid and self._is_running(pid)) else "exited"
+
                 meta: Dict[str, Any] = {}
                 try:
                     mp = self._meta_file(name)
                     if mp.exists():
-                        meta = json.loads(mp.read_text(encoding="utf-8"))
+                        parsed = json.loads(mp.read_text(encoding="utf-8", errors="ignore") or "{}")
+                        if isinstance(parsed, dict):
+                            meta = parsed
                 except Exception:
                     meta = {}
+
                 if str(meta.get("server_kind", "")).lower() == "steam":
-                    
                     continue
-                host_port = meta.get("host_port") or MINECRAFT_PORT
+
+                meta_dirty = False
+                srv_type = (
+                    meta.get("type")
+                    or meta.get("server_type")
+                    or meta.get("loader")
+                    or meta.get("detected_type")
+                )
+                srv_version = (
+                    meta.get("version")
+                    or meta.get("server_version")
+                    or meta.get("mc_version")
+                    or meta.get("detected_version")
+                )
+
+                if not srv_type or str(srv_type).lower() in ("", "custom", "unknown") or not srv_version:
+                    det = detect_server_from_files(child)
+                    if (not srv_type or str(srv_type).lower() in ("", "custom", "unknown")) and det.get("server_type"):
+                        srv_type = det["server_type"]
+                        meta["type"] = srv_type
+                        meta_dirty = True
+                    if not srv_version and det.get("server_version"):
+                        srv_version = det["server_version"]
+                        meta["version"] = srv_version
+                        meta_dirty = True
+                    if not meta.get("loader_version") and det.get("loader_version"):
+                        meta["loader_version"] = det["loader_version"]
+                        meta_dirty = True
+                    if (not meta.get("java_version") or meta.get("java_version") == "unknown") and det.get("java_version"):
+                        meta["java_version"] = det["java_version"]
+                        meta_dirty = True
+
+                host_port = meta.get("host_port")
+                if not host_port:
+                    props_file = child / "server.properties"
+                    if props_file.is_file():
+                        try:
+                            for line in props_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                                if line.strip().startswith("server-port="):
+                                    raw_port = line.split("=", 1)[1].strip()
+                                    if raw_port.isdigit():
+                                        host_port = int(raw_port)
+                                        meta["host_port"] = host_port
+                                        meta_dirty = True
+                                    break
+                        except Exception:
+                            pass
+                    if not host_port:
+                        host_port = MINECRAFT_PORT
+
+                if meta_dirty and (meta.get("type") or meta.get("version") or meta.get("host_port")):
+                    meta.setdefault("name", name)
+                    self._save_meta(name, meta)
+
                 items.append({
                     "id": name,
                     "name": name,
                     "status": status,
-                    "type": meta.get("type"),
-                    "version": meta.get("version"),
+                    "type": srv_type,
+                    "version": srv_version,
                     "host_port": host_port,
                     "created_at": meta.get("created_at"),
                     "ports": {f"{MINECRAFT_PORT}/tcp": None},
                 })
-        except Exception as e:
-            logger.warning(f"Local list_servers failed: {e}")
+            except Exception as child_err:
+                logger.warning(f"Local list_servers skipped {getattr(child, 'name', child)}: {child_err}")
+                continue
         return items

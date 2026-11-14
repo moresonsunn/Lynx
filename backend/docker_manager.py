@@ -457,10 +457,14 @@ class DockerManager:
         
         self._steam_docker_host: str | None = (os.getenv("STEAM_DOCKER_HOST") or "").strip() or None
         self._steam_client: docker.DockerClient | None = None
+        self._steam_fail_until: float = 0.0
+        self._steam_warned: bool = False
 
     def _get_steam_client(self) -> docker.DockerClient | None:
         if self._steam_client is not None:
             return self._steam_client
+        if time.time() < self._steam_fail_until:
+            return None
         # Prefer shared Unix socket if present (/data/servers/.steam-docker.sock)
         default_sock = Path("/data/servers/.steam-docker.sock")
         host = (self._steam_docker_host or "").strip()
@@ -473,10 +477,16 @@ class DockerManager:
             logger.warning(f"Refusing non-loopback Docker TCP connection to {host}. Use unix:// socket.")
             return None
         try:
-            self._steam_client = docker.DockerClient(base_url=host)
+            self._steam_client = docker.DockerClient(base_url=host, timeout=2)
+            self._steam_fail_until = 0.0
             return self._steam_client
         except Exception as exc:
-            logger.warning(f"Failed to init STEAM_DOCKER_HOST client ({host}): {exc}")
+            self._steam_fail_until = time.time() + 30.0
+            if not self._steam_warned:
+                logger.warning(f"Failed to init STEAM_DOCKER_HOST client ({host}): {exc} (suppressing retries for 30s)")
+                self._steam_warned = True
+            else:
+                logger.debug(f"STEAM_DOCKER_HOST client unavailable ({host}): {exc}")
             self._steam_client = None
             return None
 
