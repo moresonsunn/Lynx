@@ -50,6 +50,7 @@ backend/data/avatars/
 backups/
 postgres_data/
 mc_servers_data/
+backend/tests
 
 # SSL certificates
 ssl/
