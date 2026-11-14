@@ -723,8 +723,30 @@ class LocalRuntimeManager:
         if worker_threads is None:
             worker_threads = meta.get("worker_threads") or meta.get("multicore_threads")
 
-        server_type = meta.get("type") or meta.get("server_type") or "vanilla"
-        version = meta.get("version") or meta.get("server_version")
+        server_type = (
+            meta.get("type")
+            or meta.get("server_type")
+            or meta.get("loader")
+            or meta.get("detected_type")
+        )
+        version = (
+            meta.get("version")
+            or meta.get("server_version")
+            or meta.get("mc_version")
+            or meta.get("detected_version")
+        )
+        if not server_type or str(server_type).lower() in ("", "custom", "unknown") or not version:
+            try:
+                det = detect_server_from_files(srv_dir)
+                if (not server_type or str(server_type).lower() in ("", "custom", "unknown")) and det.get("server_type"):
+                    server_type = det["server_type"]
+                    meta["type"] = server_type
+                if not version and det.get("server_version"):
+                    version = det["server_version"]
+                    meta["version"] = version
+            except Exception:
+                pass
+        server_type = server_type or "vanilla"
         explicit_jvm = (extra_env or {}).get("JAVA_VERSION") or meta.get("java_version")
         jv = self._infer_java_version(srv_dir, server_type, version, explicit_jvm=explicit_jvm)
 
@@ -773,12 +795,30 @@ class LocalRuntimeManager:
         if cores:
             env["CPU_CORES"] = str(cores)
         env.update(multicore_env)
+        lmce_protected_keys = {
+            "ALL_JAVA_ARGS",
+            "JAVA_TOOL_OPTIONS",
+            "MULTICORE_ENABLED",
+            "MULTICORE_THREADS",
+            "MULTICORE_MODE",
+            "MULTICORE_ALLOCATED_CORES",
+            "FORK_JOIN_PARALLELISM",
+            "NETTY_THREADS",
+            "GC_THREADS",
+            "MC_MULTICORE_AGENT_PATH",
+        }
         for k, v in (meta.get("env_overrides") or {}).items():
-            if v is not None:
+            if v is not None and str(k) not in lmce_protected_keys:
                 env[str(k)] = str(v)
         for k, v in (extra_env or {}).items():
             if v is not None:
                 env[str(k)] = str(v)
+        # Strip conflicting GC flags from JAVA_OPTS / JAVA_ARGS so they cannot clash with LMCE's GC
+        gc_strip_re = re.compile(r"(?:^|\s)-XX:[+-](?:Use[A-Za-z0-9]+GC|ZGenerational)(?=\s|$)")
+        for opt_key in ("JAVA_OPTS", "JAVA_ARGS"):
+            if env.get(opt_key):
+                cleaned_val = " ".join(gc_strip_re.sub(" ", str(env[opt_key])).split())
+                env[opt_key] = cleaned_val
         return self._spawn(name, env)
 
     def stop_server(self, server_id: str, timeout: int = 30) -> Dict:
