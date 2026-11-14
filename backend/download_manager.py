@@ -168,9 +168,11 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
     try:
         paper_build = None
         purpur_build = None
-        if server_type.lower() == 'paper':
+        folia_build = None
+        if server_type.lower() in ('paper', 'folia'):
             # Use Fill v3 (api.papermc.io/v2 sunset 2026-07-01)
-            base = "https://fill.papermc.io/v3/projects/paper"
+            project_id = server_type.lower()
+            base = f"https://fill.papermc.io/v3/projects/{project_id}"
             headers = {"User-Agent": "Lynx/1.0 (+https://github.com/moresonsun/Lynx)", "Accept": "application/json"}
             try:
                 b_resp = requests.get(f"{base}/versions/{version}/builds", headers=headers, timeout=15)
@@ -179,16 +181,28 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
                 if isinstance(builds, list) and builds:
                     # Prefer STABLE channel id
                     stable = [b for b in builds if b.get("channel") == "STABLE" and isinstance(b.get("id"), int)]
+                    b_id = None
                     if stable:
-                        paper_build = stable[0].get("id")
+                        b_id = stable[0].get("id")
                     else:
-                        # fallback to first entry's id
-                        first = builds[0]
-                        paper_build = first.get("id") if isinstance(first, dict) else None
-                        if paper_build is None and builds and isinstance(builds[0], int):
-                            paper_build = builds[0]
+                        # Fallback to ALPHA / EXPERIMENTAL or first entry's id
+                        alpha_exp = [
+                            b for b in builds
+                            if b.get("channel") in ("ALPHA", "EXPERIMENTAL") and isinstance(b.get("id"), int)
+                        ]
+                        if alpha_exp:
+                            b_id = alpha_exp[0].get("id")
+                        else:
+                            first = builds[0]
+                            b_id = first.get("id") if isinstance(first, dict) else None
+                            if b_id is None and builds and isinstance(builds[0], int):
+                                b_id = builds[0]
+                    if project_id == 'paper':
+                        paper_build = b_id
+                    else:
+                        folia_build = b_id
             except Exception as e:
-                logger.warning(f"Failed to fetch Paper builds for {version}: {e}")
+                logger.warning(f"Failed to fetch {server_type} builds for {version}: {e}")
         elif server_type.lower() == 'purpur':
             try:
                 pur_resp = requests.get(f"https://api.purpurmc.org/v2/purpur/{version}", timeout=15)
@@ -212,11 +226,13 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
         
         if paper_build is not None:
             build_number = str(paper_build)
+        elif folia_build is not None:
+            build_number = str(folia_build)
         elif purpur_build is not None:
             build_number = str(purpur_build)
         else:
             
-            if server_type.lower() in ('paper', 'purpur'):
+            if server_type.lower() in ('paper', 'purpur', 'folia'):
                 expected_prefix = f"{server_type.lower()}-{version.lower()}-"
                 url_lower = url.lower()
                 if expected_prefix in url_lower:
@@ -249,6 +265,7 @@ def prepare_server_files(server_type: str, version: str, dest_dir: Path, loader_
                 'loader_version': loader_version,
                 'build_number': build_number,
                 'paper_build': paper_build,
+                'folia_build': folia_build,
                 'purpur_build': purpur_build,
             })
             logger.info(f"Server files prepared successfully at {installer_path}")
@@ -300,6 +317,7 @@ java -jar fabric-server-launch.jar server
                 'loader_version': loader_version,
                 'build_number': build_number,
                 'paper_build': paper_build,
+                'folia_build': folia_build,
                 'purpur_build': purpur_build,
             })
             logger.info(f"Fabric server launcher downloaded successfully ({jar_size} bytes)")
@@ -321,6 +339,7 @@ java -jar fabric-server-launch.jar server
                 'loader_version': loader_version,
                 'build_number': build_number,
                 'paper_build': paper_build,
+                'folia_build': folia_build,
                 'purpur_build': purpur_build,
             })
             logger.info(f"{server_type} server JAR downloaded successfully ({jar_size} bytes)")

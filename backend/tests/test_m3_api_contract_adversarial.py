@@ -102,7 +102,7 @@ class MockProviderAdversarial:
         ]
 
 
-def _mock_stage(provider_id, provider, pack_id, target_version_obj, staging_dir, tmpdir):
+def _mock_stage(provider_id, provider, pack_id, target_version_obj, staging_dir, tmpdir, server_dir=None, **kwargs):
     staging_dir.mkdir(parents=True, exist_ok=True)
     mods_dir = staging_dir / "mods"
     mods_dir.mkdir(parents=True, exist_ok=True)

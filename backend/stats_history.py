@@ -10,6 +10,7 @@ import threading
 import time
 import logging
 import os
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -52,9 +53,26 @@ def _get_conn() -> sqlite3.Connection:
                 network_tx_mb REAL DEFAULT 0,
                 network_rx_rate_mbps REAL DEFAULT 0,
                 network_tx_rate_mbps REAL DEFAULT 0,
-                player_count INTEGER DEFAULT 0
+                player_count INTEGER DEFAULT 0,
+                tps REAL DEFAULT NULL,
+                mspt REAL DEFAULT NULL,
+                active_threads INTEGER DEFAULT 0,
+                per_core_cpu TEXT DEFAULT NULL
             )
         """)
+        # Idempotently alter SQLite stats table on connection to guarantee new columns exist
+        cols = {row[1] for row in _conn.execute("PRAGMA table_info(stats)").fetchall()}
+        for col_name, col_def in [
+            ("tps", "REAL DEFAULT NULL"),
+            ("mspt", "REAL DEFAULT NULL"),
+            ("active_threads", "INTEGER DEFAULT 0"),
+            ("per_core_cpu", "TEXT DEFAULT NULL"),
+        ]:
+            if col_name not in cols:
+                try:
+                    _conn.execute(f"ALTER TABLE stats ADD COLUMN {col_name} {col_def}")
+                except Exception as e:
+                    logger.debug(f"Column {col_name} migration note: {e}")
         _conn.execute("CREATE INDEX IF NOT EXISTS idx_stats_server_ts ON stats(server_id, ts)")
         _conn.execute("CREATE INDEX IF NOT EXISTS idx_stats_ts ON stats(ts)")
         _conn.commit()
@@ -102,11 +120,18 @@ def record_stats(server_id: str, server_name: str, stats: dict):
         tx_mb = stats.get("network_tx_mb", 0)
         rx_rate, tx_rate = _calculate_network_rates(server_id, rx_mb, tx_mb)
 
+        tps = stats.get("tps")
+        mspt = stats.get("mspt")
+        active_threads = stats.get("active_threads", 0)
+        per_core_cpu = stats.get("per_core_cpu")
+        per_core_cpu_raw = json.dumps(per_core_cpu) if per_core_cpu is not None else None
+
         conn.execute(
             """INSERT INTO stats (ts, server_id, server_name, cpu_percent, memory_used_mb,
                memory_limit_mb, memory_percent, network_rx_mb, network_tx_mb,
-               network_rx_rate_mbps, network_tx_rate_mbps, player_count)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               network_rx_rate_mbps, network_tx_rate_mbps, player_count,
+               tps, mspt, active_threads, per_core_cpu)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 datetime.utcnow().isoformat(),
                 server_id,
@@ -120,6 +145,10 @@ def record_stats(server_id: str, server_name: str, stats: dict):
                 rx_rate,
                 tx_rate,
                 stats.get("player_count", 0),
+                tps,
+                mspt,
+                active_threads,
+                per_core_cpu_raw,
             ),
         )
         conn.commit()
@@ -150,7 +179,8 @@ def get_stats_history(server_id: str, hours: int = 1, resolution: int = 0) -> li
                      {bucket_expr} AS bucket,
                      AVG(cpu_percent), AVG(memory_used_mb), AVG(memory_limit_mb),
                      AVG(memory_percent), AVG(network_rx_rate_mbps), AVG(network_tx_rate_mbps),
-                     MAX(player_count)
+                     MAX(player_count),
+                     AVG(tps), AVG(mspt), AVG(active_threads)
                    FROM stats
                    WHERE (server_id = ? OR server_name = ?) AND ts >= ?
                    GROUP BY bucket
@@ -168,13 +198,18 @@ def get_stats_history(server_id: str, hours: int = 1, resolution: int = 0) -> li
                         "ram_limit": round(r[3] or 0, 1), "ram_pct": round(r[4] or 0, 1),
                         "net_rx_rate": round(r[5] or 0, 4), "net_tx_rate": round(r[6] or 0, 4),
                         "players": r[7] or 0,
+                        "tps": round(r[8], 2) if r[8] is not None else None,
+                        "mspt": round(r[9], 2) if r[9] is not None else None,
+                        "active_threads": int(round(r[10])) if r[10] is not None else 0,
+                        "per_core_cpu": None,
                     }
                     for r in rows
                 ]
 
         rows = conn.execute(
             """SELECT ts, cpu_percent, memory_used_mb, memory_limit_mb, memory_percent,
-                      network_rx_rate_mbps, network_tx_rate_mbps, player_count
+                      network_rx_rate_mbps, network_tx_rate_mbps, player_count,
+                      tps, mspt, active_threads, per_core_cpu
                  FROM stats
                  WHERE (server_id = ? OR server_name = ?) AND ts >= ?
                  ORDER BY ts""",
@@ -186,6 +221,10 @@ def get_stats_history(server_id: str, hours: int = 1, resolution: int = 0) -> li
                 "ram_limit": round(r[3] or 0, 1), "ram_pct": round(r[4] or 0, 1),
                 "net_rx_rate": round(r[5] or 0, 4), "net_tx_rate": round(r[6] or 0, 4),
                 "players": r[7] or 0,
+                "tps": round(r[8], 2) if r[8] is not None else None,
+                "mspt": round(r[9], 2) if r[9] is not None else None,
+                "active_threads": int(round(r[10])) if r[10] is not None else 0,
+                "per_core_cpu": json.loads(r[11]) if r[11] else None,
             }
             for r in rows
         ]

@@ -855,3 +855,109 @@ class LoginHistory(Base):
     
     
     user = relationship("User", backref="login_history")
+
+
+# ---------------------------------------------------------------------------
+# Pydantic Schemas for Server Lifecycle & Multi-Core Execution
+# ---------------------------------------------------------------------------
+from pydantic import BaseModel, Field
+
+
+class ServerCreateRequest(BaseModel):
+    name: str
+    type: str  # e.g. vanilla, paper, purpur, fabric, forge, neoforge
+    version: str  # minecraft version (e.g. 1.21.1)
+    host_port: int | None = None  # if omitted/None auto-pick available port
+    loader_version: str | None = None  # specific loader build (fabric/forge/etc.)
+    installer_version: str | None = None  # for installers that have separate versioning
+    min_ram: int | str | None = None  # MB or string like "512M"; None = use Settings
+    max_ram: int | str | None = None  # MB or string like "2G"; None = use Settings
+    cpu_cores: int | None = None  # max CPU cores this server may use; None = unlimited
+    multicore_enabled: bool = True
+    multicore_mode: str = "auto"
+    worker_threads: int | None = None
+
+
+class ServerImportRequest(BaseModel):
+    name: str  # Must match existing directory under SERVERS_CONTAINER_ROOT
+    host_port: int | None = None
+    min_ram: int | str = 1024
+    max_ram: int | str = 2048
+    java_version: str | None = None  # optional preferred Java version (8/11/17/21)
+    cpu_cores: int | None = None  # max CPU cores; None = unlimited
+    multicore_enabled: bool = True
+    multicore_mode: str = "auto"
+    worker_threads: int | None = None
+
+
+class ServerMulticoreUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    mode: str | None = None
+    worker_threads: int | None = None
+    cpu_cores: int | None = None
+
+
+class ServerMulticoreStatusResponse(BaseModel):
+    enabled: bool
+    mode: str
+    allocated_cores: int
+    worker_threads: int
+    jvm_flags: list[str] = []
+    active: bool
+    live_applied: bool | None = None
+
+
+class ThreadMetric(BaseModel):
+    id: int
+    name: str = "JVM-Worker"
+    cpu_percent: float = 0.0
+    user_time: float | None = None
+    system_time: float | None = None
+
+    class Config:
+        extra = "allow"
+
+
+class ServerStatsResponse(BaseModel):
+    id: str
+    server_name: str | None = None
+    status: str = "running"
+    cpu_percent: float = 0.0
+    cpu_percent_aggregate: float | None = None
+    cpu_percent_normalized: float = 0.0
+    per_core_cpu: list[float] = []
+    active_threads: int = 0
+    thread_metrics: list[ThreadMetric] = []
+    memory_usage_mb: float = 0.0
+    memory_used_mb: float | None = None
+    memory_limit_mb: float = 0.0
+    memory_percent: float = 0.0
+    network_rx_mb: float = 0.0
+    network_tx_mb: float = 0.0
+    uptime_seconds: int = 0
+    restart_count: int = 0
+    health_status: str = "unknown"
+    player_count: int = 0
+    tps: float | None = None
+    mspt: float | None = None
+    multicore_enabled: bool = True
+    error: str | None = None
+
+    class Config:
+        extra = "allow"
+
+
+class ServerPerformanceDetailResponse(BaseModel):
+    server_id: str
+    server_name: str
+    status: str
+    stats: ServerStatsResponse
+    multicore_mode: str = "auto"
+    allocated_cores: int = 1
+    worker_threads: int = 1
+    multicore_efficiency: float = 1.0
+    tps_history_sample: list[float] = []
+    mspt_history_sample: list[float] = []
+
+    class Config:
+        extra = "allow"

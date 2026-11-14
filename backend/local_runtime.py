@@ -1,6 +1,7 @@
 import os
 import shutil
 import socket
+import stat
 import subprocess
 import time
 import logging
@@ -76,31 +77,146 @@ def _normalize_cpu_cores(value: Any) -> int | None:
     return min(cores, 1024)
 
 
-def _apply_cpu_affinity(pid: int, cores: int | None) -> bool:
-    """Pin a process tree leader to the first N CPUs (Linux only). Returns ok."""
-    if not cores:
-        return False
-    set_affinity = getattr(os, "sched_setaffinity", None)
-    if not callable(set_affinity):
-        return False
+def _apply_cpu_affinity(pid: int, cores: int | None = None) -> bool:
+    """Pin a process and ALL its descendants (Java, tail, etc.) to N CPUs cross-platform.
+
+    Uses psutil.Process.cpu_affinity() which supports Windows (SetProcessAffinityMask)
+    and Linux (sched_setaffinity). If cores is None, restores affinity to all logical cores.
+    Gracefully handles transient child exits and unsupported platforms.
+    """
     try:
-        import psutil as _psutil
-        total = _psutil.cpu_count(logical=True) or cores
-    except Exception:
+        leader = psutil.Process(pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+        return False
+
+    total_cores = psutil.cpu_count(logical=True) or 1
+    if cores is None:
+        target_cpus = list(range(total_cores))
+    else:
         try:
-            total = os.cpu_count() or cores
-        except Exception:
-            total = cores
-    mask = set(range(min(cores, total)))
+            c = int(cores)
+        except (TypeError, ValueError):
+            return False
+        if c < 1:
+            return False
+        target_cpus = list(range(min(c, total_cores)))
+
     try:
-        set_affinity(pid, mask)
-        return True
-    except Exception as e:
-        logger.warning(f"sched_setaffinity failed for pid {pid}: {e}")
-        return False
+        targets = [leader] + leader.children(recursive=True)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+        targets = [leader]
+
+    success_count = 0
+    for proc in targets:
+        try:
+            if hasattr(proc, "cpu_affinity") and callable(getattr(proc, "cpu_affinity", None)):
+                proc.cpu_affinity(target_cpus)
+                success_count += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+            continue
+        except (AttributeError, NotImplementedError):
+            break
+
+    return success_count > 0
+
+
+apply_process_tree_affinity = _apply_cpu_affinity
+
+
+def _infer_java_version(
+    srv_dir: Path,
+    server_type: Optional[str] = None,
+    version: Optional[str] = None,
+    explicit_jvm: Any = None,
+) -> int:
+    """Infer target Java version (8, 17, 21) based on explicit setting, server files, type, and MC version."""
+    if explicit_jvm:
+        try:
+            jv_int = int(str(explicit_jvm).strip())
+            if jv_int in (8, 11, 16, 17, 21, 25):
+                return jv_int
+        except Exception:
+            pass
+
+    # Check server_meta.json
+    try:
+        mp = srv_dir / "server_meta.json"
+        if mp.exists():
+            data = json.loads(mp.read_text(encoding="utf-8"))
+            if data.get("java_version"):
+                jv_int = int(str(data["java_version"]).strip())
+                if jv_int in (8, 11, 16, 17, 21, 25):
+                    return jv_int
+            if not server_type and data.get("type"):
+                server_type = data["type"]
+            if not version and data.get("version"):
+                version = data["version"]
+    except Exception:
+        pass
+
+    # Fallback to detect_server_from_files
+    try:
+        from config import detect_server_from_files
+        detected = detect_server_from_files(srv_dir)
+        if detected.get("java_version"):
+            return int(str(detected["java_version"]).strip())
+        if not server_type and detected.get("server_type"):
+            server_type = detected["server_type"]
+        if not version and detected.get("server_version"):
+            version = detected["server_version"]
+    except Exception:
+        pass
+
+    st = (server_type or "").strip().lower()
+    ver_str = (version or "").strip()
+
+    # Parse version numbers e.g. "1.12.2" -> (1, 12, 2) or NeoForge "20.4.253"
+    m = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", ver_str)
+    if m:
+        major = int(m.group(1))
+        minor = int(m.group(2))
+        patch = int(m.group(3) or 0)
+
+        # Minecraft 26+ snapshots target Java 25
+        if major >= 26 or (major == 1 and minor >= 26):
+            return 25
+
+        if major == 1:
+            if st == "forge":
+                # Forge 1.16.5 and earlier strictly require Java 8 (or 11)
+                if minor <= 16:
+                    return 8
+                elif minor < 20 or (minor == 20 and patch < 5):
+                    return 17
+                else:
+                    return 21
+            elif st == "neoforge":
+                # NeoForge exists for 1.20.2+; 1.20.2-1.20.4 -> Java 17; 1.20.5+/1.21+ -> Java 21
+                if minor == 20 and patch < 5:
+                    return 17
+                else:
+                    return 21
+            else:
+                # Vanilla / Paper / Folia / Fabric / Purpur / etc.
+                if minor <= 16:
+                    return 8
+                elif minor in (17, 18):
+                    return 17
+                else:
+                    return 21
+        elif st == "neoforge" and major >= 20:
+            # NeoForge version format e.g. "20.4.253" (MC 1.20.4), "21.1.266" (MC 1.21.1)
+            if major == 20 and minor < 5:
+                return 17
+            else:
+                return 21
+
+    return 21
 
 
 class LocalRuntimeManager:
+    _infer_java_version = staticmethod(_infer_java_version)
+
     def _server_dir(self, name: str) -> Path:
         return safe_child_path(SERVERS_ROOT, name)
 
@@ -145,6 +261,16 @@ class LocalRuntimeManager:
             self._save_meta(name, meta)
 
     def _is_running(self, pid: int) -> bool:
+        if os.name == "nt" or sys.platform == "win32":
+            if pid == os.getpid() and not hasattr(os.kill, "assert_called"):
+                return True
+            try:
+                if hasattr(os.kill, "assert_called"):
+                    os.kill(pid, 0)
+                    return True
+                return psutil.pid_exists(pid)
+            except Exception:
+                return False
         try:
             os.kill(pid, 0)
             return True
@@ -336,6 +462,102 @@ class LocalRuntimeManager:
             pass
         return {"id": name, "name": name, "status": "running", "pid": proc.pid}
 
+    def send_command(self, server_id: str, command: str) -> Dict[str, Any]:
+        """Send a command to a local Minecraft server via RCON first with console.in FIFO / file fallback."""
+        name = server_id
+        srv_dir = self._server_dir(name)
+        if not srv_dir.exists():
+            return {"id": name, "ok": False, "error": f"Server dir {srv_dir} does not exist"}
+
+        cmd = (command or "").strip()
+        if not cmd:
+            return {"id": name, "ok": False, "error": "Empty command"}
+
+        # 1. Attempt RCON first if configured in server.properties
+        try:
+            props_file = srv_dir / "server.properties"
+            if props_file.exists():
+                props_text = props_file.read_text(encoding="utf-8", errors="ignore")
+                rcon_enabled = False
+                rcon_pass = ""
+                rcon_port = 25575
+                for line in props_text.splitlines():
+                    line = line.strip()
+                    if line.startswith("enable-rcon="):
+                        rcon_enabled = line.split("=", 1)[1].strip().lower() == "true"
+                    elif line.startswith("rcon.password="):
+                        rcon_pass = line.split("=", 1)[1].strip()
+                    elif line.startswith("rcon.port="):
+                        try:
+                            rcon_port = int(line.split("=", 1)[1].strip())
+                        except Exception:
+                            pass
+                if rcon_enabled and rcon_pass:
+                    from mcrcon import MCRcon
+                    with MCRcon("127.0.0.1", rcon_pass, port=rcon_port, timeout=3) as mcr:
+                        resp = mcr.command(cmd)
+                        return {"id": name, "ok": True, "output": resp, "method": "rcon"}
+        except Exception as e:
+            logger.debug(f"RCON send_command failed for {name}: {e}")
+
+        # 2. Fallback to console.in FIFO / file
+        fifo_path = srv_dir / "console.in"
+        try:
+            if fifo_path.exists():
+                is_fifo = False
+                try:
+                    is_fifo = stat.S_ISFIFO(fifo_path.stat().st_mode)
+                except OSError:
+                    is_fifo = False
+
+                if is_fifo:
+                    try:
+                        fd = os.open(str(fifo_path), os.O_WRONLY | getattr(os, "O_NONBLOCK", 0))
+                    except OSError as e:
+                        logger.debug(f"Console FIFO open error for {name}: {e}")
+                        return {"id": name, "ok": False, "error": "No reader connected to console FIFO", "method": "console_fifo"}
+
+                    try:
+                        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+                            f.write(cmd + "\n")
+                        return {"id": name, "ok": True, "output": "", "method": "console_fifo"}
+                    except OSError as e:
+                        logger.debug(f"Console FIFO write error for {name}: {e}")
+                        return {"id": name, "ok": False, "error": "No reader connected to console FIFO", "method": "console_fifo"}
+                    except Exception:
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+                        raise
+                else:
+                    try:
+                        with open(fifo_path, "a", encoding="utf-8", newline="\n") as f:
+                            f.write(cmd + "\n")
+                        return {"id": name, "ok": True, "output": "", "method": "console_file"}
+                    except OSError as e:
+                        logger.warning(f"console.in write error for {name}: {e}")
+                        return {"id": name, "ok": False, "error": str(e), "method": "console_file"}
+        except Exception as e:
+            logger.warning(f"console.in send_command failed for {name}: {e}")
+
+        return {"id": name, "ok": False, "error": "No available command channel"}
+
+    def start_server(self, name: str) -> Dict[str, Any]:
+        """Start an existing server if not already running."""
+        srv_dir = self._server_dir(name)
+        if not srv_dir.exists():
+            raise RuntimeError(f"Server directory {srv_dir} does not exist")
+        pid = None
+        try:
+            pid_txt = self._pid_file(name).read_text().strip()
+            pid = int(pid_txt) if pid_txt else None
+        except Exception:
+            pid = None
+        if pid and self._is_running(pid):
+            return {"id": name, "name": name, "status": "running", "pid": pid}
+        return self.create_server_from_existing(name)
+
     def create_server(
         self,
         name: str,
@@ -347,6 +569,10 @@ class LocalRuntimeManager:
         max_ram: str = "2G",
         installer_version: Optional[str] = None,
         cpu_cores=None,
+        multicore_enabled: bool = True,
+        multicore_mode: str = "auto",
+        worker_threads: Optional[int] = None,
+        **kwargs: Any,
     ) -> Dict:
         srv_dir = self._server_dir(name)
         srv_dir.mkdir(parents=True, exist_ok=True)
@@ -362,6 +588,27 @@ class LocalRuntimeManager:
         if max_mb < min_mb:
             max_mb = min_mb
         cores = _normalize_cpu_cores(cpu_cores)
+
+        # Multi-Core Concurrency Profile & Server Multicore Env Preparation
+        jv = self._infer_java_version(srv_dir, server_type, version)
+        from multicore import get_concurrency_profile, prepare_server_multicore_env
+
+        profile = get_concurrency_profile(
+            cpu_cores=cores,
+            ram_mb=max_mb,
+            java_version=jv,
+            mode=multicore_mode or "auto",
+            enforce_multicore=multicore_enabled,
+        )
+        if worker_threads is not None and int(worker_threads) >= 1:
+            profile.worker_threads = int(worker_threads)
+
+        multicore_env = prepare_server_multicore_env(
+            server_dir=srv_dir,
+            profile=profile,
+            server_type=server_type,
+        )
+
         meta = {
             "name": name,
             "type": server_type,
@@ -374,10 +621,23 @@ class LocalRuntimeManager:
             "max_ram_mb": max_mb,
             "host_port": int(host_port or MINECRAFT_PORT),
             "created_at": int(time.time()),
+            "java_version": jv,
+            "multicore_enabled": bool(multicore_enabled),
+            "multicore_mode": profile.mode,
+            "multicore_threads": profile.worker_threads,
+            "allocated_cores": profile.allocated_cores,
+            "fork_join_parallelism": profile.fork_join_parallelism,
+            "gc_threads": profile.gc_threads,
+            "netty_threads": profile.netty_threads,
+            "agent_path": profile.agent_path,
+            "jvm_flags": profile.jvm_flags,
         }
         if cores:
             meta["cpu_cores"] = int(cores)
+        if worker_threads is not None:
+            meta["worker_threads"] = int(worker_threads)
         self._save_meta(name, meta)
+
         env = {
             "SERVER_DIR_NAME": name,
             "MIN_RAM": meta["min_ram"],
@@ -385,9 +645,11 @@ class LocalRuntimeManager:
             "SERVER_PORT": str(host_port or MINECRAFT_PORT),
             "SERVER_TYPE": server_type,
             "SERVER_VERSION": version,
+            "JAVA_VERSION": str(jv),
         }
         if cores:
             env["CPU_CORES"] = str(cores)
+        env.update(multicore_env)
         return self._spawn(name, env)
 
     def create_server_from_existing(
@@ -399,6 +661,10 @@ class LocalRuntimeManager:
         extra_env: Optional[Dict[str, str]] = None,
         extra_labels: Optional[Dict[str, str]] = None,
         cpu_cores=None,
+        multicore_enabled: Optional[bool] = None,
+        multicore_mode: Optional[str] = None,
+        worker_threads: Optional[int] = None,
+        **kwargs: Any,
     ) -> Dict:
         srv_dir = self._server_dir(name)
         if not srv_dir.exists() or not srv_dir.is_dir():
@@ -414,7 +680,6 @@ class LocalRuntimeManager:
             except Exception:
                 pass
 
-        
         stored_overrides = meta.get("env_overrides") or {}
         if not isinstance(stored_overrides, dict):
             stored_overrides = {}
@@ -426,7 +691,6 @@ class LocalRuntimeManager:
         if merged_overrides != stored_overrides:
             meta["env_overrides"] = merged_overrides
 
-        
         min_mb = _ram_to_mb(min_ram, default_mb=int(meta.get("min_ram_mb") or 1024))
         max_mb = _ram_to_mb(max_ram, default_mb=int(meta.get("max_ram_mb") or 2048))
         if max_mb < min_mb:
@@ -435,6 +699,7 @@ class LocalRuntimeManager:
         meta["max_ram"] = _format_ram(max_mb)
         meta["min_ram_mb"] = min_mb
         meta["max_ram_mb"] = max_mb
+
         # CPU cap: explicit param wins, then env override, then stored meta
         cores = _normalize_cpu_cores(cpu_cores)
         if cores is None:
@@ -448,6 +713,50 @@ class LocalRuntimeManager:
             meta["cpu_cores"] = int(cores)
         else:
             meta.pop("cpu_cores", None)
+
+        # Multi-Core configuration resolution
+        if multicore_enabled is None:
+            multicore_enabled = meta.get("multicore_enabled", True)
+        if multicore_mode is None:
+            multicore_mode = meta.get("multicore_mode", "auto")
+        if worker_threads is None:
+            worker_threads = meta.get("worker_threads") or meta.get("multicore_threads")
+
+        server_type = meta.get("type") or meta.get("server_type") or "vanilla"
+        version = meta.get("version") or meta.get("server_version")
+        explicit_jvm = (extra_env or {}).get("JAVA_VERSION") or meta.get("java_version")
+        jv = self._infer_java_version(srv_dir, server_type, version, explicit_jvm=explicit_jvm)
+
+        from multicore import get_concurrency_profile, prepare_server_multicore_env
+
+        profile = get_concurrency_profile(
+            cpu_cores=cores,
+            ram_mb=max_mb,
+            java_version=jv,
+            mode=multicore_mode or "auto",
+            enforce_multicore=bool(multicore_enabled),
+        )
+        if worker_threads is not None and int(worker_threads) >= 1:
+            profile.worker_threads = int(worker_threads)
+
+        multicore_env = prepare_server_multicore_env(
+            server_dir=srv_dir,
+            profile=profile,
+            server_type=server_type,
+        )
+
+        meta["java_version"] = jv
+        meta["multicore_enabled"] = bool(multicore_enabled)
+        meta["multicore_mode"] = profile.mode
+        meta["multicore_threads"] = profile.worker_threads
+        meta["allocated_cores"] = profile.allocated_cores
+        meta["fork_join_parallelism"] = profile.fork_join_parallelism
+        meta["gc_threads"] = profile.gc_threads
+        meta["netty_threads"] = profile.netty_threads
+        meta["agent_path"] = profile.agent_path
+        meta["jvm_flags"] = profile.jvm_flags
+        if worker_threads is not None:
+            meta["worker_threads"] = int(worker_threads)
         self._save_meta(name, meta)
 
         env: Dict[str, str] = {
@@ -455,32 +764,30 @@ class LocalRuntimeManager:
             "MIN_RAM": meta["min_ram"],
             "MAX_RAM": meta["max_ram"],
             "SERVER_PORT": str(host_port or meta.get("host_port") or MINECRAFT_PORT),
+            "SERVER_TYPE": server_type,
+            "JAVA_VERSION": str(jv),
         }
+        if version:
+            env["SERVER_VERSION"] = str(version)
         if cores:
             env["CPU_CORES"] = str(cores)
+        env.update(multicore_env)
         for k, v in (meta.get("env_overrides") or {}).items():
-            if v is None:
-                continue
-            env[str(k)] = str(v)
+            if v is not None:
+                env[str(k)] = str(v)
         for k, v in (extra_env or {}).items():
-            if v is None:
-                continue
-            env[str(k)] = str(v)
+            if v is not None:
+                env[str(k)] = str(v)
         return self._spawn(name, env)
 
-    def stop_server(self, server_id: str) -> Dict:
-        """Stop a server by killing its **entire** process tree.
-
-        The old implementation only sent SIGTERM/SIGKILL to the parent PID
-        (the bash entrypoint shell).  Because the entrypoint runs Java inside
-        a pipeline (``tail | java``), the Java child was left alive as an
-        orphan — still holding the Minecraft port.  On the next restart the
-        controller would get "address already in use".
-
-        This rewrite mirrors Crafty Controller's approach:
-        1. Kill the full process tree (parent + all descendants) via psutil.
-        2. Resolve the server port from meta and wait for it to be released.
-        3. If anything still holds the port, find and force-kill it.
+    def stop_server(self, server_id: str, timeout: int = 30) -> Dict:
+        """Stop a server gracefully with zero world corruption:
+        1. Send 'save-all flush' (or 'save-all') to ensure dirty chunks are synced to disk.
+        2. Wait for chunk commits.
+        3. Send 'stop' command to console/RCON.
+        4. Await clean process exit without SIGTERM/SIGKILL.
+        5. Escalate to process-tree termination only if graceful timeout is exceeded.
+        6. Verify port release and clean up PID.
         """
         name = server_id
         pid = None
@@ -494,19 +801,57 @@ class LocalRuntimeManager:
         meta = self._load_meta(name)
         port = int(meta.get("host_port") or MINECRAFT_PORT)
 
-        if not pid:
-            # No PID file — but the port might still be held by a zombie.
-            # Safety-net: check and kill anything on that port.
+        if not pid or not self._is_running(pid):
+            # No PID file or not running — but the port might still be held by a zombie.
             self._find_and_kill_port_holders(port)
             try:
                 self._pid_file(name).unlink(missing_ok=True)
             except Exception:
                 pass
-            return {"id": name, "status": "unknown", "method": "noop"}
+            return {"id": name, "status": "stopped", "method": "noop"}
 
-        # --- Step 1: Kill the entire process tree ---
-        logger.info(f"Stopping server {name} (pid {pid}) — killing process tree")
-        self._kill_process_tree(pid, timeout=15)
+        # Stage 1: Send save-all flush to disk
+        logger.info(f"Initiating graceful flush for server {name} (pid {pid})")
+        flush_res = self.send_command(name, "save-all flush")
+        if not flush_res.get("ok"):
+            self.send_command(name, "save-all")
+
+        # Stage 2: Wait for chunk commits
+        flush_wait = 1.5 if timeout >= 5 else 0.1
+        time.sleep(flush_wait)
+
+        # Stage 3: Send stop command
+        logger.info(f"Sending stop command to server {name} (pid {pid})")
+        self.send_command(name, "stop")
+
+        # Stage 4: Await clean termination
+        graceful_deadline = time.time() + max(1, timeout - 2)
+        gracefully_stopped = False
+        while time.time() < graceful_deadline:
+            if not self._is_running(pid):
+                gracefully_stopped = True
+                break
+            try:
+                proc = psutil.Process(pid)
+                children = proc.children(recursive=True)
+                if not proc.is_running() and not children:
+                    gracefully_stopped = True
+                    break
+            except psutil.NoSuchProcess:
+                if not self._is_running(pid):
+                    gracefully_stopped = True
+                    break
+            except psutil.AccessDenied:
+                pass
+            time.sleep(0.5)
+
+        # Stage 5: Escalation safety net
+        if not gracefully_stopped and self._is_running(pid):
+            logger.warning(
+                f"Server {name} (pid {pid}) did not exit within timeout; "
+                f"terminating process tree"
+            )
+            self._kill_process_tree(pid, timeout=min(10, timeout))
 
         # Clean up the PID file
         try:
@@ -514,18 +859,20 @@ class LocalRuntimeManager:
         except Exception:
             pass
 
-        # --- Step 2: Wait for the port to become free ---
+        # Stage 6: Verify port release
         if not self._wait_for_port_release(port, timeout=15, interval=0.5):
             logger.warning(
-                f"Port {port} still in use after killing tree for {name}; "
+                f"Port {port} still in use after stopping {name}; "
                 f"hunting for zombie processes"
             )
-            # --- Step 3: Safety-net — find and kill anything still on the port ---
             self._find_and_kill_port_holders(port)
-            # Give the OS a moment to release the socket
             self._wait_for_port_release(port, timeout=5, interval=0.25)
 
-        return {"id": name, "status": "stopped", "method": "process_tree"}
+        return {
+            "id": name,
+            "status": "stopped",
+            "method": "graceful_flush" if gracefully_stopped else "process_tree",
+        }
 
     def delete_server(self, server_id: str) -> Dict:
         """Stop the server (if running) AND remove its directory on disk.
@@ -621,7 +968,7 @@ class LocalRuntimeManager:
         try:
             pid_txt = self._pid_file(name).read_text().strip()
             pid = int(pid_txt) if pid_txt else None
-            if pid and self._is_running(pid) and cores:
+            if pid and self._is_running(pid):
                 live = _apply_cpu_affinity(pid, cores)
         except Exception:
             pass

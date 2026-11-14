@@ -311,4 +311,53 @@ class ForgeProvider:
         """Get list of Forge version strings for a specific Minecraft version."""
         return self.get_forge_versions_for_minecraft(game_version)
 
+    @staticmethod
+    def extract_mc_version(version: str) -> str:
+        """Extract the base Minecraft version from a full Forge or MC version string."""
+        v = (version or "").strip()
+        if "-" in v:
+            parts = v.split("-")
+            if re.match(r"^\d+\.\d+", parts[0]):
+                return parts[0]
+            for p in parts:
+                if re.match(r"^\d+\.\d+", p):
+                    return p
+        return v
+
+    def is_modern(self, version: str) -> bool:
+        """Return True if the Forge version uses modern modular bootstrapper (run.sh / user_jvm_args.txt)."""
+        mc_ver = self.extract_mc_version(version)
+        m = re.match(r"^(\d+)\.(\d+)", mc_ver)
+        if m:
+            major, minor = int(m.group(1)), int(m.group(2))
+            if major == 1:
+                return minor >= 17
+            return major > 1
+        return False
+
+    def get_expected_launch_type(self, version: str) -> str:
+        """Return 'run_script' for modern Forge (1.17+) or 'jar' for legacy Forge (1.12.2, 1.16.5)."""
+        return "run_script" if self.is_modern(version) else "jar"
+
+    def get_java_version(self, version: str) -> int:
+        """Return the required Java version for the given Minecraft / Forge version."""
+        mc_ver = self.extract_mc_version(version)
+        m = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", mc_ver)
+        if m:
+            major = int(m.group(1))
+            minor = int(m.group(2))
+            patch = int(m.group(3) or 0)
+            if major == 1:
+                if minor <= 16:
+                    return 8
+                elif minor < 20 or (minor == 20 and patch < 5):
+                    return 17
+                else:
+                    return 21
+            elif major >= 26:
+                return 25
+            else:
+                return 21
+        return 21
+
 register_provider(ForgeProvider())

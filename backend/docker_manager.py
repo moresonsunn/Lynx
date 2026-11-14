@@ -3486,15 +3486,41 @@ class DockerManager:
             cpu_delta = cpu_usage_now - cpu_usage_prev
             system_delta = system_now - system_prev
             online_cpus = cpu_stats.get("online_cpus")
+            per_cpu_now = (cpu_stats.get("cpu_usage", {}) or {}).get("percpu_usage", []) or []
             if online_cpus is None:
-                per_cpu = (cpu_stats.get("cpu_usage", {}) or {}).get("percpu_usage", [])
-                online_cpus = len(per_cpu) or 1
-            cpu_percent = 0.0
-            if system_delta > 0 and cpu_delta > 0:
-                # Normalize to 0-100% regardless of core count
-                cpu_percent = (cpu_delta / system_delta) * 100.0
+                online_cpus = len(per_cpu_now) or 1
+            online_cpus = max(1, int(online_cpus))
 
-            
+            cpu_percent = 0.0
+            cpu_percent_normalized = 0.0
+            per_core_cpu: list[float] = []
+
+            if system_delta > 0 and cpu_delta > 0:
+                # UNCLAMPED Aggregate CPU: standard Docker CLI / multi-core stats (100% per core)
+                cpu_percent = (cpu_delta / system_delta) * online_cpus * 100.0
+                # Normalized CPU: fraction of total host capacity (0 - 100%)
+                cpu_percent_normalized = min((cpu_delta / system_delta) * 100.0, 100.0)
+
+            # Per-core distribution from cgroups v1 percpu_usage if available
+            precpu_usage = (precpu_stats.get("cpu_usage", {}) or {}).get("percpu_usage", []) or []
+            if per_cpu_now and precpu_usage and len(per_cpu_now) == len(precpu_usage) and system_delta > 0:
+                core_system_slice = system_delta / online_cpus
+                for now_val, prev_val in zip(per_cpu_now, precpu_usage):
+                    cdelta = max(0, now_val - prev_val)
+                    cpct = (cdelta / core_system_slice) * 100.0 if core_system_slice > 0 else 0.0
+                    per_core_cpu.append(round(min(cpct, 100.0), 1))
+            elif online_cpus > 0:
+                # Fallback: distribute aggregate CPU across online cpus
+                core_avg = round(min(cpu_percent / online_cpus, 100.0), 1)
+                per_core_cpu = [core_avg] * online_cpus
+
+            # Active threads from container pids_stats if present
+            pids_stats = stats_now.get("pids_stats", {}) or {}
+            active_threads = int(pids_stats.get("current", 0) or 0)
+            thread_metrics: list[dict] = []
+            tps = None
+            mspt = None
+
             mem_usage = stats_now["memory_stats"].get("usage", 0)
             
             if "stats" in stats_now["memory_stats"] and "cache" in stats_now["memory_stats"]["stats"]:
@@ -3504,7 +3530,6 @@ class DockerManager:
             mem_usage_mb = mem_usage / (1024 * 1024)
             mem_limit_mb = mem_limit / (1024 * 1024)
 
-            
             net_stats = stats_now.get("networks", {}) or stats_now.get("network", {}) or {}
             rx_bytes = sum(net.get("rx_bytes", 0) for net in net_stats.values()) if isinstance(net_stats, dict) else 0
             tx_bytes = sum(net.get("tx_bytes", 0) for net in net_stats.values()) if isinstance(net_stats, dict) else 0
@@ -3536,7 +3561,13 @@ class DockerManager:
             return {
                 "id": container.id,
                 "cpu_percent": round(cpu_percent, 2),
+                "cpu_percent_aggregate": round(cpu_percent, 2),
+                "cpu_percent_normalized": round(cpu_percent_normalized, 2),
+                "per_core_cpu": per_core_cpu,
+                "active_threads": active_threads,
+                "thread_metrics": thread_metrics,
                 "memory_usage_mb": round(mem_usage_mb, 2),
+                "memory_used_mb": round(mem_usage_mb, 2),
                 "memory_limit_mb": round(mem_limit_mb, 2),
                 "memory_percent": round(mem_percent, 2),
                 "network_rx_mb": round(rx_mb, 2),
@@ -3545,6 +3576,8 @@ class DockerManager:
                 "restart_count": restart_count,
                 "health_status": health_status,
                 "started_at": started_at,
+                "tps": tps,
+                "mspt": mspt,
             }
         except docker.errors.NotFound:
             logger.warning(f"Container {container_id} not found for stats request.")
@@ -3552,7 +3585,13 @@ class DockerManager:
                 "id": container_id,
                 "error": "Container not found.",
                 "cpu_percent": 0.0,
+                "cpu_percent_aggregate": 0.0,
+                "cpu_percent_normalized": 0.0,
+                "per_core_cpu": [],
+                "active_threads": 0,
+                "thread_metrics": [],
                 "memory_usage_mb": 0.0,
+                "memory_used_mb": 0.0,
                 "memory_limit_mb": 0.0,
                 "memory_percent": 0.0,
                 "network_rx_mb": 0.0,
@@ -3561,6 +3600,8 @@ class DockerManager:
                 "restart_count": 0,
                 "health_status": "unknown",
                 "started_at": "",
+                "tps": None,
+                "mspt": None,
             }
         except Exception as e:
             logger.error(f"Error getting stats for container {container_id}: {e}")
@@ -3568,7 +3609,13 @@ class DockerManager:
                 "id": container_id,
                 "error": "Failed to get stats",
                 "cpu_percent": 0.0,
+                "cpu_percent_aggregate": 0.0,
+                "cpu_percent_normalized": 0.0,
+                "per_core_cpu": [],
+                "active_threads": 0,
+                "thread_metrics": [],
                 "memory_usage_mb": 0.0,
+                "memory_used_mb": 0.0,
                 "memory_limit_mb": 0.0,
                 "memory_percent": 0.0,
                 "network_rx_mb": 0.0,
@@ -3577,6 +3624,8 @@ class DockerManager:
                 "restart_count": 0,
                 "health_status": "unknown",
                 "started_at": "",
+                "tps": None,
+                "mspt": None,
             }
 
     def get_server_stats_cached(self, container_id: str, ttl_seconds: int = 3) -> dict:
