@@ -283,9 +283,15 @@ case "${JAVA_VERSION:-}" in
     ;;
 esac
 
-ALL_JAVA_ARGS="$MEM_ARGS${JAVA_OPTS:+ $JAVA_OPTS}"
+CLI_INCOMING_JAVA_ARGS=""
 if [ -n "$INCOMING_JAVA_ARGS" ]; then
-  ALL_JAVA_ARGS="$ALL_JAVA_ARGS $INCOMING_JAVA_ARGS"
+  # Keep -javaagent out of unquoted $ALL_JAVA_ARGS so spaced server paths are never split on CLI
+  CLI_INCOMING_JAVA_ARGS=$(printf '%s' "$INCOMING_JAVA_ARGS" | sed -E 's/"-javaagent:[^"]*"/ /g; s/'\''-javaagent:[^'\'']*'\''/ /g; s/(^|[[:space:]])-javaagent:[^[:space:]]*/ /g; s/[[:space:]]+/ /g; s/^ //; s/ $//')
+fi
+
+ALL_JAVA_ARGS="$MEM_ARGS${JAVA_OPTS:+ $JAVA_OPTS}"
+if [ -n "$CLI_INCOMING_JAVA_ARGS" ]; then
+  ALL_JAVA_ARGS="$ALL_JAVA_ARGS $CLI_INCOMING_JAVA_ARGS"
 fi
 
 echo "DEBUG: Memory configuration - Min: $MIN_RAM, Max: $MAX_RAM"
@@ -352,18 +358,13 @@ find_multicore_agent() {
   return 1
 }
 
+AGENT_JVM_ARGS=()
 RESOLVED_AGENT_JAR=$(find_multicore_agent || true)
 if [ -n "$RESOLVED_AGENT_JAR" ]; then
   export MC_MULTICORE_AGENT_PATH="$RESOLVED_AGENT_JAR"
   echo "INFO: [LMCE] Universal Multi-Core Agent located at: $RESOLVED_AGENT_JAR"
-  if [[ "$ALL_JAVA_ARGS" != *"-javaagent:"*"mc-multicore-agent.jar"* ]]; then
-    if [[ "$RESOLVED_AGENT_JAR" == *[[:space:]]* ]]; then
-      ALL_JAVA_ARGS="$ALL_JAVA_ARGS \"-javaagent:$RESOLVED_AGENT_JAR\""
-    else
-      ALL_JAVA_ARGS="$ALL_JAVA_ARGS -javaagent:$RESOLVED_AGENT_JAR"
-    fi
-    echo "INFO: [LMCE] Injected -javaagent:$RESOLVED_AGENT_JAR into ALL_JAVA_ARGS"
-  fi
+  AGENT_JVM_ARGS=("-javaagent:$RESOLVED_AGENT_JAR")
+  echo "INFO: [LMCE] Configured AGENT_JVM_ARGS with -javaagent:$RESOLVED_AGENT_JAR"
 fi
 
 # Ensure JAVA_TOOL_OPTIONS is exported for child JVM processes (sanitized for Java 24+)
@@ -1195,7 +1196,7 @@ start_server_with_recovery() {
         tail -f -n +1 console.in | bash ./run.sh "${effective_args[@]}" $EXTRA_SERVER_ARGS
         ;;
       "java")
-        tail -f -n +1 console.in | "$JAVA_BIN" $ALL_JAVA_ARGS "${effective_args[@]}" $EXTRA_SERVER_ARGS
+        tail -f -n +1 console.in | JAVA_TOOL_OPTIONS="" "$JAVA_BIN" $ALL_JAVA_ARGS "${AGENT_JVM_ARGS[@]}" "${effective_args[@]}" $EXTRA_SERVER_ARGS
         ;;
     esac
     local exit_code=$?
@@ -1441,7 +1442,7 @@ if [ -n "$start_jar" ]; then
   fi
   
   # Test JAR file integrity
-  if ! "$JAVA_BIN" $ALL_JAVA_ARGS -jar "$start_jar" --help >/dev/null 2>&1; then
+  if ! JAVA_TOOL_OPTIONS="" "$JAVA_BIN" $ALL_JAVA_ARGS "${AGENT_JVM_ARGS[@]}" -jar "$start_jar" --help >/dev/null 2>&1; then
     echo "WARNING: JAR file validation failed, but attempting to start anyway..."
   fi
   

@@ -724,13 +724,15 @@ class LocalRuntimeManager:
             worker_threads = meta.get("worker_threads") or meta.get("multicore_threads")
 
         server_type = (
-            meta.get("type")
+            (extra_env or {}).get("SERVER_TYPE")
+            or meta.get("type")
             or meta.get("server_type")
             or meta.get("loader")
             or meta.get("detected_type")
         )
         version = (
-            meta.get("version")
+            (extra_env or {}).get("SERVER_VERSION")
+            or meta.get("version")
             or meta.get("server_version")
             or meta.get("mc_version")
             or meta.get("detected_version")
@@ -740,12 +742,14 @@ class LocalRuntimeManager:
                 det = detect_server_from_files(srv_dir)
                 if (not server_type or str(server_type).lower() in ("", "custom", "unknown")) and det.get("server_type"):
                     server_type = det["server_type"]
-                    meta["type"] = server_type
                 if not version and det.get("server_version"):
                     version = det["server_version"]
-                    meta["version"] = version
             except Exception:
                 pass
+        if server_type:
+            meta["type"] = server_type
+        if version:
+            meta["version"] = version
         server_type = server_type or "vanilla"
         explicit_jvm = (extra_env or {}).get("JAVA_VERSION") or meta.get("java_version")
         jv = self._infer_java_version(srv_dir, server_type, version, explicit_jvm=explicit_jvm)

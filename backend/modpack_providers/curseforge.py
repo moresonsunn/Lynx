@@ -295,9 +295,75 @@ class CurseForgeProvider:
         Given a CF manifest.json, resolve to concrete file objects to download.
         Apply client-only filtering before returning.
         """
-        # ...existing code that fills resolved_files with file JSONs...
-        resolved_files = []  # placeholder to show context
-        # ...existing code...
+        entries = (manifest or {}).get("files") or []
+        file_ids = []
+        proj_by_fid: Dict[int, int] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            fid = entry.get("fileID") or entry.get("fileId")
+            pid = entry.get("projectID") or entry.get("projectId")
+            if fid:
+                try:
+                    fid_int = int(fid)
+                    file_ids.append(fid_int)
+                    if pid:
+                        proj_by_fid[fid_int] = int(pid)
+                except (TypeError, ValueError):
+                    continue
+
+        if not file_ids:
+            return []
+
+        resolved_files: list[dict] = []
+        chunk_size = 200
+        for i in range(0, len(file_ids), chunk_size):
+            batch = file_ids[i : i + chunk_size]
+            batch_resolved = False
+            try:
+                resp = requests.post(
+                    f"{CURSE_API_BASE}/mods/files",
+                    headers=self._headers(),
+                    json={"fileIds": batch},
+                    timeout=30,
+                )
+                if resp.ok:
+                    data = resp.json().get("data") or []
+                    if isinstance(data, list):
+                        resolved_files.extend(data)
+                        batch_resolved = True
+            except Exception as exc:
+                log.warning("CurseForge batch /mods/files failed: %s", exc)
+
+            if not batch_resolved:
+                for fid_int in batch:
+                    pid_int = proj_by_fid.get(fid_int)
+                    if not pid_int:
+                        continue
+                    try:
+                        fr = requests.get(
+                            f"{CURSE_API_BASE}/mods/{pid_int}/files/{fid_int}",
+                            headers=self._headers(),
+                            timeout=15,
+                        )
+                        if fr.ok:
+                            fd = fr.json().get("data")
+                            if isinstance(fd, dict):
+                                resolved_files.append(fd)
+                    except Exception as exc:
+                        log.warning("CurseForge file lookup %s/%s failed: %s", pid_int, fid_int, exc)
+
+        # Populate ForgeCDN fallback URL for files whose downloadUrl is null (third-party distribution disabled)
+        for rf in resolved_files:
+            if isinstance(rf, dict) and not rf.get("downloadUrl"):
+                fid = rf.get("id")
+                fname = rf.get("fileName")
+                if fid and fname:
+                    try:
+                        fid_int = int(fid)
+                        rf["downloadUrl"] = f"https://edge.forgecdn.net/files/{fid_int // 1000}/{fid_int % 1000}/{fname}"
+                    except (TypeError, ValueError):
+                        pass
 
         resolved_files = self._filter_client_only(resolved_files)
         return resolved_files
