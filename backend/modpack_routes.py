@@ -22,7 +22,7 @@ import logging
 from auth import require_auth, require_moderator
 from models import User
 from runtime_adapter import get_runtime_manager_or_docker
-from config import SERVERS_ROOT, safe_child_path
+from config import SERVERS_ROOT, safe_child_path, detect_server_from_files
 from mod_side_resolver import ModSideResolver, inspect_jar_metadata
 from client_mod_detector import (
     load_client_only_config,
@@ -212,6 +212,49 @@ def is_path_protected(
     return False
 
 
+def _enrich_loader_mc_from_server(server_dir: Path, info: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill missing loader, loader_version, or minecraft_version from server_meta.json or server files."""
+    if info.get("loader") and info.get("minecraft_version") and info.get("loader_version"):
+        return info
+    sm_file = server_dir / "server_meta.json"
+    if sm_file.is_file():
+        try:
+            sm = json.loads(sm_file.read_text(encoding="utf-8", errors="ignore") or "{}")
+            if isinstance(sm, dict):
+                if not info.get("loader"):
+                    info["loader"] = (
+                        sm.get("mc_type")
+                        or sm.get("server_type")
+                        or sm.get("type")
+                        or sm.get("loader")
+                        or sm.get("detected_type")
+                    )
+                if not info.get("minecraft_version"):
+                    info["minecraft_version"] = (
+                        sm.get("mc_version")
+                        or sm.get("minecraft_version")
+                        or sm.get("server_version")
+                        or sm.get("version")
+                        or sm.get("detected_version")
+                    )
+                if not info.get("loader_version") and sm.get("loader_version"):
+                    info["loader_version"] = sm.get("loader_version")
+        except Exception:
+            pass
+    if not info.get("loader") or not info.get("minecraft_version") or not info.get("loader_version"):
+        try:
+            det = detect_server_from_files(server_dir)
+            if not info.get("loader") and det.get("server_type"):
+                info["loader"] = det["server_type"]
+            if not info.get("minecraft_version") and det.get("server_version"):
+                info["minecraft_version"] = det["server_version"]
+            if not info.get("loader_version") and det.get("loader_version"):
+                info["loader_version"] = det["loader_version"]
+        except Exception:
+            pass
+    return info
+
+
 def get_server_modpack_info(server_name: str) -> Optional[dict]:
     """
     Retrieves modpack metadata for a server.
@@ -262,7 +305,7 @@ def get_server_modpack_info(server_name: str) -> Optional[dict]:
                 provider = str(data.get("provider") or "").strip().lower()
                 pack_id = str(data.get("pack_id") or "").strip()
                 if provider and pack_id:
-                    return {
+                    info = {
                         "server_name": server_name,
                         "provider": provider,
                         "pack_id": pack_id,
@@ -278,6 +321,7 @@ def get_server_modpack_info(server_name: str) -> Optional[dict]:
                         "source": "modpack.meta.json",
                         "server_dir": server_dir,
                     }
+                    return _enrich_loader_mc_from_server(server_dir, info)
         except Exception as e:
             log.warning(f"Error reading {meta_file}: {e}")
 
@@ -291,22 +335,35 @@ def get_server_modpack_info(server_name: str) -> Optional[dict]:
                 pid = data.get("modpack_id") or data.get("pack_id")
                 vid = data.get("modpack_version_id") or data.get("version_id")
                 if prov and pid:
-                    return {
+                    info = {
                         "server_name": server_name,
                         "provider": str(prov).strip().lower(),
                         "pack_id": str(pid).strip(),
                         "version_id": str(vid) if vid is not None else None,
                         "version_name": data.get("modpack_version_name") or (str(vid) if vid is not None else None),
                         "installed_files": data.get("installed_files") or [],
-                        "loader": data.get("mc_type") or data.get("loader"),
+                        "loader": (
+                            data.get("mc_type")
+                            or data.get("server_type")
+                            or data.get("type")
+                            or data.get("loader")
+                            or data.get("detected_type")
+                        ),
                         "loader_version": data.get("loader_version"),
-                        "minecraft_version": data.get("mc_version") or data.get("minecraft_version"),
+                        "minecraft_version": (
+                            data.get("mc_version")
+                            or data.get("minecraft_version")
+                            or data.get("server_version")
+                            or data.get("version")
+                            or data.get("detected_version")
+                        ),
                         "install_mode": data.get("install_mode", "server"),
                         "installed_at": data.get("installed_at"),
                         "updated_at": data.get("updated_at"),
                         "source": "server_meta.json",
                         "server_dir": server_dir,
                     }
+                    return _enrich_loader_mc_from_server(server_dir, info)
         except Exception as e:
             log.warning(f"Error reading {server_meta_file}: {e}")
 
@@ -320,7 +377,7 @@ def get_server_modpack_info(server_name: str) -> Optional[dict]:
                 pid = labels.get("mc.modpack.id")
                 vid = labels.get("mc.modpack.version_id")
                 if prov and pid:
-                    return {
+                    info = {
                         "server_name": server_name,
                         "provider": str(prov).strip().lower(),
                         "pack_id": str(pid).strip(),
@@ -336,6 +393,7 @@ def get_server_modpack_info(server_name: str) -> Optional[dict]:
                         "source": "docker_labels",
                         "server_dir": server_dir,
                     }
+                    return _enrich_loader_mc_from_server(server_dir, info)
                 break
     except Exception as e:
         log.warning(f"Error checking Docker labels for {server_name}: {e}")
@@ -419,21 +477,25 @@ def reconcile_and_cleanup_modpack(
     """
     Executes hybrid cleanup combining:
       Method B: Mod-ID based deduplication (inspect_jar_metadata)
-      Method A: Manifest-based file tracking (previous_meta["installed_files"])
+      Method A: Manifest-based file tracking (union of all prior file manifests + managed dir diff)
     """
     server_dir = Path(server_dir)
     mods_dir = server_dir / "mods"
     disabled_dir = server_dir / "mods-disabled-client"
+    disabled_dirs = [
+        disabled_dir,
+        server_dir / "mods-disabled-incompatible",
+        server_dir / "mods-disabled-crash",
+    ]
 
     mods_cleaned: List[str] = []
     files_removed: List[str] = []
     deleted_paths: Set[str] = set()
 
-    # 1. Scan and index existing jars in server_dir/mods and server_dir/mods-disabled-client
+    # 1. Scan and index existing jars in server_dir/mods and all disabled quarantine folders
     existing_mod_map: Dict[str, List[Path]] = {}
-    scan_dirs = [mods_dir]
-    if disabled_dir.exists():
-        scan_dirs.append(disabled_dir)
+    scan_dirs = [mods_dir] + [d for d in disabled_dirs if d.exists()]
+    disabled_resolved = {d.resolve() for d in disabled_dirs if d.exists()}
 
     for target_d in scan_dirs:
         if not target_d.exists():
@@ -456,17 +518,18 @@ def reconcile_and_cleanup_modpack(
     staged_mods = [p for p in staging_dir.rglob("*") if p.is_file() and p.name.lower().endswith(".jar")]
     for s_jar in staged_mods:
         try:
-            # Check quarantine duplicate with exact same filename in disabled_dir
-            if disabled_dir.exists():
-                dup_quarantine = disabled_dir / s_jar.name
-                if dup_quarantine.is_file() and str(dup_quarantine.resolve()) not in deleted_paths:
-                    try:
-                        dup_quarantine.unlink()
-                        deleted_paths.add(str(dup_quarantine.resolve()))
-                        if dup_quarantine.name not in mods_cleaned:
-                            mods_cleaned.append(dup_quarantine.name)
-                    except OSError:
-                        pass
+            # Check quarantine duplicate with exact same filename in disabled folders
+            for dd in disabled_dirs:
+                if dd.exists():
+                    dup_quarantine = dd / s_jar.name
+                    if dup_quarantine.is_file() and str(dup_quarantine.resolve()) not in deleted_paths:
+                        try:
+                            dup_quarantine.unlink()
+                            deleted_paths.add(str(dup_quarantine.resolve()))
+                            if dup_quarantine.name not in mods_cleaned:
+                                mods_cleaned.append(dup_quarantine.name)
+                        except OSError:
+                            pass
 
             s_info = inspect_jar_metadata(s_jar)
             s_mod_id = (s_info.get("mod_id") or "").strip().lower()
@@ -480,7 +543,7 @@ def reconcile_and_cleanup_modpack(
             for mid in incoming_mids:
                 if mid in existing_mod_map:
                     for existing_jar in existing_mod_map[mid]:
-                        is_in_disabled = disabled_dir.exists() and existing_jar.parent.resolve() == disabled_dir.resolve()
+                        is_in_disabled = existing_jar.parent.resolve() in disabled_resolved
                         if (existing_jar.name != s_jar.name or is_in_disabled) and existing_jar.exists():
                             if str(existing_jar.resolve()) not in deleted_paths:
                                 try:
@@ -493,59 +556,80 @@ def reconcile_and_cleanup_modpack(
         except Exception:
             pass
 
-    # 3. Method A: Manifest-based file tracking
+    # 3. Method A: Manifest-based file tracking (union across all previous metadata sources)
     new_staged_files = {
         p.relative_to(staging_dir).as_posix()
         for p in staging_dir.rglob("*")
         if p.is_file()
     }
 
-    old_files = set()
-    if previous_meta and isinstance(previous_meta.get("installed_files"), list) and previous_meta["installed_files"]:
-        old_files = set(previous_meta["installed_files"])
+    old_files: Set[str] = set()
+    if previous_meta and isinstance(previous_meta.get("installed_files"), list):
+        old_files.update(str(x) for x in previous_meta["installed_files"] if x)
 
-    if not old_files:
-        # Tier 1: server_dir / ".mod_side_report.json"
-        rep_p = server_dir / ".mod_side_report.json"
-        if rep_p.is_file():
+    # Tier 1: server_dir / ".mod_side_report.json"
+    rep_p = server_dir / ".mod_side_report.json"
+    if rep_p.is_file():
+        try:
+            rep_data = json.loads(rep_p.read_text(encoding="utf-8", errors="ignore"))
+            for m in (rep_data.get("kept_mods", []) + rep_data.get("excluded_mods", [])):
+                if isinstance(m, dict):
+                    fn = m.get("file_name") or m.get("name")
+                    if fn:
+                        old_files.add(f"mods/{fn}")
+        except Exception:
+            pass
+
+    # Tier 2: server_dir / "server_meta.json"
+    sm_p = server_dir / "server_meta.json"
+    if sm_p.is_file():
+        try:
+            sm_data = json.loads(sm_p.read_text(encoding="utf-8", errors="ignore"))
+            if isinstance(sm_data.get("installed_files"), list):
+                old_files.update(str(x) for x in sm_data["installed_files"] if x)
+        except Exception:
+            pass
+
+    # Tier 3: server_dir / "modpack.meta.json"
+    mm_p = server_dir / "modpack.meta.json"
+    if mm_p.is_file():
+        try:
+            mm_data = json.loads(mm_p.read_text(encoding="utf-8", errors="ignore"))
+            if isinstance(mm_data.get("installed_files"), list):
+                old_files.update(str(x) for x in mm_data["installed_files"] if x)
+        except Exception:
+            pass
+
+    # Tier 4: existing modrinth.index.json / .ftb_manifest.json in server_dir
+    for idx_name in ("modrinth.index.json", "index.json"):
+        idx_p = server_dir / idx_name
+        if idx_p.is_file():
             try:
-                rep_data = json.loads(rep_p.read_text(encoding="utf-8", errors="ignore"))
-                for m in (rep_data.get("kept_mods", []) + rep_data.get("excluded_mods", [])):
-                    if isinstance(m, dict):
-                        fn = m.get("file_name") or m.get("name")
-                        if fn:
-                            old_files.add(f"mods/{fn}")
+                idx_data = json.loads(idx_p.read_text(encoding="utf-8", errors="ignore"))
+                for entry in idx_data.get("files") or []:
+                    if isinstance(entry, dict) and entry.get("path"):
+                        old_files.add(str(entry["path"]).lstrip("./").lstrip("/"))
             except Exception:
                 pass
 
-    if not old_files:
-        # Tier 2: server_dir / "server_meta.json"
-        sm_p = server_dir / "server_meta.json"
-        if sm_p.is_file():
-            try:
-                sm_data = json.loads(sm_p.read_text(encoding="utf-8", errors="ignore"))
-                if isinstance(sm_data.get("installed_files"), list) and sm_data["installed_files"]:
-                    old_files = set(sm_data["installed_files"])
-            except Exception:
-                pass
+    ftb_p = server_dir / ".ftb_manifest.json"
+    if ftb_p.is_file():
+        try:
+            ftb_data = json.loads(ftb_p.read_text(encoding="utf-8", errors="ignore"))
+            for entry in ftb_data.get("files") or []:
+                if isinstance(entry, dict) and entry.get("name"):
+                    rel_d = str(entry.get("path") or "./").strip("./").strip("/")
+                    f_rel = f"{rel_d}/{entry['name']}" if rel_d else str(entry["name"])
+                    old_files.add(f_rel)
+        except Exception:
+            pass
 
-    if not old_files:
-        # Tier 3: server_dir / "modpack.meta.json"
-        mm_p = server_dir / "modpack.meta.json"
-        if mm_p.is_file():
-            try:
-                mm_data = json.loads(mm_p.read_text(encoding="utf-8", errors="ignore"))
-                if isinstance(mm_data.get("installed_files"), list) and mm_data["installed_files"]:
-                    old_files = set(mm_data["installed_files"])
-            except Exception:
-                pass
-
-    # For managed modpacks with staged mods: fallback to prune removed mod JARs
+    # For managed modpacks with staged mods: prune any existing mod JARs not present in staging
     is_managed = bool(
         (previous_meta and (previous_meta.get("pack_id") or previous_meta.get("provider")))
         or (server_dir / "modpack.meta.json").is_file()
     )
-    if is_managed and staged_mods and not old_files:
+    if is_managed and staged_mods:
         staged_jar_names = {p.name for p in staged_mods}
         for scan_d in scan_dirs:
             if not scan_d.exists():
@@ -553,6 +637,16 @@ def reconcile_and_cleanup_modpack(
             for j in [p for p in scan_d.iterdir() if p.is_file() and p.name.lower().endswith(".jar")]:
                 if j.name not in staged_jar_names:
                     old_files.add(f"mods/{j.name}")
+
+    # Also reconcile managed script/datapack directories present in both server_dir and staging_dir
+    if is_managed:
+        for d_name in ("kubejs", "defaultconfigs", "scripts", "configureddefaults", "patchouli_books"):
+            srv_sub = server_dir / d_name
+            stg_sub = staging_dir / d_name
+            if srv_sub.is_dir() and stg_sub.is_dir():
+                for existing_f in srv_sub.rglob("*"):
+                    if existing_f.is_file():
+                        old_files.add(existing_f.relative_to(server_dir).as_posix())
 
     if old_files:
         candidates_to_prune = old_files - new_staged_files
@@ -584,16 +678,18 @@ def reconcile_and_cleanup_modpack(
                 except OSError:
                     pass
             elif norm_rel.startswith("mods/"):
-                disabled_file = server_dir / "mods-disabled-client" / target_file.name
-                if disabled_file.is_file() and str(disabled_file.resolve()) not in deleted_paths:
-                    if not _safe_is_mod_allowlisted(server_dir, disabled_file.name) and not is_path_protected(f"mods-disabled-client/{disabled_file.name}", server_dir=server_dir):
-                        try:
-                            disabled_file.unlink()
-                            deleted_paths.add(str(disabled_file.resolve()))
-                            if disabled_file.name not in mods_cleaned:
-                                mods_cleaned.append(disabled_file.name)
-                        except OSError:
-                            pass
+                for dd in disabled_dirs:
+                    disabled_file = dd / target_file.name
+                    if disabled_file.is_file() and str(disabled_file.resolve()) not in deleted_paths:
+                        rel_disabled = f"{dd.name}/{disabled_file.name}"
+                        if not _safe_is_mod_allowlisted(server_dir, disabled_file.name) and not is_path_protected(rel_disabled, server_dir=server_dir):
+                            try:
+                                disabled_file.unlink()
+                                deleted_paths.add(str(disabled_file.resolve()))
+                                if disabled_file.name not in mods_cleaned:
+                                    mods_cleaned.append(disabled_file.name)
+                            except OSError:
+                                pass
 
     return {
         "mods_cleaned": sorted(mods_cleaned),
@@ -924,41 +1020,114 @@ def _ensure_server_jar(
     """Ensure a runnable server jar or installer exists in target_dir.
     Attempts for known loaders; falls back to vanilla server.jar.
     """
-    # Quick check for existing jar or run.sh
-    if not force:
-        patterns = [
-            "server.jar", "run.sh", "neoforge-*-universal.jar", "*forge-*-universal.jar",
-            "forge-*-server.jar", "forge-*.jar", "*paper*.jar", "*purpur*.jar", "*fabric*.jar", "*server*.jar"
-        ]
+    ldr = (loader or "").strip().lower()
+    mc = (mc_version or "").strip()
+    lver = (loader_version or "").strip()
+
+    def _find_existing_artifact(patterns: Tuple[str, ...]) -> Optional[Path]:
         for pat in patterns:
-            if list(target_dir.glob(pat)):
-                return  # something present already
+            for p in target_dir.glob(pat):
+                if p.is_file() and p.stat().st_size > 0:
+                    return p
+        return None
 
-    try:
-        ldr = (loader or "").lower()
-        mc = (mc_version or "").strip()
-        lver = (loader_version or "").strip()
+    def _ensure_fabric_server_jar_aliases(source_jar: Path) -> None:
+        for alias_name in ("server.jar", "fabric-server-launch.jar"):
+            alias_path = target_dir / alias_name
+            if source_jar.resolve() == alias_path.resolve():
+                continue
+            if not alias_path.exists() or alias_path.stat().st_size == 0 or force:
+                try:
+                    shutil.copy2(source_jar, alias_path)
+                except Exception as copy_err:
+                    log.debug(f"Could not create {alias_name} alias from {source_jar.name}: {copy_err}")
 
+    # Quick check for existing non-empty runnable launcher artifact
+    if not force:
         if ldr == "fabric":
+            existing_fab = _find_existing_artifact((
+                "server.jar",
+                "fabric-server-mc.*.jar",
+                "fabric-server-launch.jar",
+            ))
+            if existing_fab is not None:
+                _ensure_fabric_server_jar_aliases(existing_fab)
+                return
+        elif ldr == "quilt":
+            if _find_existing_artifact(("quilt-server-launch.jar", "quilt-installer.jar", "server.jar")) is not None:
+                return
+        else:
+            if _find_existing_artifact((
+                "server.jar",
+                "run.sh",
+                "neoforge-*-universal.jar",
+                "neoforge-*-installer.jar",
+                "*forge-*-universal.jar",
+                "forge-*-server.jar",
+                "forge-*-installer.jar",
+                "paper-*.jar",
+                "purpur-*.jar",
+            )) is not None:
+                return
+
+    if ldr == "fabric":
+        try:
             # Determine loader version if missing
             if not lver and mc:
                 try:
                     resp = requests.get(f"https://meta.fabricmc.net/v2/versions/loader/{mc}", timeout=30)
                     if resp.ok:
                         arr = resp.json()
-                        # Pick first stable else first entry
-                        stable = next((x for x in arr if x.get("stable")), None)
-                        lver = (stable or (arr[0] if arr else {})).get("loader", {}).get("version") or ""
+                        if isinstance(arr, list) and arr:
+                            stable = next(
+                                (x for x in arr if (x.get("loader") or {}).get("stable") or x.get("stable")),
+                                None,
+                            )
+                            picked = stable or arr[0]
+                            lver = str((picked.get("loader") or {}).get("version") or "")
                 except Exception:
                     pass
-            if mc and lver:
-                url = f"https://meta.fabricmc.net/v2/versions/loader/{mc}/{lver}/server/jar"
-                out = target_dir / f"fabric-server-mc.{mc}-loader.{lver}.jar"
-                push_event({"type": "progress", "step": "server", "message": f"Downloading Fabric server jar {mc}/{lver}", "progress": 62})
-                _download_to(out, url, timeout=180)
-                return
 
-        if ldr == "forge":
+            # Resolve latest stable Fabric installer version (Meta v2 requires 3 segments)
+            installer_ver = "1.0.1"
+            try:
+                inst_resp = requests.get("https://meta.fabricmc.net/v2/versions/installer", timeout=30)
+                if inst_resp.ok:
+                    inst_arr = inst_resp.json()
+                    if isinstance(inst_arr, list) and inst_arr:
+                        stable_inst = next((x for x in inst_arr if x.get("stable")), None) or inst_arr[0]
+                        if isinstance(stable_inst, dict) and stable_inst.get("version"):
+                            installer_ver = str(stable_inst["version"])
+            except Exception:
+                pass
+
+            if mc and lver:
+                url_v3 = f"https://meta.fabricmc.net/v2/versions/loader/{mc}/{lver}/{installer_ver}/server/jar"
+                url_v2 = f"https://meta.fabricmc.net/v2/versions/loader/{mc}/{lver}/server/jar"
+                out = target_dir / f"fabric-server-mc.{mc}-loader.{lver}.jar"
+                push_event({
+                    "type": "progress",
+                    "step": "server",
+                    "message": f"Downloading Fabric server jar {mc}/{lver} (installer {installer_ver})",
+                    "progress": 62,
+                })
+                downloaded_ok = False
+                for candidate_url in (url_v3, url_v2):
+                    try:
+                        _download_to(out, candidate_url, timeout=180)
+                        if out.is_file() and out.stat().st_size > 0:
+                            downloaded_ok = True
+                            break
+                    except Exception as url_err:
+                        log.warning(f"Fabric server download failed from {candidate_url}: {url_err}")
+                if downloaded_ok:
+                    _ensure_fabric_server_jar_aliases(out)
+                    return
+        except Exception as loader_err:
+            log.warning(f"Fabric server provisioning error ({mc}/{lver}): {loader_err}")
+
+    if ldr == "forge":
+        try:
             # If loader_version missing, use promotions_slim.json to find recommended/latest
             if not lver and mc:
                 try:
@@ -976,9 +1145,13 @@ def _ensure_server_jar(
                 out = target_dir / f"forge-{base}-installer.jar"
                 push_event({"type": "progress", "step": "server", "message": f"Downloading Forge installer {base}", "progress": 62})
                 _download_to(out, url, timeout=300)
-                return
+                if out.is_file() and out.stat().st_size > 0:
+                    return
+        except Exception as loader_err:
+            log.warning(f"Forge server provisioning error ({mc}/{lver}): {loader_err}")
 
-        if ldr == "quilt":
+    if ldr == "quilt":
+        try:
             if not lver:
                 try:
                     resp = requests.get("https://meta.quiltmc.org/v3/versions/loader", timeout=30)
@@ -988,17 +1161,18 @@ def _ensure_server_jar(
                             lver = arr[0].get("version") or ""
                 except Exception:
                     pass
-            try:
-                url = "https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/latest/quilt-installer-latest.jar"
-                out = target_dir / "quilt-installer.jar"
-                push_event({"type": "progress", "step": "server", "message": f"Downloading Quilt server installer {mc}/{lver}", "progress": 62})
-                _download_to(out, url, timeout=180)
+            url = "https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/latest/quilt-installer-latest.jar"
+            out = target_dir / "quilt-installer.jar"
+            push_event({"type": "progress", "step": "server", "message": f"Downloading Quilt server installer {mc}/{lver}", "progress": 62})
+            _download_to(out, url, timeout=180)
+            if out.is_file() and out.stat().st_size > 0:
                 return
-            except Exception:
-                pass
+        except Exception as loader_err:
+            log.warning(f"Quilt server provisioning error ({mc}/{lver}): {loader_err}")
 
-        if ldr == "neoforge":
-            # Prefer provided loader_version; otherwise, try to infer latest for this MC version
+    if ldr == "neoforge":
+        try:
+            # Prefer provided loader_version; otherwise infer latest for MC version (20.x/21.x -> MC 1.20.x/1.21.x)
             if not lver and mc:
                 try:
                     meta_url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"
@@ -1007,11 +1181,22 @@ def _ensure_server_jar(
                         import xml.etree.ElementTree as ET
                         root = ET.fromstring(resp.text)
                         versions = [v.text or "" for v in root.findall(".//version")]
-                        # Choose the latest version that starts with the MC version prefix
+                        nf_prefix = mc[2:] if mc.startswith("1.") else mc
+                        stable_match = ""
+                        any_match = ""
                         for v in reversed(versions):
-                            if v.startswith(mc):
-                                lver = v
-                                break
+                            if (
+                                v.startswith(f"{nf_prefix}.")
+                                or v == nf_prefix
+                                or v.startswith(f"{mc}.")
+                                or v == mc
+                            ):
+                                if not any_match:
+                                    any_match = v
+                                if "-beta" not in v.lower() and "-alpha" not in v.lower():
+                                    stable_match = v
+                                    break
+                        lver = stable_match or any_match
                 except Exception:
                     pass
             if lver:
@@ -1019,23 +1204,24 @@ def _ensure_server_jar(
                 out = target_dir / f"neoforge-{lver}-installer.jar"
                 push_event({"type": "progress", "step": "server", "message": f"Downloading NeoForge installer {lver}", "progress": 62})
                 _download_to(out, url, timeout=300)
-                return
+                if out.is_file() and out.stat().st_size > 0:
+                    return
+        except Exception as loader_err:
+            log.warning(f"NeoForge server provisioning error ({mc}/{lver}): {loader_err}")
 
-        # Fallback: vanilla server jar for the given Minecraft version
+    # Fallback: vanilla server jar for the given Minecraft version
+    try:
         if mc:
-            try:
-                man = requests.get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json", timeout=30).json()
-                version = next((v for v in man.get("versions", []) if v.get("id") == mc), None)
-                if version and version.get("url"):
-                    det = requests.get(version["url"], timeout=30).json()
-                    server_info = det.get("downloads", {}).get("server")
-                    if server_info and server_info.get("url"):
-                        out = target_dir / "server.jar"
-                        push_event({"type": "progress", "step": "server", "message": f"Downloading Vanilla server {mc}", "progress": 62})
-                        _download_to(out, server_info["url"], timeout=300)
-                        return
-            except Exception:
-                pass
+            man = requests.get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json", timeout=30).json()
+            version = next((v for v in man.get("versions", []) if v.get("id") == mc), None)
+            if version and version.get("url"):
+                det = requests.get(version["url"], timeout=30).json()
+                server_info = det.get("downloads", {}).get("server")
+                if server_info and server_info.get("url"):
+                    out = target_dir / "server.jar"
+                    push_event({"type": "progress", "step": "server", "message": f"Downloading Vanilla server {mc}", "progress": 62})
+                    _download_to(out, server_info["url"], timeout=300)
+                    return
     except Exception as e:
         push_event({"type": "progress", "step": "server", "message": f"Auto-download failed: {e}", "progress": 63})
 
@@ -1045,10 +1231,11 @@ def clean_obsolete_loader_artifacts(
     current_loader: str,
     target_loader: str,
     mc_version_changed: bool = False,
+    loader_version_changed: bool = False,
 ) -> List[str]:
     """
     Cleans obsolete launcher jars, run scripts, and loader libraries
-    when switching modloaders or updating Minecraft version.
+    when switching modloaders, updating Minecraft version, or changing loader version.
     Never touches world directories or protected config files.
     """
     s_dir = Path(server_dir)
@@ -1057,7 +1244,7 @@ def clean_obsolete_loader_artifacts(
     t_loader = (target_loader or "").strip().lower()
     loader_changed = bool(c_loader and t_loader and c_loader != t_loader)
 
-    if not loader_changed and not mc_version_changed:
+    if not loader_changed and not mc_version_changed and not loader_version_changed:
         return cleaned
 
     # 1. Clean obsolete execution scripts
@@ -1078,9 +1265,10 @@ def clean_obsolete_loader_artifacts(
             "forge-*.jar", "neoforge-*.jar", "fabric-*.jar",
             "fabric-server-launch.jar", "*installer*.jar", "server.jar"
         ])
-    elif mc_version_changed:
+    elif mc_version_changed or loader_version_changed:
         jar_patterns.extend([
-            "forge-*.jar", "neoforge-*.jar", "fabric-server-launch.jar", "*installer*.jar"
+            "forge-*.jar", "neoforge-*.jar", "fabric-*.jar",
+            "fabric-server-launch.jar", "*installer*.jar", "server.jar"
         ])
 
     for pat in jar_patterns:
@@ -1980,6 +2168,12 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                                     data = rr.json().get("data") or {}
                                     dl = data.get("downloadUrl")
                                     out_name = data.get("fileName") or f"{proj}-{fid}.jar"
+                                    if not dl and fid and data.get("fileName"):
+                                        try:
+                                            fid_int = int(fid)
+                                            dl = f"https://edge.forgecdn.net/files/{fid_int // 1000}/{fid_int % 1000}/{out_name}"
+                                        except Exception:
+                                            pass
                                     if dl:
                                         _download_to(safe_child_path(mods_dir, out_name), dl, timeout=120)
                                         files_downloaded_count += 1
@@ -2086,6 +2280,33 @@ async def install_modpack(req: InstallRequest, current_user: User = Depends(requ
                     "client_pack_fallback": bool(is_client_pack_fallback),
                 }
                 save_server_modpack_info(req.name, initial_meta)
+
+                # Also sync loader, version, and modpack fields into server_meta.json
+                sm_path = target_dir / "server_meta.json"
+                sm_data = {}
+                if sm_path.is_file():
+                    try:
+                        sm_data = json.loads(sm_path.read_text(encoding="utf-8", errors="ignore") or "{}")
+                        if not isinstance(sm_data, dict):
+                            sm_data = {}
+                    except Exception:
+                        sm_data = {}
+                if loader:
+                    sm_data["type"] = loader
+                    sm_data["server_type"] = loader
+                    sm_data["mc_type"] = loader
+                if mc_version:
+                    sm_data["version"] = mc_version
+                    sm_data["server_version"] = mc_version
+                    sm_data["mc_version"] = mc_version
+                if loader_version:
+                    sm_data["loader_version"] = loader_version
+                sm_data["modpack_provider"] = req.provider.lower()
+                sm_data["modpack_id"] = str(req.pack_id)
+                sm_data["modpack_version_id"] = str(v.get("id"))
+                sm_data["modpack_version_name"] = v.get("name") or str(v.get("id"))
+                sm_data["installed_files"] = installed_files
+                sm_path.write_text(json.dumps(sm_data, indent=2), encoding="utf-8")
             except Exception as meta_err:
                 log.warning(f"Failed to save initial modpack.meta.json for {req.name}: {meta_err}")
 
@@ -2279,7 +2500,7 @@ def _stage_modpack_version(
                     matched_jar = local_index["by_name_and_size"][(f_name.lower(), f_size)]
                 elif server_dir:
                     cand = safe_child_path(Path(server_dir), rel_path, f_name)
-                    if cand.is_file() and (not f_size or cand.stat().st_size == f_size):
+                    if cand.is_file() and (bool(f_size) and cand.stat().st_size == f_size):
                         matched_jar = cand
 
             if matched_jar and matched_jar.is_file():
@@ -2325,41 +2546,52 @@ def _stage_modpack_version(
     extract_dir = tmpdir / "extracted"
     extract_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(artifact_path, "r") as z:
-        names = z.namelist()
-        has_overrides = any(n.startswith("overrides/") or n.startswith("server-overrides/") for n in names)
-        if has_overrides:
-            for name in names:
-                if (name.startswith("overrides/") or name.startswith("server-overrides/")) and not name.endswith("/"):
-                    sub = "overrides/" if name.startswith("overrides/") else "server-overrides/"
-                    rel = name[len(sub):]
-                    dest = safe_child_path(staging_dir, rel)
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    with z.open(name) as src, open(dest, "wb") as dst:
-                        shutil.copyfileobj(src, dst)
-                elif name in ("modrinth.index.json", "manifest.json", "index.json"):
-                    dest = safe_child_path(staging_dir, name)
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    with z.open(name) as src, open(dest, "wb") as dst:
-                        shutil.copyfileobj(src, dst)
+        z.extractall(extract_dir)
+
+    def _single_top_level_dir(base: Path):
+        entries = [p for p in base.iterdir()]
+        if len(entries) == 1 and entries[0].is_dir():
+            return entries[0]
+        return None
+
+    def _overlay_dir(src_folder: Path, dst_folder: Path) -> None:
+        if not src_folder.exists() or not src_folder.is_dir():
+            return
+        for root, _, files_in_dir in os.walk(src_folder):
+            rel = Path(root).relative_to(src_folder)
+            out_dir = safe_child_path(dst_folder, rel.as_posix()) if str(rel) != "." else dst_folder
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for fn in files_in_dir:
+                shutil.copy2(Path(root) / fn, out_dir / fn)
+
+    src_dir = _single_top_level_dir(extract_dir) or extract_dir
+    override_folder_names = {"overrides", "server-overrides", "client-overrides"}
+    for item in src_dir.iterdir():
+        if item.name.lower() in override_folder_names:
+            continue
+        dest = safe_child_path(staging_dir, item.name)
+        if item.is_dir():
+            shutil.copytree(item, dest, dirs_exist_ok=True)
         else:
-            z.extractall(extract_dir)
-            def _single_top_level_dir(base: Path):
-                entries = [p for p in base.iterdir()]
-                if len(entries) == 1 and entries[0].is_dir():
-                    return entries[0]
-                return None
-            src_dir = _single_top_level_dir(extract_dir) or extract_dir
-            for item in src_dir.iterdir():
-                dest = safe_child_path(staging_dir, item.name)
-                if item.is_dir():
-                    shutil.copytree(item, dest, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(item, dest)
+            shutil.copy2(item, dest)
+
+    # Overlay overrides/ first, then server-overrides/ (server-overrides wins over overrides)
+    _overlay_dir(src_dir / "overrides", staging_dir)
+    _overlay_dir(src_dir / "server-overrides", staging_dir)
 
     # 1. Modrinth modrinth.index.json (.mrpack)
     mr_index_path = staging_dir / "modrinth.index.json"
     if not mr_index_path.exists() and (staging_dir / "index.json").exists():
         mr_index_path = staging_dir / "index.json"
+    if not mr_index_path.exists():
+        for child in staging_dir.iterdir():
+            if child.is_dir():
+                if (child / "modrinth.index.json").exists():
+                    mr_index_path = child / "modrinth.index.json"
+                    break
+                if (child / "index.json").exists():
+                    mr_index_path = child / "index.json"
+                    break
 
     if mr_index_path.exists():
         try:
@@ -2373,12 +2605,12 @@ def _stage_modpack_version(
                 elif deps.get("forge"):
                     loader = "forge"
                     loader_version = str(deps["forge"])
-                elif deps.get("fabric-loader"):
+                elif deps.get("fabric-loader") or deps.get("fabric"):
                     loader = "fabric"
-                    loader_version = str(deps["fabric-loader"])
-                elif deps.get("quilt-loader"):
+                    loader_version = str(deps.get("fabric-loader") or deps.get("fabric"))
+                elif deps.get("quilt-loader") or deps.get("quilt"):
                     loader = "quilt"
-                    loader_version = str(deps["quilt-loader"])
+                    loader_version = str(deps.get("quilt-loader") or deps.get("quilt"))
 
             mr_files = mr_idx.get("files") or []
             for entry in mr_files:
@@ -2418,7 +2650,7 @@ def _stage_modpack_version(
                         matched_jar = local_index["by_name_and_size"][(fname.lower(), fsize)]
                     elif server_dir:
                         cand = safe_child_path(Path(server_dir), rel_p)
-                        if cand.is_file() and (not fsize or cand.stat().st_size == fsize):
+                        if cand.is_file() and (bool(fsize) and cand.stat().st_size == fsize):
                             matched_jar = cand
 
                 if matched_jar and matched_jar.is_file():
@@ -2434,6 +2666,11 @@ def _stage_modpack_version(
 
     # 2. CurseForge manifest.json
     cf_manifest_path = staging_dir / "manifest.json"
+    if not cf_manifest_path.exists():
+        for child in staging_dir.iterdir():
+            if child.is_dir() and (child / "manifest.json").exists():
+                cf_manifest_path = child / "manifest.json"
+                break
     if cf_manifest_path.exists():
         try:
             cf_mani = json.loads(cf_manifest_path.read_text(encoding="utf-8", errors="ignore"))
@@ -2463,7 +2700,14 @@ def _stage_modpack_version(
             if resolved_files:
                 for rf in resolved_files:
                     dl = rf.get("downloadUrl")
-                    fname = rf.get("fileName") or f"{rf.get('id')}.jar"
+                    rf_id = rf.get("id")
+                    fname = rf.get("fileName") or f"{rf_id}.jar"
+                    if not dl and rf_id and rf.get("fileName"):
+                        try:
+                            fid_int = int(rf_id)
+                            dl = f"https://edge.forgecdn.net/files/{fid_int // 1000}/{fid_int % 1000}/{fname}"
+                        except Exception:
+                            pass
                     dest_mod = safe_child_path(staging_dir, "mods", fname)
                     dest_mod.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2487,7 +2731,7 @@ def _stage_modpack_version(
                             matched_jar = local_index["by_name_and_size"][(fname.lower(), rf_size)]
                         elif server_dir:
                             direct = Path(server_dir) / "mods" / fname
-                            if direct.is_file() and (not rf_size or direct.stat().st_size == rf_size):
+                            if direct.is_file() and (bool(rf_size) and direct.stat().st_size == rf_size):
                                 matched_jar = direct
 
                     if matched_jar and matched_jar.is_file():
@@ -2498,8 +2742,8 @@ def _stage_modpack_version(
             elif cf_mani.get("files"):
                 from modpack_providers.curseforge import CURSE_API_BASE
                 for cf_entry in cf_mani.get("files") or []:
-                    proj_id = cf_entry.get("projectID")
-                    file_id = cf_entry.get("fileID")
+                    proj_id = cf_entry.get("projectID") or cf_entry.get("projectId")
+                    file_id = cf_entry.get("fileID") or cf_entry.get("fileId")
                     if proj_id and file_id:
                         try:
                             headers = provider._headers() if hasattr(provider, "_headers") else {}
@@ -2508,6 +2752,12 @@ def _stage_modpack_version(
                                 fd = fr.json().get("data") or {}
                                 dl = fd.get("downloadUrl")
                                 fname = fd.get("fileName") or f"{proj_id}-{file_id}.jar"
+                                if not dl and file_id and fd.get("fileName"):
+                                    try:
+                                        fid_int = int(file_id)
+                                        dl = f"https://edge.forgecdn.net/files/{fid_int // 1000}/{fid_int % 1000}/{fname}"
+                                    except Exception:
+                                        pass
                                 dest_mod = safe_child_path(staging_dir, "mods", fname)
                                 dest_mod.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2531,7 +2781,7 @@ def _stage_modpack_version(
                                         matched_jar = local_index["by_name_and_size"][(fname.lower(), fd_size)]
                                     elif server_dir:
                                         direct = Path(server_dir) / "mods" / fname
-                                        if direct.is_file() and (not fd_size or direct.stat().st_size == fd_size):
+                                        if direct.is_file() and (bool(fd_size) and direct.stat().st_size == fd_size):
                                             matched_jar = direct
 
                                 if matched_jar and matched_jar.is_file():
@@ -2730,29 +2980,35 @@ async def update_server_modpack(
 
         loader_changed = bool(current_loader and target_loader and current_loader != target_loader)
         mc_version_changed = bool(current_mc_version and target_mc_version and current_mc_version != target_mc_version)
+        loader_version_changed = bool(
+            current_loader_version and target_loader_version and current_loader_version != target_loader_version
+        )
         migration_required = loader_changed or mc_version_changed
 
-        if migration_required:
+        if migration_required or loader_version_changed:
             log.info(
                 f"Modloader/MC migration detected for {server_name}: "
-                f"loader {current_loader} -> {target_loader}, mc {current_mc_version} -> {target_mc_version}"
+                f"loader {current_loader}->{target_loader}, loader_ver {current_loader_version}->{target_loader_version}, mc {current_mc_version}->{target_mc_version}"
             )
             clean_obsolete_loader_artifacts(
                 server_dir=server_dir,
                 current_loader=current_loader,
                 target_loader=target_loader,
                 mc_version_changed=mc_version_changed,
+                loader_version_changed=loader_version_changed,
             )
-            try:
-                _ensure_server_jar(
-                    target_dir=server_dir,
-                    loader=target_loader,
-                    mc_version=target_mc_version,
-                    loader_version=target_loader_version,
-                    force=True,
-                )
-            except Exception as eje:
-                log.warning(f"Error provisioning target loader jar for {server_name}: {eje}")
+
+        # Always verify/provision target server JAR (fixes missing server.jar or upgraded loader)
+        try:
+            _ensure_server_jar(
+                target_dir=server_dir,
+                loader=target_loader,
+                mc_version=target_mc_version,
+                loader_version=target_loader_version,
+                force=migration_required or loader_version_changed,
+            )
+        except Exception as eje:
+            log.warning(f"Error provisioning target loader jar for {server_name}: {eje}")
 
         # Cleanup: Method B + Method A
         cleanup_res = reconcile_and_cleanup_modpack(
@@ -2833,8 +3089,10 @@ async def update_server_modpack(
                 server_meta = {}
 
         new_java_version = _infer_java_version(server_dir, target_loader, target_mc_version)
+        server_meta["type"] = target_loader
         server_meta["server_type"] = target_loader
         server_meta["mc_type"] = target_loader
+        server_meta["version"] = target_mc_version
         server_meta["server_version"] = target_mc_version
         server_meta["mc_version"] = target_mc_version
         if target_loader_version:

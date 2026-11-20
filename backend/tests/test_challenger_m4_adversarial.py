@@ -347,6 +347,62 @@ class TestRunShArgumentForwardingAdversarial:
             assert "ARG: 25565" in lines
             assert "ARG: --demo" in lines
 
+    def test_direct_java_launch_with_spaces_in_server_dir_passes_single_unquoted_javaagent_arg(self):
+        """Regression (COBBLEVERSE 1.8.0): spaced -javaagent path must pass as one arg via AGENT_JVM_ARGS without literal quotes."""
+        entrypoint_path = BACKEND_DIR.parent / "docker" / "runtime-entrypoint.sh"
+        ep_text = entrypoint_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+
+        # Verify entrypoint uses AGENT_JVM_ARGS and clears JAVA_TOOL_OPTIONS on direct java launch
+        assert 'AGENT_JVM_ARGS=("-javaagent:$RESOLVED_AGENT_JAR")' in ep_text
+        assert 'JAVA_TOOL_OPTIONS="" "$JAVA_BIN" $ALL_JAVA_ARGS "${AGENT_JVM_ARGS[@]}" "${effective_args[@]}"' in ep_text
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workdir = Path(tmpdir)
+            mock_java = workdir / "mock_java.sh"
+            mock_java.write_text(
+                '#!/usr/bin/env bash\n'
+                'echo "JAVA_TOOL_OPTIONS=$JAVA_TOOL_OPTIONS" >> java_args.log\n'
+                'for arg in "$@"; do\n'
+                '  echo "ARG: $arg" >> java_args.log\n'
+                'done\n'
+                'exit 0\n',
+                encoding="utf-8",
+            )
+
+            cli_start = ep_text.index('CLI_INCOMING_JAVA_ARGS=""')
+            cli_end = ep_text.index('echo "DEBUG: Memory configuration', cli_start)
+            cli_block = ep_text[cli_start:cli_end]
+
+            runner = workdir / "test_java_exec.sh"
+            runner.write_text(
+                '#!/usr/bin/env bash\n'
+                'set -e\n'
+                'MEM_ARGS="-Xmx8G -Xms4G"\n'
+                'JAVA_OPTS=""\n'
+                'INCOMING_JAVA_ARGS=\'-XX:+UseZGC -Dmulticore.enabled=true "-javaagent:/data/servers/COBBLEVERSE 1.8.0/mc-multicore-agent.jar"\'\n'
+                'export JAVA_TOOL_OPTIONS="$INCOMING_JAVA_ARGS"\n'
+                f"{cli_block}\n"
+                'RESOLVED_AGENT_JAR="/data/servers/COBBLEVERSE 1.8.0/mc-multicore-agent.jar"\n'
+                'AGENT_JVM_ARGS=("-javaagent:$RESOLVED_AGENT_JAR")\n'
+                'JAVA_BIN="./mock_java.sh"\n'
+                'effective_args=("-jar" "server.jar" "nogui")\n'
+                'EXTRA_SERVER_ARGS=""\n'
+                'JAVA_TOOL_OPTIONS="" "$JAVA_BIN" $ALL_JAVA_ARGS "${AGENT_JVM_ARGS[@]}" "${effective_args[@]}" $EXTRA_SERVER_ARGS\n',
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run([BASH_BIN, str(runner)], cwd=str(workdir), capture_output=True, text=True, timeout=10)
+            assert proc.returncode == 0, f"Execution failed: {proc.stderr}"
+
+            lines = (workdir / "java_args.log").read_text(encoding="utf-8").splitlines()
+            assert "JAVA_TOOL_OPTIONS=" in lines
+            assert "ARG: -javaagent:/data/servers/COBBLEVERSE 1.8.0/mc-multicore-agent.jar" in lines
+            assert not any(line.startswith('ARG: "-javaagent:') for line in lines)
+            assert "ARG: -XX:+UseZGC" in lines
+            assert "ARG: -jar" in lines
+            assert "ARG: server.jar" in lines
+            assert "ARG: nogui" in lines
+
 
 # ==============================================================================
 # 4. user_jvm_args.txt Robustness & Preservation Adversarial

@@ -843,3 +843,159 @@ def test_versions_api_exposes_current_loader_and_mc(m5_server: Path, client):
     assert data["current_loader_version"] == "20.4.253"
     assert data["current_minecraft_version"] == "1.20.4"
     assert len(data["versions"]) == 2
+
+
+# ============================================================================
+# Task 6 Tests: Fabric 3-Segment URL + Full Mod/Override Replacement & Missing server.jar
+# ============================================================================
+
+def test_ensure_server_jar_fabric_uses_installer_segment_and_creates_server_jar(tmp_path: Path, monkeypatch):
+    """Regression (Cobbleverse 1.8.0): Fabric requires /{mc}/{lver}/{installer}/server/jar and server.jar alias."""
+    srv = tmp_path / "cobbleverse_srv"
+    srv.mkdir()
+
+    requested_urls = []
+
+    def fake_get(url, *args, **kwargs):
+        requested_urls.append(url)
+        if url.endswith("/versions/loader/1.21.1"):
+            return MockHttpResponse(json.dumps([{"loader": {"version": "0.16.10", "stable": True}}]).encode("utf-8"))
+        if url.endswith("/versions/installer"):
+            return MockHttpResponse(json.dumps([{"version": "1.0.3", "stable": True}]).encode("utf-8"))
+        raise AssertionError(f"Unexpected requests.get URL: {url}")
+
+    downloaded = []
+
+    def fake_dl(dest_file, url, timeout=180):
+        downloaded.append((Path(dest_file), url))
+        Path(dest_file).write_bytes(b"VALID_FABRIC_SERVER_JAR")
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(modpack_routes, "_download_to", fake_dl)
+
+    modpack_routes._ensure_server_jar(srv, loader="fabric", mc_version="1.21.1", loader_version=None)
+
+    assert len(downloaded) == 1
+    assert downloaded[0][1] == "https://meta.fabricmc.net/v2/versions/loader/1.21.1/0.16.10/1.0.3/server/jar"
+    assert (srv / "fabric-server-mc.1.21.1-loader.0.16.10.jar").is_file()
+    assert (srv / "server.jar").is_file()
+    assert (srv / "server.jar").read_bytes() == b"VALID_FABRIC_SERVER_JAR"
+    assert (srv / "fabric-server-launch.jar").is_file()
+
+
+def test_update_modpack_replaces_mods_with_partial_report_wrapped_overrides_and_missing_server_jar(
+    m5_server: Path, client, monkeypatch
+):
+    """
+    Update replaces dropped/updated mods even when old_files only has partial .mod_side_report.json,
+    merges wrapped PackName/overrides and PackName/server-overrides, keeps world/level.dat,
+    and provisions missing server.jar even on same loader + MC version.
+    """
+    world_dat = m5_server / "world" / "level.dat"
+    world_dat.parent.mkdir(parents=True, exist_ok=True)
+    world_dat.write_bytes(b"SACRED_COBBLEVERSE_WORLD")
+
+    # Pre-existing partial state: server.jar missing, old mods in mods/, partial .mod_side_report.json
+    old_only_in_dir = make_dummy_jar(m5_server / "mods" / "old-cobblemon-1.5.jar", mod_id="oldcobblemon", version="1.5")
+    tracked_old = make_dummy_jar(m5_server / "mods" / "partial-tracked-1.0.jar", mod_id="partialmod", version="1.0")
+    (m5_server / ".mod_side_report.json").write_text(
+        json.dumps({"kept_mods": [{"file_name": "partial-tracked-1.0.jar"}], "excluded_mods": []}),
+        encoding="utf-8",
+    )
+
+    save_server_modpack_info(
+        "M5Server",
+        {
+            "provider": "modrinth",
+            "pack_id": "cobbleverse",
+            "version_id": "1.7.0",
+            "version_name": "1.7.0",
+            "loader": "fabric",
+            "loader_version": "0.16.9",
+            "minecraft_version": "1.21.1",
+            "installed_files": [],
+        },
+    )
+
+    # New version zip uses a wrapped top-level folder PackName/overrides/... and PackName/server-overrides/...
+    new_mod_buf = io.BytesIO()
+    with zipfile.ZipFile(new_mod_buf, "w") as zf:
+        zf.writestr("fabric.mod.json", json.dumps({"schemaVersion": 1, "id": "newcobblemon", "version": "1.6.0"}))
+    new_mod_bytes = new_mod_buf.getvalue()
+
+    mr_index = {
+        "formatVersion": 1,
+        "game": "minecraft",
+        "versionId": "1.8.0",
+        "dependencies": {"minecraft": "1.21.1", "fabric-loader": "0.16.10"},
+        "files": [
+            {
+                "path": "mods/cobblemon-1.6.0.jar",
+                "hashes": {"sha1": hashlib.sha1(new_mod_bytes).hexdigest()},
+                "downloads": ["http://example.com/cobblemon-1.6.0.jar"],
+                "fileSize": len(new_mod_bytes),
+            }
+        ],
+    }
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w") as zf:
+        zf.writestr("Cobbleverse-1.8.0/modrinth.index.json", json.dumps(mr_index))
+        zf.writestr("Cobbleverse-1.8.0/overrides/config/pack.toml", "source = 'overrides'\n")
+        zf.writestr("Cobbleverse-1.8.0/server-overrides/config/pack.toml", "source = 'server-overrides'\n")
+        zf.writestr("Cobbleverse-1.8.0/overrides/world/level.dat", b"MUST_NOT_OVERWRITE_WORLD")
+    pack_bytes = zip_buf.getvalue()
+
+    mock_provider = MagicMock()
+    mock_provider.get_versions.return_value = [
+        {
+            "id": "1.8.0",
+            "name": "Cobbleverse 1.8.0",
+            "loaders": ["fabric"],
+            "game_versions": ["1.21.1"],
+            "files": [{"filename": "cobbleverse-1.8.0.mrpack", "url": "http://example.com/cobbleverse.mrpack", "primary": True}],
+        }
+    ]
+    import catalog_routes
+    monkeypatch.setattr(catalog_routes, "get_providers_live", lambda: {"modrinth": mock_provider})
+
+    def fake_get(url, *args, **kwargs):
+        if "versions/installer" in url:
+            return MockHttpResponse(json.dumps([{"version": "1.0.3", "stable": True}]).encode("utf-8"))
+        return MockHttpResponse(pack_bytes)
+
+    def fake_dl(dest_file, url, timeout=180):
+        dest = Path(dest_file)
+        if "meta.fabricmc.net" in url:
+            dest.write_bytes(b"FABRIC_1_8_0_SERVER_JAR")
+        else:
+            dest.write_bytes(new_mod_bytes)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(modpack_routes, "_download_to", fake_dl)
+
+    admin_h = _login(client, "admin", "AdminPass123")
+    res = client.post(
+        "/api/modpacks/server/M5Server/update",
+        json={"target_version_id": "1.8.0", "create_backup": False},
+        headers=admin_h,
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+
+    # Old mods replaced even though old_files only listed partial-tracked-1.0.jar
+    assert not old_only_in_dir.exists()
+    assert not tracked_old.exists()
+    assert (m5_server / "mods" / "cobblemon-1.6.0.jar").is_file()
+    assert "old-cobblemon-1.5.jar" in data["mods_cleaned"]
+
+    # Wrapped overrides merged cleanly and server-overrides took precedence
+    cfg_file = m5_server / "config" / "pack.toml"
+    assert cfg_file.is_file()
+    assert "server-overrides" in cfg_file.read_text(encoding="utf-8")
+
+    # Missing server.jar was downloaded cleanly
+    assert (m5_server / "server.jar").is_file()
+    assert (m5_server / "server.jar").read_bytes() == b"FABRIC_1_8_0_SERVER_JAR"
+
+    # World was strictly preserved
+    assert world_dat.read_bytes() == b"SACRED_COBBLEVERSE_WORLD"
