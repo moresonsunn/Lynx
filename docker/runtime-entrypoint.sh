@@ -223,10 +223,48 @@ echo "DEBUG: Server type: $SERVER_TYPE, version: $SERVER_VERSION"
 echo "DEBUG: Selected Java version: $JAVA_VERSION"
 echo "DEBUG: Java binary: $JAVA_BIN"
 
-# Configure memory settings from environment variables
+# Configure memory settings from environment variables.
+# Reserve JVM off-heap headroom (Metaspace, CodeCache, DirectMemory, thread stacks) inside MAX_RAM
+# so total JVM memory stays within the configured container/server limit.
+ram_to_mb() {
+  local raw="$1"
+  local def_mb="$2"
+  local val unit
+  raw=$(printf '%s' "$raw" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+  if [[ "$raw" =~ ^([0-9]+)([KMG]?)(I?B)?$ ]]; then
+    val="${BASH_REMATCH[1]}"
+    unit="${BASH_REMATCH[2]}"
+    case "$unit" in
+      G) echo $(( val * 1024 )) ;;
+      K) echo $(( val / 1024 > 0 ? val / 1024 : 1 )) ;;
+      *) echo "$val" ;;
+    esac
+  else
+    echo "$def_mb"
+  fi
+}
+
 MIN_RAM="${MIN_RAM:-1G}"
 MAX_RAM="${MAX_RAM:-2G}"
-MEM_ARGS="-Xmx${MAX_RAM} -Xms${MIN_RAM}"
+MAX_RAM_MB=$(ram_to_mb "$MAX_RAM" 2048)
+MIN_RAM_MB=$(ram_to_mb "$MIN_RAM" 1024)
+if [ "$MAX_RAM_MB" -ge 2048 ]; then
+  OFFHEAP_MB=$(( MAX_RAM_MB * 8 / 100 ))
+  [ "$OFFHEAP_MB" -lt 256 ] && OFFHEAP_MB=256
+  [ "$OFFHEAP_MB" -gt 896 ] && OFFHEAP_MB=896
+  HEAP_MAX_MB=$(( MAX_RAM_MB - OFFHEAP_MB ))
+  [ "$HEAP_MAX_MB" -lt 512 ] && HEAP_MAX_MB="$MAX_RAM_MB"
+else
+  HEAP_MAX_MB="$MAX_RAM_MB"
+fi
+[ "$MIN_RAM_MB" -gt "$HEAP_MAX_MB" ] && MIN_RAM_MB="$HEAP_MAX_MB"
+SOFT_MAX_MB=$(( HEAP_MAX_MB * 85 / 100 ))
+[ "$SOFT_MAX_MB" -lt "$MIN_RAM_MB" ] && SOFT_MAX_MB="$MIN_RAM_MB"
+
+MEM_ARGS="-Xmx${HEAP_MAX_MB}M -Xms${MIN_RAM_MB}M -XX:MaxDirectMemorySize=512M -XX:ReservedCodeCacheSize=256M"
+if [[ "${ALL_JAVA_ARGS:-}" == *"-XX:+UseZGC"* ]] || [[ "${JAVA_TOOL_OPTIONS:-}" == *"-XX:+UseZGC"* ]]; then
+  MEM_ARGS="$MEM_ARGS -XX:SoftMaxHeapSize=${SOFT_MAX_MB}M"
+fi
 JAVA_OPTS="${JAVA_OPTS:-}"
 
 # ============ Bereinigung von JAVA_OPTS ============
@@ -1281,8 +1319,14 @@ sync_user_jvm_args() {
           gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
           if (t == "") continue
           tc = t; gsub(/^"|"$/, "", tc)
+          if (tc ~ /^-Xm[xs]/) continue
+          if (tc ~ /^-XX:MaxDirectMemorySize=/) continue
+          if (tc ~ /^-XX:ReservedCodeCacheSize=/) continue
+          if (tc ~ /^-XX:SoftMaxHeapSize=/) continue
           if (tc ~ /^-XX:[+-]Use[A-Za-z0-9]+GC$/) continue
           if (tc ~ /^-XX:[+-]ZGenerational$/) continue
+          if (tc ~ /^-XX:[+-]ZUncommit$/) continue
+          if (tc ~ /^-XX:ZUncommitDelay=/) continue
           if (tc ~ /^-XX:G1/) continue
           if (tc ~ /^-XX:InitiatingHeapOccupancyPercent(=.*)?$/) continue
           if (tc ~ /^-XX:MaxGCPauseMillis(=.*)?$/) continue

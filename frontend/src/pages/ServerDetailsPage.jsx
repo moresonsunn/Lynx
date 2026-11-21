@@ -60,6 +60,7 @@ import ServerPermissionsPanel from '../components/server-details/ServerPermissio
 import ConfirmModal from '../components/ConfirmModal';
 import RamSlider from '../components/RamSlider';
 import CpuSlider from '../components/CpuSlider';
+import { MultiCoreCpuIcon, SingleCoreCpuIcon } from '../components/icons/LynxIcons';
 
 function formatUptime(seconds) {
   if (!seconds || seconds < 0) return '0s';
@@ -240,7 +241,7 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMu
   const serverType = (typeVersionData?.server_type || server?.type || '').toLowerCase();
 
   const [ramMax, setRamMax] = useState('4G');
-  const [ramMin, setRamMin] = useState('2G');
+  const [ramMin, setRamMin] = useState('1G');
   const [ramLoading, setRamLoading] = useState(true);
   const [ramSaving, setRamSaving] = useState(false);
   const [ramMsg, setRamMsg] = useState('');
@@ -266,7 +267,7 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMu
         const d = await r.json();
         if (!cancelled) {
           if (d.max_ram) setRamMax(d.max_ram);
-          if (d.min_ram) setRamMin(d.min_ram);
+          setRamMin('1G');
         }
       } catch {
         // keep defaults
@@ -285,7 +286,7 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMu
       const r = await fetch(`${API}/servers/${serverId}/ram`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ min_ram: ramMin, max_ram: ramMax }),
+        body: JSON.stringify({ min_ram: '1G', max_ram: ramMax }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
@@ -419,13 +420,10 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMu
                 value={ramMax}
                 onChange={(v) => {
                   setRamMax(v);
-                  try {
-                    const gb = parseInt(String(v).replace(/[^0-9]/g, ''), 10) || 4;
-                    setRamMin(`${Math.max(1, Math.floor(gb / 2))}G`);
-                  } catch {}
+                  setRamMin('1G');
                 }}
                 showCategories={false}
-                label="Max RAM — min is auto-set to half. Restart required."
+                label="Max RAM — starts at 1 GB min and scales up to max automatically. Restart required."
               />
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-3">
                 <span className="text-xs text-white/50">Current: {ramMin} → {ramMax} {ramMsg && <span className="ml-2 text-purple-300">{ramMsg}</span>}</span>
@@ -445,15 +443,17 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMu
         <div className="glassmorphism rounded-xl p-4">
           <div className="flex items-center justify-between gap-2 mb-3">
             <h4 className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-2">
-              <FaMicrochip className="text-brand-400" />
+              {mcEnabled
+                ? <MultiCoreCpuIcon className="w-4 h-4 text-brand-400" />
+                : <SingleCoreCpuIcon className="w-4 h-4 text-white/60" />}
               {t('multicore.title')}
             </h4>
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border ${
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-medium border ${
               mcEnabled
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                ? 'bg-brand-500/15 text-brand-300 border-brand-500/30'
+                : 'bg-white/[0.06] text-white/70 border-white/15'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${mcEnabled ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${mcEnabled ? 'bg-brand-400' : 'bg-white/40'}`} />
               {mcEnabled ? t('multicore.multiCore') : t('multicore.singleCore')}
             </span>
           </div>
@@ -461,7 +461,7 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMu
             <div className="text-sm text-white/50">{t('multicore.loading')}</div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 rounded-xl border border-white/10 mb-3">
+              <div className="grid grid-cols-2 gap-2 p-1 bg-black/35 rounded-xl border border-white/10 mb-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -470,13 +470,13 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMu
                   }}
                   className={`p-2.5 rounded-lg text-left transition-all border ${
                     mcEnabled
-                      ? 'bg-emerald-500/20 text-white border-emerald-500/40 shadow-sm'
+                      ? 'bg-brand-500/15 text-white border-brand-500/40 shadow-sm'
                       : 'text-white/60 hover:text-white hover:bg-white/5 border-transparent'
                   }`}
                 >
-                  <div className="text-xs font-semibold flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${mcEnabled ? 'bg-emerald-400' : 'bg-white/30'}`} />
-                    {t('multicore.multiCore')}
+                  <div className="text-xs font-semibold flex items-center gap-2">
+                    <MultiCoreCpuIcon className={`w-3.5 h-3.5 ${mcEnabled ? 'text-brand-400' : 'text-white/40'}`} />
+                    <span>{t('multicore.multiCore')}</span>
                   </div>
                   <div className="text-[11px] text-white/50 mt-0.5 leading-snug">
                     {t('multicore.multiCoreDesc')}
@@ -487,13 +487,13 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMu
                   onClick={() => setMcEnabled(false)}
                   className={`p-2.5 rounded-lg text-left transition-all border ${
                     !mcEnabled
-                      ? 'bg-amber-500/20 text-white border-amber-500/40 shadow-sm'
+                      ? 'bg-white/10 text-white border-white/25 shadow-sm'
                       : 'text-white/60 hover:text-white hover:bg-white/5 border-transparent'
                   }`}
                 >
-                  <div className="text-xs font-semibold flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${!mcEnabled ? 'bg-amber-400' : 'bg-white/30'}`} />
-                    {t('multicore.singleCore')}
+                  <div className="text-xs font-semibold flex items-center gap-2">
+                    <SingleCoreCpuIcon className={`w-3.5 h-3.5 ${!mcEnabled ? 'text-white' : 'text-white/40'}`} />
+                    <span>{t('multicore.singleCore')}</span>
                   </div>
                   <div className="text-[11px] text-white/50 mt-0.5 leading-snug">
                     {t('multicore.singleCoreDesc')}
@@ -543,13 +543,13 @@ function SettingsModalContent({ server, serverId, typeVersionData, isSteam, onMu
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-3">
                 <span className="text-xs text-white/50">
                   {t('multicore.executionMode')}: {mcEnabled ? t('multicore.multiCore') : t('multicore.singleCore')}
-                  {mcMsg && <span className="ml-2 text-emerald-300">{mcMsg}</span>}
+                  {mcMsg && <span className="ml-2 text-brand-300">{mcMsg}</span>}
                 </span>
                 <button
                   type="button"
                   onClick={() => handleMulticoreSave()}
                   disabled={mcSaving}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+                  className="px-3 py-1.5 bg-brand-500 hover:bg-brand-400 disabled:opacity-50 text-white rounded-lg text-xs font-semibold whitespace-nowrap transition-colors"
                 >
                   {mcSaving ? '...' : t('multicore.applyLive')}
                 </button>
@@ -978,7 +978,7 @@ export default function ServerDetailsPage() {
     if (!serverId) return;
     setActionLoading('delete');
     try {
-      const r = await fetch(`${API}/servers/${serverId}`, {
+      const r = await fetch(`${API}/servers/${encodeURIComponent(serverId)}`, {
         method: 'DELETE',
         headers: authHeaders()
       });
@@ -986,8 +986,14 @@ export default function ServerDetailsPage() {
         const d = await r.json().catch(() => ({}));
         throw new Error(d.detail || `Delete failed: ${r.status}`);
       }
+      if (actions.__setGlobalData) {
+        actions.__setGlobalData((cur) => ({
+          ...cur,
+          servers: (cur.servers || []).filter((s) => s.id !== serverId && s.name !== server?.name),
+        }));
+      }
       if (actions.__refreshServers) {
-        actions.__refreshServers();
+        await actions.__refreshServers();
       }
       navigate('/servers');
     } catch (err) {
@@ -996,7 +1002,7 @@ export default function ServerDetailsPage() {
       setActionLoading(null);
       setShowDeleteModal(false);
     }
-  }, [serverId, actions, navigate]);
+  }, [serverId, server?.name, actions, navigate]);
 
   const handleEditStart = useCallback((filePath, content) => {
     setEditPath(filePath);
@@ -1064,32 +1070,47 @@ export default function ServerDetailsPage() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <h1 className="text-xl sm:text-2xl font-bold text-white truncate">{server.name}</h1>
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
                     isRunning
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      ? 'bg-white/[0.06] text-emerald-300 border-emerald-500/25'
+                      : 'bg-white/[0.05] text-white/60 border-white/10'
                   }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                    {server.status}
+                    <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400' : 'bg-white/40'}`} />
+                    {isRunning ? (t('servers.running') || 'Running') : (t('servers.stopped') || 'Stopped')}
                   </span>
-                  {!isSteam && !mcStatus.loading && (
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                      mcStatus.enabled
-                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                        : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                    }`}>
-                      <FaMicrochip className="text-[10px]" />
-                      {mcStatus.enabled ? t('multicore.multiCore') : t('multicore.singleCore')}
-                    </span>
-                  )}
                 </div>
-                <div className="flex items-center gap-2.5 text-xs sm:text-sm text-white/60 mt-1 flex-wrap">
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-white/60 mt-1.5 flex-wrap">
                   <span>{displayType}</span>
-                  <span>•</span>
+                  <span className="text-white/30">·</span>
                   <span>{displayVersion}</span>
+                  {!isSteam && !mcStatus.loading && (
+                    <>
+                      <span className="text-white/30">·</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowSettingsModal(true)}
+                        title={mcStatus.enabled ? t('multicore.multiCoreDesc') : t('multicore.singleCoreDesc')}
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border transition-colors ${
+                          mcStatus.enabled
+                            ? 'bg-brand-500/10 text-brand-300 border-brand-500/25 hover:bg-brand-500/20'
+                            : 'bg-white/[0.05] text-white/65 border-white/10 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {mcStatus.enabled
+                          ? <MultiCoreCpuIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                          : <SingleCoreCpuIcon className="w-3.5 h-3.5 flex-shrink-0" />}
+                        <span>{mcStatus.enabled ? t('multicore.multiCore') : t('multicore.singleCore')}</span>
+                        {mcStatus.enabled && mcStatus.worker_threads ? (
+                          <span className="text-[11px] font-mono text-brand-200/75 border-l border-brand-400/25 pl-1.5">
+                            {mcStatus.worker_threads}T
+                          </span>
+                        ) : null}
+                      </button>
+                    </>
+                  )}
                   {stats && !stats.error && isRunning && (
                     <>
-                      <span className="hidden sm:inline">•</span>
+                      <span className="hidden sm:inline text-white/30">·</span>
                       <span className="text-white/75 font-mono text-xs">
                         CPU {Math.min(Math.round(stats.cpu_percent), 100)}%
                       </span>
@@ -1443,52 +1464,57 @@ export default function ServerDetailsPage() {
                     )}
                   </div>
                   {!isSteam && (
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-white">{t('multicore.executionMode')}</span>
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                            mcStatus.enabled
-                              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                              : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${mcStatus.enabled ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                            {mcStatus.enabled ? t('multicore.multiCore') : t('multicore.singleCore')}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-white/45 mt-0.5 truncate">
+                    <div className="bg-white/[0.03] border border-white/10 rounded-xl p-3 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+                          mcStatus.enabled
+                            ? 'bg-brand-500/15 border-brand-500/25 text-brand-400'
+                            : 'bg-white/5 border-white/10 text-white/50'
+                        }`}>
                           {mcStatus.enabled
-                            ? (mcStatus.allocated_cores || mcStatus.worker_threads
-                                ? `${t('multicore.allocatedCores')}: ${mcStatus.allocated_cores ?? '—'} · ${t('multicore.workerThreads')}: ${mcStatus.worker_threads ?? '—'}`
-                                : t('multicore.multiCoreDesc'))
-                            : t('multicore.singleCoreDesc')}
-                        </p>
+                            ? <MultiCoreCpuIcon className="w-4 h-4" />
+                            : <SingleCoreCpuIcon className="w-4 h-4" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-white">
+                            {t('multicore.executionMode')}
+                          </div>
+                          <p className="text-[11px] text-white/50 mt-0.5 truncate">
+                            {mcStatus.enabled
+                              ? (mcStatus.allocated_cores || mcStatus.worker_threads
+                                  ? `${t('multicore.allocatedCores')}: ${mcStatus.allocated_cores ?? '—'} · ${t('multicore.workerThreads')}: ${mcStatus.worker_threads ?? '—'}`
+                                  : t('multicore.multiCoreDesc'))
+                              : t('multicore.singleCoreDesc')}
+                          </p>
+                        </div>
                       </div>
                       {access.canManage && (
-                        <div className="inline-flex p-1 bg-black/40 rounded-lg border border-white/10 flex-shrink-0">
+                        <div className="inline-flex p-1 bg-black/35 rounded-lg border border-white/10 flex-shrink-0">
                           <button
                             type="button"
                             onClick={() => handleQuickMulticoreToggle(true)}
                             disabled={mcStatus.saving || mcStatus.loading}
-                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-50 ${
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-50 ${
                               mcStatus.enabled
-                                ? 'bg-emerald-600 text-white shadow-sm'
-                                : 'text-white/60 hover:text-white'
+                                ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/25'
+                                : 'text-white/55 hover:text-white/85'
                             }`}
                           >
-                            {t('multicore.multiCore')}
+                            <MultiCoreCpuIcon className="w-3.5 h-3.5" />
+                            <span>{t('multicore.multiCore')}</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleQuickMulticoreToggle(false)}
                             disabled={mcStatus.saving || mcStatus.loading}
-                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-50 ${
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-50 ${
                               !mcStatus.enabled
-                                ? 'bg-amber-600 text-white shadow-sm'
-                                : 'text-white/60 hover:text-white'
+                                ? 'bg-white/15 text-white shadow-sm border border-white/15'
+                                : 'text-white/55 hover:text-white/85'
                             }`}
                           >
-                            {t('multicore.singleCore')}
+                            <SingleCoreCpuIcon className="w-3.5 h-3.5" />
+                            <span>{t('multicore.singleCore')}</span>
                           </button>
                         </div>
                       )}

@@ -3,6 +3,7 @@ import { FaFolder, FaUpload, FaSave, FaEdit, FaTimes, FaCheck, FaBan, FaArrowUp,
 import { useTranslation } from '../../i18n';
 import { API, getStoredToken } from '../../lib/api';
 import { authHeaders } from '../../context/AppContext';
+import { FileDocIcon } from '../icons/LynxIcons';
 
 export default function FilesPanelWrapper({ serverName, initialItems = null, isBlockedFile, onEditStart, onEdit, onBlockedFileError, initialPath, onPathChange, onNavigateToBackup }) {
   const { t } = useTranslation();
@@ -746,8 +747,8 @@ async function loadDir(p = path, { force = false } = {}) {
               onMouseEnter={() => { if (it.is_dir) prefetchDir(path === '.' ? it.name : `${path}/${it.name}`); }}
             >
               <div className="flex items-center gap-2">
-                <span className="text-yellow-400 text-base">
-                  {it.is_dir ? <FaFolder /> : '📄'}
+                <span className={`text-base flex items-center ${it.is_dir ? 'text-yellow-400' : 'text-white/55'}`}>
+                  {it.is_dir ? <FaFolder /> : <FileDocIcon className="w-4 h-4" />}
                 </span>
                 {renameTarget === it.name ? (
                   <div className="flex items-center gap-1">

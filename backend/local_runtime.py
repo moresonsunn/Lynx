@@ -1,5 +1,6 @@
 import os
 import shutil
+import signal
 import socket
 import stat
 import subprocess
@@ -12,7 +13,7 @@ from typing import Optional, Dict, List, Any
 import re
 import psutil
 
-from config import SERVERS_ROOT, safe_child_path, detect_server_from_files
+from config import SERVERS_ROOT, safe_child_path, detect_server_from_files, resolve_server_dir
 from download_manager import prepare_server_files
 
 logger = logging.getLogger(__name__)
@@ -695,7 +696,7 @@ class LocalRuntimeManager:
         min_mb = _ram_to_mb(min_ram, default_mb=int(meta.get("min_ram_mb") or 1024))
         max_mb = _ram_to_mb(max_ram, default_mb=int(meta.get("max_ram_mb") or 2048))
         if max_mb < min_mb:
-            max_mb = min_mb
+            min_mb = min(1024, max_mb)
         meta["min_ram"] = _format_ram(min_mb)
         meta["max_ram"] = _format_ram(max_mb)
         meta["min_ram_mb"] = min_mb
@@ -913,43 +914,195 @@ class LocalRuntimeManager:
             self._find_and_kill_port_holders(port)
             self._wait_for_port_release(port, timeout=5, interval=0.25)
 
+        # Stage 7: Reap any orphaned FIFO/tail/sleep helpers holding srv_dir
+        try:
+            self._kill_directory_holders(self._server_dir(name), pid)
+        except Exception:
+            pass
+
         return {
             "id": name,
             "status": "stopped",
             "method": "graceful_flush" if gracefully_stopped else "process_tree",
         }
 
-    def delete_server(self, server_id: str) -> Dict:
-        """Stop the server (if running) AND remove its directory on disk.
-
-        Previously deletion only stopped the process, leaving the whole
-        folder behind — the server vanished from the website but the
-        files stayed on disk.
+    def _kill_directory_holders(self, srv_dir: Path, root_pid: Optional[int] = None) -> None:
+        """Terminate process groups and any orphaned processes (e.g. tail/sleep/java)
+        holding open handles or cwd inside *srv_dir*.
         """
-        name = server_id
-        try:
-            self.stop_server(name)
-        except Exception as e:
-            logger.warning(f"delete_server: stop failed for {name} (continuing): {e}")
+        if root_pid:
+            if os.name != "nt" and hasattr(os, "getpgid") and hasattr(os, "killpg"):
+                try:
+                    pgid = os.getpgid(root_pid)
+                    if pgid != os.getpgrp():
+                        os.killpg(pgid, signal.SIGKILL)
+                except Exception:
+                    pass
+            try:
+                self._kill_process_tree(root_pid, timeout=3)
+            except Exception:
+                pass
 
+        try:
+            resolved_dir = str(srv_dir.resolve()).rstrip("/\\")
+        except Exception:
+            resolved_dir = str(srv_dir).rstrip("/\\")
+        if not resolved_dir:
+            return
+        dir_prefix = resolved_dir + os.sep
+        raw_dir = str(srv_dir).rstrip("/\\")
+        raw_prefix = raw_dir + os.sep
+        my_pid = os.getpid()
+
+        victims = []
+        try:
+            for proc in psutil.process_iter(["pid", "cwd", "cmdline"]):
+                try:
+                    if proc.pid == my_pid:
+                        continue
+                    info = proc.info or {}
+                    cwd = info.get("cwd") or ""
+                    cmdline_list = info.get("cmdline") or []
+                    cmdline_str = " ".join(str(x) for x in cmdline_list) if isinstance(cmdline_list, (list, tuple)) else str(cmdline_list)
+                    matched = (
+                        cwd == resolved_dir
+                        or cwd.startswith(dir_prefix)
+                        or cwd == raw_dir
+                        or cwd.startswith(raw_prefix)
+                        or resolved_dir in cmdline_str
+                        or (raw_dir and raw_dir in cmdline_str)
+                    )
+                    if matched:
+                        victims.append(proc)
+                except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                    continue
+        except Exception:
+            victims = []
+
+        if victims:
+            for proc in victims:
+                try:
+                    proc.terminate()
+                except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                    pass
+            try:
+                _, alive = psutil.wait_procs(victims, timeout=2)
+            except Exception:
+                alive = victims
+            for proc in alive:
+                try:
+                    proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                    pass
+            try:
+                psutil.wait_procs(alive, timeout=2)
+            except Exception:
+                pass
+
+    def _force_remove_tree(self, srv_dir: Path) -> bool:
+        """Remove *srv_dir*, clearing read-only bits and retrying after holder cleanup."""
+        def _on_rm_error(func, path_str, exc_info):
+            try:
+                os.chmod(path_str, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+            except Exception:
+                pass
+            try:
+                func(path_str)
+            except Exception:
+                pass
+
+        for attempt in range(5):
+            if not srv_dir.exists() and not srv_dir.is_symlink():
+                return True
+            if srv_dir.is_symlink():
+                try:
+                    srv_dir.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            else:
+                try:
+                    shutil.rmtree(srv_dir, onerror=_on_rm_error)
+                except Exception:
+                    pass
+            if not srv_dir.exists() and not srv_dir.is_symlink():
+                return True
+            try:
+                self._kill_directory_holders(srv_dir)
+            except Exception:
+                pass
+            time.sleep(0.15)
+
+        if os.name != "nt" and (srv_dir.exists() or srv_dir.is_symlink()):
+            try:
+                subprocess.run(["rm", "-rf", str(srv_dir)], check=False, timeout=15)
+            except Exception:
+                pass
+        return not srv_dir.exists() and not srv_dir.is_symlink()
+
+    def delete_server(self, server_id: str) -> Dict:
+        """Stop the server immediately (if running), kill any directory holders,
+        and remove its directory on disk under SERVERS_ROOT.
+        """
+        name = str(server_id)
         dir_removed = False
         try:
             srv_dir = self._server_dir(name)
+            if not srv_dir.exists() and not srv_dir.is_symlink():
+                alt = resolve_server_dir(name)
+                if alt is not None:
+                    srv_dir = alt
+
             # Containment: never delete outside SERVERS_ROOT (id comes from URL)
             root = SERVERS_ROOT.resolve()
-            target = srv_dir.resolve() if srv_dir.exists() or srv_dir.is_symlink() else None
-            if target is not None and (target == root or root not in target.parents):
-                logger.error(f"delete_server: refusing to remove {target} (outside SERVERS_ROOT)")
-                return {"id": name, "name": name, "deleted": True, "dir_removed": False,
-                        "error": "Refusing to remove path outside servers root"}
+            if srv_dir.is_symlink():
+                parent_resolved = srv_dir.parent.resolve()
+                if parent_resolved != root and root not in parent_resolved.parents:
+                    logger.error(f"delete_server: refusing to remove symlink {srv_dir} (outside SERVERS_ROOT)")
+                    return {"id": name, "name": name, "deleted": True, "dir_removed": False,
+                            "error": "Refusing to remove path outside servers root"}
+            else:
+                target = srv_dir.resolve() if srv_dir.exists() else None
+                if target is not None and (target == root or root not in target.parents):
+                    logger.error(f"delete_server: refusing to remove {target} (outside SERVERS_ROOT)")
+                    return {"id": name, "name": name, "deleted": True, "dir_removed": False,
+                            "error": "Refusing to remove path outside servers root"}
+
+            # Read PID & port before removing files so we can terminate immediately
+            pid = None
+            try:
+                pid_file = srv_dir / ".server.pid"
+                if pid_file.exists():
+                    pid_txt = pid_file.read_text(encoding="utf-8", errors="ignore").strip()
+                    pid = int(pid_txt) if pid_txt else None
+            except Exception:
+                pid = None
+
+            port = MINECRAFT_PORT
+            try:
+                meta_file = srv_dir / "server_meta.json"
+                if meta_file.exists():
+                    meta = json.loads(meta_file.read_text(encoding="utf-8", errors="ignore") or "{}")
+                    if isinstance(meta, dict) and meta.get("host_port"):
+                        port = int(meta["host_port"])
+            except Exception:
+                pass
+
+            try:
+                self._kill_directory_holders(srv_dir, pid)
+            except Exception as e:
+                logger.warning(f"delete_server: holder cleanup failed for {name}: {e}")
+
+            if port:
+                try:
+                    self._find_and_kill_port_holders(port)
+                except Exception:
+                    pass
+
             if srv_dir.is_symlink():
                 srv_dir.unlink(missing_ok=True)
-                dir_removed = True
-            elif srv_dir.is_dir():
-                shutil.rmtree(srv_dir, ignore_errors=True)
-                dir_removed = not srv_dir.exists()
+                dir_removed = not srv_dir.exists() and not srv_dir.is_symlink()
             else:
-                dir_removed = True  # nothing there to begin with
+                dir_removed = self._force_remove_tree(srv_dir)
         except Exception as e:
             logger.warning(f"delete_server: failed to remove directory for {name}: {e}")
         return {"id": name, "name": name, "deleted": True, "dir_removed": dir_removed}
@@ -971,11 +1124,11 @@ class LocalRuntimeManager:
             if mb > 256 * 1024:
                 raise ValueError(f"RAM too large: {v} (max 256G)")
             return _format_ram(mb)
-        n_min = norm(min_ram) if min_ram else None
+        n_min = norm(min_ram) if min_ram else "1G"
         n_max = norm(max_ram) if max_ram else None
         if n_min and n_max:
             if _ram_to_mb(n_min, 0) > _ram_to_mb(n_max, 0):
-                raise ValueError(f"min_ram {n_min} > max_ram {n_max}")
+                n_min = n_max
         # Stop if running
         try:
             self.stop_server(name)

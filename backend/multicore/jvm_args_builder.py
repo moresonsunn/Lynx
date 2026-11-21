@@ -51,6 +51,8 @@ def build_multicore_jvm_args(
         if jv < 24:
             # -XX:+ZGenerational was removed in Java 24+ where ZGC is unconditionally generational
             flags.append("-XX:+ZGenerational")
+        flags.append("-XX:+ZUncommit")
+        flags.append("-XX:ZUncommitDelay=30")
         flags.append(f"-XX:ConcGCThreads={profile.conc_gc_threads}")
         flags.append(f"-XX:ParallelGCThreads={profile.gc_threads}")
     elif jv >= 17:
@@ -131,6 +133,8 @@ _CONFLICTING_GC_TOKEN_RE = re.compile(
     r"^(?:"
     r"-XX:[+-]Use[A-Za-z0-9]+GC"
     r"|-XX:[+-]ZGenerational"
+    r"|-XX:[+-]ZUncommit"
+    r"|-XX:ZUncommitDelay=.*"
     r"|-XX:G1.*"
     r"|-XX:InitiatingHeapOccupancyPercent(?:=.*)?"
     r"|-XX:MaxGCPauseMillis(?:=.*)?"

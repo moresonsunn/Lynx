@@ -1782,7 +1782,9 @@ def set_server_ram(container_id: str, request: dict = Body(...), current_user: U
     # also accept single ram value
     if not min_ram and not max_ram and isinstance(request, dict) and request.get("ram"):
         max_ram = request.get("ram")
-        min_ram = request.get("ram")
+        min_ram = "1G"
+    if not min_ram and max_ram:
+        min_ram = "1G"
     if not min_ram and not max_ram:
         raise HTTPException(status_code=400, detail="min_ram or max_ram required (e.g. 2G, 4096M)")
     try:

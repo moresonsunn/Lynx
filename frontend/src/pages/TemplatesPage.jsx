@@ -5,6 +5,7 @@ import { useTranslation } from '../i18n/I18nContext';
 import ModpackImporter from '../components/ModpackImporter';
 import RamSlider from '../components/RamSlider';
 import CpuSlider from '../components/CpuSlider';
+import { ArchiveImportIcon } from '../components/icons/LynxIcons';
 
 const SERVER_TYPES_WITH_LOADER = ['fabric', 'forge', 'neoforge'];
 const SERVER_TYPES = ['paper', 'purpur', 'vanilla', 'snapshot', 'fabric', 'forge', 'neoforge', 'mohist', 'magma', 'banner', 'catserver', 'spongeforge', 'bungeecord', 'velocity'];
@@ -49,7 +50,7 @@ export default function TemplatesPage({
 
   const [serverName, setServerName] = useState(generateRandomName);
   const [hostPort, setHostPort] = useState('');
-  const [minRam, setMinRam] = useState('1024M');
+  const [minRam, setMinRam] = useState('1G');
   const [maxRam, setMaxRam] = useState('4096M');
   const [cpuCores, setCpuCores] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -68,10 +69,8 @@ export default function TemplatesPage({
           if (!cancelled && settings.server_defaults) {
             const defaults = settings.server_defaults;
             setServerDefaults(defaults);
-            if (defaults.memory_min_mb) {
-              setMinRam(`${defaults.memory_min_mb}M`);
-              try { if (typeof setCreateMinRam === 'function') setCreateMinRam(String(defaults.memory_min_mb)); } catch (e) { }
-            }
+            setMinRam('1G');
+            try { if (typeof setCreateMinRam === 'function') setCreateMinRam('1G'); } catch (e) { }
             if (defaults.memory_max_mb) {
               setMaxRam(`${defaults.memory_max_mb}M`);
               try { if (typeof setCreateMaxRam === 'function') setCreateMaxRam(String(defaults.memory_max_mb)); } catch (e) { }
@@ -168,7 +167,7 @@ export default function TemplatesPage({
 
     // Auto-fill suggested name
     if (options.suggestedName) setServerName(options.suggestedName);
-    if (options.recommendedRam?.min) setMinRam(options.recommendedRam.min);
+    setMinRam('1G');
     if (options.recommendedRam?.max) setMaxRam(options.recommendedRam.max);
 
     try {
@@ -366,12 +365,7 @@ export default function TemplatesPage({
                 value={createMaxRam}
                 onChange={(v) => {
                   setCreateMaxRam(v);
-                  // keep min at 1G or half of max, whichever is larger
-                  try {
-                    const gb = parseInt(String(v).replace(/[^0-9]/g, ''), 10) || 4;
-                    const minGb = Math.max(1, Math.floor(gb / 2));
-                    setCreateMinRam(`${minGb}G`);
-                  } catch {}
+                  try { if (typeof setCreateMinRam === 'function') setCreateMinRam('1G'); } catch {}
                 }}
                 showCategories={true}
               />
@@ -402,8 +396,11 @@ export default function TemplatesPage({
 
       {/* 2. Import ZIP Section */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-          <FaFileArchive className="text-yellow-400" /> {t('templatesPage.importServerPack')}
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-lg bg-brand-500/15 border border-brand-500/25 flex items-center justify-center text-brand-400 flex-shrink-0">
+            <ArchiveImportIcon className="w-4 h-4" />
+          </span>
+          <span>{t('templatesPage.importServerPack')}</span>
         </h3>
         <div className="space-y-6">
           <div>
@@ -464,10 +461,7 @@ export default function TemplatesPage({
               value={maxRam}
               onChange={(v) => {
                 setMaxRam(v);
-                try {
-                  const gb = parseInt(String(v).replace(/[^0-9]/g, ''), 10) || 4;
-                  setMinRam(`${Math.max(1, Math.floor(gb / 2))}G`);
-                } catch {}
+                setMinRam('1G');
               }}
               showCategories={true}
             />
@@ -712,10 +706,7 @@ export default function TemplatesPage({
                     value={maxRam}
                     onChange={(v) => {
                       setMaxRam(v);
-                      try {
-                        const gb = parseInt(String(v).replace(/[^0-9]/g, ''), 10) || 4;
-                        setMinRam(`${Math.max(1, Math.floor(gb / 2))}G`);
-                      } catch {}
+                      setMinRam('1G');
                     }}
                     showCategories={true}
                   />
