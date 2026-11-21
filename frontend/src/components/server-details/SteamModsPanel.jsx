@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { FaDownload, FaTrash, FaCube, FaSearch, FaTimes, FaSteam, FaBolt, FaExternalLinkAlt, FaCog, FaFolder, FaFire, FaGlobe, FaExchangeAlt } from 'react-icons/fa';
 import { API, getStoredToken } from '../../lib/api';
+import { TipSparkIcon, EndorseVectorIcon } from '../icons/LynxIcons';
 
 // Source display config
 const SOURCE_INFO = {
@@ -510,10 +511,10 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
             }
             
             const data = await res.json();
-            alert(`✅ Installed ${data.installed?.length || 1} mod(s) successfully!`);
+            alert(`Installed ${data.installed?.length || 1} mod(s) successfully.`);
             await fetchInstalledMods();
         } catch (e) {
-            alert(`❌ Failed to install: ${e.message}`);
+            alert(`Failed to install: ${e.message}`);
         } finally {
             setInstalling(null);
         }
@@ -561,10 +562,10 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
             }
             
             const data = await res.json();
-            alert(`✅ Installed ${mod.name} successfully!`);
+            alert(`Installed ${mod.name} successfully.`);
             await fetchInstalledMods();
         } catch (e) {
-            alert(`❌ Failed to install: ${e.message}`);
+            alert(`Failed to install: ${e.message}`);
         } finally {
             setInstalling(null);
         }
@@ -589,7 +590,7 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                 // Fallback: open the Nexus page for manual download
                 if (mod.page_url) {
                     window.open(mod.page_url, '_blank');
-                    alert('ℹ️ No direct download available. Opening Nexus Mods page for manual download.');
+                    alert('No direct download available. Opening Nexus Mods page for manual download.');
                 } else {
                     throw new Error('No files available for this mod');
                 }
@@ -611,10 +612,10 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                 throw new Error(err.detail || `HTTP ${res.status}`);
             }
             
-            alert(`✅ Installed ${mod.name} successfully!`);
+            alert(`Installed ${mod.name} successfully.`);
             await fetchInstalledMods();
         } catch (e) {
-            alert(`❌ ${e.message}`);
+            alert(`${e.message}`);
         } finally {
             setInstalling(null);
         }
@@ -634,10 +635,10 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
                 throw new Error(err.detail || `HTTP ${res.status}`);
             }
             
-            alert(`✅ Installed ${mod.name} successfully!`);
+            alert(`Installed ${mod.name} successfully.`);
             await fetchInstalledMods();
         } catch (e) {
-            alert(`❌ Failed to install: ${e.message}`);
+            alert(`Failed to install: ${e.message}`);
         } finally {
             setInstalling(null);
         }
@@ -664,13 +665,13 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
 
             const data = await res.json();
             if (data.success) {
-                alert(`✅ Installed '${data.title || mod.title}' successfully!`);
+                alert(`Installed '${data.title || mod.title}' successfully.`);
             } else {
-                alert(`⚠️ ${data.message || 'Could not auto-download. Add the Workshop collection to GAME_PARAMS and restart.'}`);
+                alert(`${data.message || 'Could not auto-download. Add the Workshop collection to GAME_PARAMS and restart.'}`);
             }
             await fetchInstalledMods();
         } catch (e) {
-            alert(`❌ Failed to install: ${e.message}`);
+            alert(`Failed to install: ${e.message}`);
         } finally {
             setInstalling(null);
         }
@@ -924,7 +925,10 @@ export default function SteamModsPanel({ serverId, serverName, gameSlug }) {
 
             {/* Info Box */}
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-                <h4 className="font-semibold text-blue-400 mb-2">💡 Tips</h4>
+                <h4 className="font-semibold text-blue-400 mb-2 flex items-center gap-2">
+                    <TipSparkIcon className="w-4 h-4 flex-shrink-0" />
+                    <span>Tips</span>
+                </h4>
                 <ul className="text-white/60 text-sm space-y-1">
                     <li>• Most mods require a server restart to take effect</li>
                     {sourceType === 'thunderstore' && (
@@ -1004,7 +1008,10 @@ function ModCard({ mod, installing, onInstall, source }) {
                         </span>
                     )}
                     {mod.endorsements != null && (
-                        <span>👍 {formatNumber(mod.endorsements)}</span>
+                        <span className="inline-flex items-center gap-1">
+                            <EndorseVectorIcon className="w-3 h-3 text-amber-300" />
+                            {formatNumber(mod.endorsements)}
+                        </span>
                     )}
                     {mod.version && (
                         <span>v{mod.version}</span>

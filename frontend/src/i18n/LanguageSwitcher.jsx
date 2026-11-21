@@ -96,7 +96,9 @@ const LanguageSwitcher = ({
           title={t('common.language')}
           aria-label={t('common.selectLanguage')}
         >
-          <span className="text-lg">{currentLang.flag}</span>
+          <span className="inline-flex items-center justify-center min-w-[26px] h-5 px-1.5 rounded bg-white/10 border border-white/15 text-[10px] font-bold uppercase tracking-wider text-white/85">
+            {currentLang.code}
+          </span>
           {showLabel && (
             <span className="text-sm text-white/80">{currentLang.nativeName}</span>
           )}
@@ -126,7 +128,9 @@ const LanguageSwitcher = ({
                     lang.code === language ? 'bg-blue-50 dark:bg-blue-900/30' : ''
                   }`}
                 >
-                  <span className="text-lg">{lang.flag}</span>
+                  <span className="inline-flex items-center justify-center min-w-[26px] h-5 px-1.5 rounded bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/15 text-[10px] font-bold uppercase tracking-wider text-gray-700 dark:text-white/85">
+                    {lang.code}
+                  </span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
                       {lang.nativeName}
@@ -169,7 +173,7 @@ const LanguageSwitcher = ({
         >
           {languagesArray.map((lang) => (
             <option key={lang.code} value={lang.code}>
-              {lang.flag} {lang.nativeName} ({lang.name})
+              [{lang.code.toUpperCase()}] {lang.nativeName} ({lang.name})
             </option>
           ))}
         </select>
@@ -186,7 +190,9 @@ const LanguageSwitcher = ({
         aria-label={t('common.selectLanguage')}
         aria-expanded={isOpen}
       >
-        <span className="text-lg">{currentLang.flag}</span>
+        <span className="inline-flex items-center justify-center min-w-[26px] h-5 px-1.5 rounded bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/15 text-[10px] font-bold uppercase tracking-wider text-gray-700 dark:text-white/85">
+          {currentLang.code}
+        </span>
         {showLabel && (
           <span className="text-gray-700 dark:text-gray-200">
             {currentLang.nativeName}
@@ -222,7 +228,9 @@ const LanguageSwitcher = ({
                   lang.code === language ? 'bg-blue-50 dark:bg-blue-900/30 ring-1 ring-blue-200 dark:ring-blue-800' : ''
                 }`}
               >
-                <span className="text-xl">{lang.flag}</span>
+                <span className="inline-flex items-center justify-center min-w-[28px] h-5 px-1.5 rounded bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/15 text-[10px] font-bold uppercase tracking-wider text-gray-700 dark:text-white/85">
+                  {lang.code}
+                </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-gray-900 dark:text-white">
                     {lang.nativeName}

@@ -3,6 +3,7 @@ import { FaMemory, FaMicrochip, FaNetworkWired, FaSave } from 'react-icons/fa';
 import { useTranslation } from '../../i18n';
 import { API } from '../../lib/api';
 import { authHeaders } from '../../lib/api';
+import { TipSparkIcon } from '../icons/LynxIcons';
 
 // Simple in-memory cache for Config per server
 const CONFIG_CACHE = {}; // { [serverName]: { ts, propsData, eulaAccepted, javaVersions, currentVersion, propsText } }
@@ -403,7 +404,10 @@ export default function ConfigPanel({ server, onRestart }) {
             {updating && (<div className="text-sm text-yellow-400 mt-2">{t('configPanel.updatingJava')}</div>)}
             {currentVersion && (
               <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                <div className="text-sm text-blue-300 mb-2">💡 Tip</div>
+                <div className="text-sm text-blue-300 mb-2 flex items-center gap-1.5 font-medium">
+                  <TipSparkIcon className="w-4 h-4 flex-shrink-0" />
+                  <span>Tip</span>
+                </div>
                 <div className="text-xs text-blue-200">After changing the Java version, restart the server for the changes to take effect.</div>
                 {onRestart && (
                   <button onClick={() => onRestart(server.id)} className="mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition">{t('configPanel.restartServer')}</button>

@@ -291,3 +291,96 @@ class TestLocalRuntimeLifecycle:
             # Second call within cooldown must NOT retry DockerClient
             mock_dc.assert_called_once()
 
+    def test_update_server_ram_enforces_1g_min_and_allows_lowering_max_below_old_min(self, temp_servers_root):
+        """Regression: server always starts with 1G min_ram and adjusts only max_ram cleanly,
+        even when old min_ram_mb exceeded the new lower max_ram (e.g. 24G/12G -> 11G)."""
+        import runtime_adapter
+        import app as app_module
+        from auth import require_auth
+        from models import User
+        from fastapi.testclient import TestClient
+
+        mgr = LocalRuntimeManager()
+        srv_name = "cobble_ram_srv"
+        srv_dir = temp_servers_root / srv_name
+        srv_dir.mkdir(parents=True)
+        (srv_dir / "server_meta.json").write_text(
+            json.dumps({
+                "name": srv_name,
+                "type": "fabric",
+                "version": "1.21.1",
+                "min_ram": "12G",
+                "max_ram": "24G",
+                "min_ram_mb": 12288,
+                "max_ram_mb": 24576,
+                "host_port": 25587,
+            }),
+            encoding="utf-8",
+        )
+
+        captured_env = {}
+
+        def fake_spawn(name, env):
+            captured_env.update(env)
+            return {"id": name, "name": name, "status": "running", "pid": 9999}
+
+        with patch.object(mgr, "stop_server", return_value={"id": srv_name, "status": "stopped"}), \
+             patch.object(mgr, "_spawn", side_effect=fake_spawn):
+            # Lower max_ram to 11G with min_ram omitted -> defaults min_ram to 1G and sets max_ram=11G
+            mgr.update_server_ram(srv_name, min_ram=None, max_ram="11G")
+
+        meta = json.loads((srv_dir / "server_meta.json").read_text(encoding="utf-8"))
+        assert meta["min_ram"] == "1G"
+        assert meta["min_ram_mb"] == 1024
+        assert meta["max_ram"] == "11G"
+        assert meta["max_ram_mb"] == 11264
+        assert captured_env["MIN_RAM"] == "1G"
+        assert captured_env["MAX_RAM"] == "11G"
+
+        # Verify POST /api/servers/{id}/ram defaults min_ram to "1G" when omitted
+        adapter = runtime_adapter.LocalAdapter()
+        adapter.local = mgr
+        owner = User(id=1, username="admin", email="admin@localhost", hashed_password="x", role="owner", is_active=True)
+
+        app_module.app.dependency_overrides[require_auth] = lambda: owner
+        try:
+            with patch.object(app_module, "get_runtime_manager_or_docker", return_value=adapter), \
+                 patch.object(mgr, "stop_server", return_value={"id": srv_name, "status": "stopped"}), \
+                 patch.object(mgr, "_spawn", side_effect=fake_spawn):
+                with TestClient(app_module.app) as client:
+                    resp = client.post(f"/api/servers/{srv_name}/ram", json={"max_ram": "11G"})
+                    assert resp.status_code == 200, resp.text
+                    meta2 = json.loads((srv_dir / "server_meta.json").read_text(encoding="utf-8"))
+                    assert meta2["min_ram"] == "1G"
+                    assert meta2["max_ram"] == "11G"
+        finally:
+            app_module.app.dependency_overrides.pop(require_auth, None)
+
+    def test_stats_prefers_uss_over_zgc_inflated_rss(self, temp_servers_root, monkeypatch):
+        """Regression: on Linux ZGC, memory_full_info().uss avoids multi-mapping RSS inflation."""
+        import runtime_adapter
+        monkeypatch.setattr(runtime_adapter, "SERVERS_ROOT", temp_servers_root)
+        srv_name = "zgc_mem_srv"
+        srv_dir = temp_servers_root / srv_name
+        srv_dir.mkdir(parents=True)
+        (srv_dir / ".server.pid").write_text("42424", encoding="utf-8")
+        (srv_dir / "server_meta.json").write_text(json.dumps({"max_ram": "11G"}), encoding="utf-8")
+
+        fake_proc = MagicMock()
+        fake_proc.pid = 42424
+        fake_proc.num_threads.return_value = 16
+        fake_proc.cpu_percent.return_value = 25.0
+        fake_proc.cpu_times.return_value = MagicMock(user=1.0, system=0.5)
+        fake_proc.threads.return_value = []
+        fake_proc.memory_info.return_value = MagicMock(rss=12027 * 1024 * 1024)
+        fake_proc.memory_full_info.return_value = MagicMock(uss=9400 * 1024 * 1024, pss=9500 * 1024 * 1024)
+
+        adapter = runtime_adapter.LocalAdapter()
+        with patch("runtime_adapter.psutil.pid_exists", return_value=True), \
+             patch("runtime_adapter._gather_process_tree", return_value=[fake_proc]), \
+             patch("runtime_adapter.time.sleep", return_value=None):
+            stats = adapter.get_server_stats(srv_name, include_players=False)
+            assert stats["memory_limit_mb"] == 11264.0
+            assert stats["memory_used_mb"] == 9400.0
+            assert stats["memory_used_mb"] < stats["memory_limit_mb"]
+

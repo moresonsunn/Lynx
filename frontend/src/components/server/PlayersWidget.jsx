@@ -3,6 +3,7 @@ import { FaUsers, FaUser, FaUserPlus, FaSync } from 'react-icons/fa';
 import PlayerAvatar from '../ui/PlayerAvatar';
 import { useFetch } from '../../hooks/useFetch';
 import { useAuth } from '../../context/AuthContext';
+import { TipSparkIcon } from '../icons/LynxIcons';
 
 const PlayersWidget = ({ serverName, serverId }) => {
   const { token } = useAuth();
@@ -119,7 +120,10 @@ const PlayersWidget = ({ serverName, serverId }) => {
           Retry
         </button>
         <div className="mt-2 p-2 bg-gray-900/50 rounded text-xs text-gray-500">
-          <p>💡 Tip: Enable RCON for more reliable player list:</p>
+          <p className="flex items-center gap-1.5 text-brand-300">
+            <TipSparkIcon className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>Tip: Enable RCON for more reliable player list:</span>
+          </p>
           <pre className="mt-1 text-gray-400">
             enable-rcon=true{'\n'}
             rcon.password=your_password{'\n'}

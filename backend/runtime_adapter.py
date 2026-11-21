@@ -581,10 +581,26 @@ class LocalAdapter:
 
     def delete_server(self, container_id: str) -> Dict:
         self._invalidate_caches()
+        with _TELEMETRY_CACHE_LOCK:
+            _TELEMETRY_CACHE.pop(container_id, None)
+        with _TPS_CACHE_LOCK:
+            _TPS_CACHE.pop(container_id, None)
         steam_id = self._resolve_steam_id(container_id)
         if steam_id:
-            return self._get_docker().delete_server(steam_id)
-        return self.local.delete_server(container_id)
+            res = self._get_docker().delete_server(steam_id)
+            try:
+                local_dir = safe_child_path(SERVERS_ROOT, container_id)
+                if local_dir.exists() or local_dir.is_symlink():
+                    local_res = self.local.delete_server(container_id)
+                    if isinstance(res, dict) and not local_res.get("dir_removed"):
+                        res["dir_removed"] = False
+            except Exception:
+                pass
+            self._invalidate_caches()
+            return res
+        res = self.local.delete_server(container_id)
+        self._invalidate_caches()
+        return res
 
     def update_metadata(self, container_id: str, **fields: Any) -> None:
         self._invalidate_caches()
@@ -825,7 +841,20 @@ class LocalAdapter:
                 total_mem = 0
                 for pr in procs:
                     try:
-                        total_mem += pr.memory_info().rss
+                        added = 0
+                        # Prefer Unique Set Size (USS) so ZGC shared/multi-mapped virtual pages
+                        # on Linux are never counted multiple times against the server RAM limit.
+                        if hasattr(pr, "memory_full_info"):
+                            full = pr.memory_full_info()
+                            uss_val = getattr(full, "uss", 0)
+                            pss_val = getattr(full, "pss", 0)
+                            if isinstance(uss_val, int) and not isinstance(uss_val, bool) and uss_val > 0:
+                                added = uss_val
+                            elif isinstance(pss_val, int) and not isinstance(pss_val, bool) and pss_val > 0:
+                                added = pss_val
+                        if added <= 0:
+                            added = pr.memory_info().rss
+                        total_mem += added
                     except Exception:
                         pass
                 mem_usage_mb = float(total_mem) / (1024 * 1024)
@@ -1305,7 +1334,10 @@ class LocalAdapter:
     def update_server_ram(self, container_id: str, min_ram: str | None = None, max_ram: str | None = None) -> Dict:
         """Update RAM allocation for local runtime via restart."""
         try:
-            return self.local.update_server_ram(container_id, min_ram, max_ram)
+            self._invalidate_caches()
+            res = self.local.update_server_ram(container_id, min_ram, max_ram)
+            self._invalidate_caches()
+            return res
         except Exception as e:
             return {"success": False, "error": "Runtime operation failed", "id": container_id}
 

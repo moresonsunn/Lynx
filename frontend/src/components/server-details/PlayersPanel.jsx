@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import { API, authHeaders } from '../../context/AppContext';
 import PlayerAvatar from '../ui/PlayerAvatar';
+import { WarningVectorIcon } from '../icons/LynxIcons';
 /* eslint-disable */
 export default function PlayersPanel({ serverId, serverName, focusPlayer = '', onFocusConsumed }) {
   const { t } = useTranslation();
@@ -222,7 +223,10 @@ export default function PlayersPanel({ serverId, serverName, focusPlayer = '', o
 
       {method === 'rcon-no-password' && (
         <div className="bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 p-4 rounded-lg">
-          <p className="font-medium">⚠️ RCON is disabled for this server.</p>
+          <p className="font-medium flex items-center gap-2">
+            <WarningVectorIcon className="w-4 h-4 flex-shrink-0" />
+            <span>RCON is disabled for this server.</span>
+          </p>
           <p className="text-sm mt-1">To enable player list, enable RCON in server.properties:</p>
           <pre className="text-xs bg-gray-900 p-2 rounded mt-2 whitespace-pre-wrap">
 enable-rcon=true

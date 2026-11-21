@@ -10,6 +10,7 @@ import {
 } from 'react-icons/fa';
 import { API, authHeaders, getStoredToken } from '../../lib/api';
 import { useTranslation } from '../../i18n';
+import { CloseVectorIcon } from '../icons/LynxIcons';
 
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) return '0 MB';
@@ -182,7 +183,9 @@ export default function WorldsPanel({ serverName, onOpenInFiles }) {
       {statusMessage && (
         <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-2 text-xs text-emerald-300 flex items-center justify-between">
           <span>{statusMessage}</span>
-          <button onClick={() => setStatusMessage('')} className="text-emerald-300/70 hover:text-emerald-200">✕</button>
+          <button onClick={() => setStatusMessage('')} className="text-emerald-300/70 hover:text-emerald-200 p-1 rounded hover:bg-emerald-500/15 transition-colors">
+            <CloseVectorIcon className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 

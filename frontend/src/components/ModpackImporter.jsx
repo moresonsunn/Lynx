@@ -16,7 +16,7 @@ export default function ModpackImporter({ onInstallStarted, onClose }) {
   const [selectedVersion, setSelectedVersion] = useState('');
   const [serverName, setServerName] = useState('');
   const [hostPort, setHostPort] = useState(25565);
-  const [minRam, setMinRam] = useState('2G');
+  const [minRam, setMinRam] = useState('1G');
   const [maxRam, setMaxRam] = useState('4G');
   const [cpuCores, setCpuCores] = useState(null);
   const [installMode, setInstallMode] = useState('server');

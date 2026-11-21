@@ -3054,24 +3054,90 @@ class DockerManager:
         container.kill()
         return {"id": container.id, "status": container.status}
 
+    def _remove_server_dir_force(self, server_dir: Path) -> bool:
+        """Remove a server directory tree, clearing read-only bits and retrying transient locks."""
+        import shutil
+        import stat
+        try:
+            root = SERVERS_ROOT.resolve()
+            if server_dir.is_symlink():
+                target_parent = server_dir.parent.resolve()
+                if root != target_parent and root not in target_parent.parents:
+                    return False
+                server_dir.unlink(missing_ok=True)
+                return not server_dir.exists()
+            if not server_dir.exists():
+                return True
+            target = server_dir.resolve()
+            if target == root or root not in target.parents:
+                logger.error(f"Refusing to remove path outside SERVERS_ROOT: {target}")
+                return False
+        except Exception as e:
+            logger.warning(f"Failed to validate server dir for removal {server_dir}: {e}")
+            return False
+
+        def _on_rm_error(func, path_str, exc_info):
+            try:
+                os.chmod(path_str, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+            except Exception:
+                pass
+            try:
+                func(path_str)
+            except Exception:
+                pass
+
+        for attempt in range(4):
+            try:
+                shutil.rmtree(server_dir, onerror=_on_rm_error)
+            except Exception:
+                pass
+            if not server_dir.exists():
+                return True
+            time.sleep(0.15 * (attempt + 1))
+
+        if os.name != "nt" and server_dir.exists():
+            try:
+                import subprocess
+                subprocess.run(["rm", "-rf", str(server_dir)], check=False, timeout=15)
+            except Exception:
+                pass
+        return not server_dir.exists()
+
     def delete_server(self, container_id):
         """Delete the server's container AND its directory under SERVERS_ROOT if present.
 
-        container_id may be a container ID or the server name. We'll prefer container.name when found.
+        container_id may be a container ID or the server name. Resolves directory
+        hints from container name, labels (mc.server.name), SERVER_DIR_NAME env,
+        and raw container_id so servers with spaces in their directory name are removed.
         """
         name_hint = str(container_id)
+        candidate_names: List[str] = []
         container_removed = False
         remove_error = None
-        
-        
+
         try:
             container = self._get_container_any(container_id)
+            try:
+                attrs = container.attrs or {}
+                cfg = attrs.get("Config") or {}
+                labels = cfg.get("Labels") or {}
+                env_list = cfg.get("Env") or []
+                for env_entry in env_list:
+                    if isinstance(env_entry, str) and env_entry.startswith("SERVER_DIR_NAME="):
+                        dir_env = env_entry.split("=", 1)[1].strip()
+                        if dir_env:
+                            candidate_names.append(dir_env)
+                for lbl_key in ("mc.server.name", "SERVER_DIR_NAME"):
+                    lbl_val = (labels.get(lbl_key) or "").strip()
+                    if lbl_val:
+                        candidate_names.append(lbl_val)
+            except Exception:
+                pass
             try:
                 name_hint = getattr(container, 'name', name_hint)
             except Exception:
                 pass
             try:
-                
                 try:
                     if container.status in ('running', 'restarting'):
                         container.stop(timeout=10)
@@ -3083,43 +3149,38 @@ class DockerManager:
                 remove_error = "Failed to remove container"
                 logger.error(f"Failed to remove container {container_id}: {rm_err}")
         except docker.errors.NotFound:
-            
             container_removed = True
             logger.info(f"Container {container_id} not found, will just remove directory")
         except Exception as e:
             remove_error = "Failed to find container"
             logger.error(f"Error finding container {container_id}: {e}")
-            
-        
+
         self._list_cache = None
-        
-        
+
+        for raw_cand in (name_hint, str(container_id)):
+            if raw_cand and raw_cand not in candidate_names:
+                candidate_names.append(raw_cand)
+
+        candidate_dirs: List[Path] = []
+        seen_paths: set[str] = set()
+        for cand in candidate_names:
+            for d in (safe_child_path(SERVERS_ROOT, cand), resolve_server_dir(cand)):
+                if d is not None:
+                    key = str(d)
+                    if key not in seen_paths and (d.exists() or d.is_symlink()):
+                        seen_paths.add(key)
+                        candidate_dirs.append(d)
+
         removed_dir = False
-        try:
-            server_dir = safe_child_path(SERVERS_ROOT, name_hint)
-            target_removed = False
-            if server_dir.exists():
-                import shutil
-                if server_dir.is_symlink():
-                    server_dir.unlink(missing_ok=True)
-                    target_removed = True
-                elif server_dir.is_dir():
-                    shutil.rmtree(server_dir, ignore_errors=True)
-                    target_removed = not server_dir.exists()
-            if not target_removed:
-                alt_dir = safe_child_path(SERVERS_ROOT, str(container_id))
-                if alt_dir.exists():
-                    import shutil
-                    if alt_dir.is_symlink():
-                        alt_dir.unlink(missing_ok=True)
-                        target_removed = True
-                    elif alt_dir.is_dir():
-                        shutil.rmtree(alt_dir, ignore_errors=True)
-                        target_removed = target_removed or (not alt_dir.exists())
-            removed_dir = target_removed
-        except Exception as e:
-            logger.warning(f"Failed to remove server directory for {container_id}: {e}")
-        
+        if not candidate_dirs:
+            removed_dir = True
+        else:
+            all_removed = True
+            for target_dir in candidate_dirs:
+                if not self._remove_server_dir_force(target_dir):
+                    all_removed = False
+            removed_dir = all_removed
+
         result = {
             "id": container_id,
             "name": name_hint,

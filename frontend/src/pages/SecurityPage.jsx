@@ -1,23 +1,28 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  FaShieldAlt,
-  FaKey,
-  FaNetworkWired,
-  FaHistory,
   FaPlus,
   FaTrash,
   FaCheck,
   FaCopy,
   FaSync,
   FaSearch,
-  FaLock,
+  FaShieldAlt,
 } from 'react-icons/fa';
 import { API, authHeaders, useAuth } from '../context/AppContext';
 import { useTranslation } from '../i18n';
+import ConfirmModal from '../components/ConfirmModal';
+import {
+  ShieldLockIcon,
+  NetworkFirewallIcon,
+  ApiKeyTokenIcon,
+  AuditTrailIcon,
+  CloseVectorIcon,
+} from '../components/icons/LynxIcons';
 
 export default function SecurityPage() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { currentUser } = useAuth();
+  const locale = language === 'de' ? 'de-DE' : 'en-US';
   const [activeTab, setActiveTab] = useState('audit'); // 'audit' | '2fa' | 'ip' | 'apikeys'
 
   const [overview, setOverview] = useState(null);
@@ -33,6 +38,7 @@ export default function SecurityPage() {
   const [apiKeys, setApiKeys] = useState([]);
   const [newKeyName, setNewKeyName] = useState('');
   const [createdKeySecret, setCreatedKeySecret] = useState('');
+  const [copiedSecret, setCopiedSecret] = useState(false);
 
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditActions, setAuditActions] = useState([]);
@@ -42,6 +48,9 @@ export default function SecurityPage() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+
+  // Confirm modals for destructive actions
+  const [confirmState, setConfirmState] = useState({ open: false, type: null, payload: null, busy: false });
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -75,7 +84,6 @@ export default function SecurityPage() {
         const audData = await audRes.json();
         setAuditLogs(audData.logs || []);
       } else {
-        // Fallback to /api/users/audit-logs
         const fallbackRes = await fetch(`${API}/users/audit-logs?page_size=100`, { headers });
         if (fallbackRes.ok) {
           const fbData = await fallbackRes.json();
@@ -132,7 +140,7 @@ export default function SecurityPage() {
       if (!r.ok) throw new Error(d.detail || 'Invalid verification code');
       setSetupData(null);
       setVerifyCode('');
-      setNotice('Two-Factor Authentication enabled.');
+      setNotice(t('security.notice2faEnabled'));
       await loadAll();
     } catch (e) {
       setError(String(e.message || e));
@@ -152,7 +160,7 @@ export default function SecurityPage() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || 'Failed to disable 2FA');
       setDisablePassword('');
-      setNotice('Two-Factor Authentication disabled.');
+      setNotice(t('security.notice2faDisabled'));
       await loadAll();
     } catch (e) {
       setError(String(e.message || e));
@@ -165,11 +173,12 @@ export default function SecurityPage() {
     if (!newIp.trim()) return;
     setError('');
     try {
+      const addedIp = newIp.trim();
       const r = await fetch(`${API}/security/ip-whitelist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
-          ip_address: newIp.trim(),
+          ip_address: addedIp,
           description: newIpDesc.trim() || 'Allowed IP',
           enabled: true,
         }),
@@ -178,16 +187,16 @@ export default function SecurityPage() {
       if (!r.ok) throw new Error(d.detail || 'Failed to add IP');
       setNewIp('');
       setNewIpDesc('');
-      setNotice(`Added ${newIp.trim()} to IP whitelist.`);
+      setNotice(t('security.noticeIpAdded', { ip: addedIp }));
       await loadAll();
     } catch (e) {
       setError(String(e.message || e));
     }
   }
 
-  async function handleRemoveIp(ipAddress) {
-    if (!confirm(`Remove ${ipAddress} from whitelist?`)) return;
+  async function executeRemoveIp(ipAddress) {
     setError('');
+    setConfirmState(prev => ({ ...prev, busy: true }));
     try {
       const r = await fetch(`${API}/security/ip-whitelist/${encodeURIComponent(ipAddress)}`, {
         method: 'DELETE',
@@ -197,10 +206,12 @@ export default function SecurityPage() {
         const d = await r.json().catch(() => ({}));
         throw new Error(d.detail || 'Failed to remove IP');
       }
-      setNotice(`Removed ${ipAddress} from whitelist.`);
+      setNotice(t('security.noticeIpRemoved', { ip: ipAddress }));
+      setConfirmState({ open: false, type: null, payload: null, busy: false });
       await loadAll();
     } catch (e) {
       setError(String(e.message || e));
+      setConfirmState(prev => ({ ...prev, busy: false }));
     }
   }
 
@@ -218,27 +229,31 @@ export default function SecurityPage() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || 'Failed to create API key');
       setCreatedKeySecret(d.key || '');
+      setCopiedSecret(false);
       setNewKeyName('');
-      setNotice(`Created API key "${d.name}"`);
+      setNotice(t('security.noticeKeyCreated', { name: d.name }));
       await loadAll();
     } catch (e) {
       setError(String(e.message || e));
     }
   }
 
-  async function handleRevokeApiKey(keyId) {
-    if (!currentUser?.id || !confirm('Revoke this API key?')) return;
+  async function executeRevokeApiKey(keyId) {
+    if (!currentUser?.id) return;
     setError('');
+    setConfirmState(prev => ({ ...prev, busy: true }));
     try {
       const r = await fetch(`${API}/users/${currentUser.id}/api-keys/${keyId}`, {
         method: 'DELETE',
         headers: authHeaders(),
       });
       if (!r.ok) throw new Error('Failed to revoke API key');
-      setNotice('API key revoked.');
+      setNotice(t('security.noticeKeyRevoked'));
+      setConfirmState({ open: false, type: null, payload: null, busy: false });
       await loadAll();
     } catch (e) {
       setError(String(e.message || e));
+      setConfirmState(prev => ({ ...prev, busy: false }));
     }
   }
 
@@ -262,116 +277,164 @@ export default function SecurityPage() {
     });
   }, [auditLogs, selectedAction, auditSearch]);
 
+  const tabs = [
+    { id: 'audit', label: t('security.tabAudit'), count: auditLogs.length, Icon: AuditTrailIcon },
+    { id: '2fa', label: t('security.tab2fa'), Icon: ShieldLockIcon },
+    { id: 'ip', label: t('security.tabIp'), count: whitelist.length, Icon: NetworkFirewallIcon },
+    { id: 'apikeys', label: t('security.tabApiKeys'), count: apiKeys.length, Icon: ApiKeyTokenIcon },
+  ];
+
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-      {/* Clean Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/10 pb-4">
-        <div>
-          <h1 className="text-xl font-semibold text-white">
-            {t('security.title') || 'Security & Audit'}
-          </h1>
-          <p className="text-xs text-white/50 mt-0.5">
-            Security audit trail, Two-Factor Authentication (TOTP), IP access control, and personal API keys.
-          </p>
+    <div className="p-6 max-w-6xl mx-auto space-y-6 animate-fade-in">
+      {/* Lynx Hero Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/10 pb-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-500 to-indigo-600 ring-4 ring-brand-500/20 flex items-center justify-center text-white shadow-lg flex-shrink-0">
+            <ShieldLockIcon className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold gradient-text-brand tracking-tight">
+              {t('security.title')}
+            </h1>
+            <p className="text-xs sm:text-sm text-white/60 mt-1">
+              {t('security.subtitle')}
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
           {overview?.current_ip && (
-            <span className="text-xs px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-white/60 font-mono">
-              Your IP: {overview.current_ip}
+            <span className="glassmorphism inline-flex items-center gap-2 text-xs px-3 py-2 rounded-xl text-white/75 font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-400" />
+              {t('security.yourIp', { ip: overview.current_ip })}
             </span>
           )}
           <button
             onClick={loadAll}
             disabled={loading}
-            className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/80 inline-flex items-center gap-1.5 transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-white/85 inline-flex items-center gap-2 transition-colors disabled:opacity-50"
           >
-            <FaSync className={`text-[11px] ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            <FaSync className={`text-[11px] text-brand-400 ${loading ? 'animate-spin' : ''}`} />
+            <span>{t('security.refresh')}</span>
           </button>
         </div>
       </div>
 
       {/* Notices & Errors */}
       {notice && (
-        <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 text-xs text-emerald-300 flex items-center justify-between">
+        <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 px-4 py-3 text-xs text-emerald-300 flex items-center justify-between gap-3">
           <span>{notice}</span>
-          <button onClick={() => setNotice('')} className="text-emerald-300/60 hover:text-emerald-200">✕</button>
+          <button
+            onClick={() => setNotice('')}
+            className="p-1 rounded-lg text-emerald-300/70 hover:text-emerald-200 hover:bg-emerald-500/15 transition-colors"
+            aria-label={t('common.close')}
+          >
+            <CloseVectorIcon className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
       {error && (
-        <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5 text-xs text-red-300 flex items-center justify-between">
+        <div className="rounded-xl bg-red-500/10 border border-red-500/25 px-4 py-3 text-xs text-red-300 flex items-center justify-between gap-3">
           <span>{error}</span>
-          <button onClick={() => setError('')} className="text-red-300/60 hover:text-red-200">✕</button>
+          <button
+            onClick={() => setError('')}
+            className="p-1 rounded-lg text-red-300/70 hover:text-red-200 hover:bg-red-500/15 transition-colors"
+            aria-label={t('common.close')}
+          >
+            <CloseVectorIcon className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
-      {/* Compact Status Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 flex items-center justify-between">
-          <div>
-            <div className="text-xs text-white/45">Two-Factor Auth (2FA)</div>
-            <div className="text-sm font-medium text-white mt-0.5">
-              {twoFAStatus.enabled ? 'Enabled on your account' : 'Not configured'}
+      {/* KPI Status Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="glassmorphism rounded-xl p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-white/[0.07] transition-colors">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${
+              twoFAStatus.enabled
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                : 'bg-brand-500/15 border-brand-500/25 text-brand-400'
+            }`}>
+              <ShieldLockIcon className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs text-white/55 truncate">{t('security.twoFactorTitle')}</div>
+              <div className="text-sm sm:text-base font-semibold text-white mt-0.5 truncate">
+                {twoFAStatus.enabled ? t('security.twoFactorEnabledDesc') : t('security.twoFactorDisabledDesc')}
+              </div>
             </div>
           </div>
           <span
-            className={`text-xs px-2 py-0.5 rounded border ${twoFAStatus.enabled
+            className={`text-xs px-2.5 py-1 rounded-lg border font-medium flex-shrink-0 ${
+              twoFAStatus.enabled
                 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                : 'bg-white/5 text-white/50 border-white/10'
-              }`}
+                : 'bg-white/5 text-white/60 border-white/10'
+            }`}
           >
-            {twoFAStatus.enabled ? 'Active' : 'Off'}
+            {twoFAStatus.enabled ? t('security.statusActive') : t('security.statusOff')}
           </span>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 flex items-center justify-between">
-          <div>
-            <div className="text-xs text-white/45">IP Whitelist</div>
-            <div className="text-sm font-medium text-white mt-0.5">
-              {whitelist.length > 0 ? `${whitelist.length} allowed rule(s)` : 'All IPs allowed'}
+        <div className="glassmorphism rounded-xl p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-white/[0.07] transition-colors">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-brand-500/15 border border-brand-500/25 text-brand-400 flex items-center justify-center flex-shrink-0">
+              <NetworkFirewallIcon className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs text-white/55 truncate">{t('security.ipWhitelistTitle')}</div>
+              <div className="text-sm sm:text-base font-semibold text-white mt-0.5 truncate">
+                {whitelist.length > 0
+                  ? t('security.ipRulesCount', { count: whitelist.length })
+                  : t('security.allIpsAllowed')}
+              </div>
             </div>
           </div>
-          <span className="text-xs px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/60 font-mono">
+          <span className="text-xs px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-white/75 font-mono flex-shrink-0">
             {whitelist.length}
           </span>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 flex items-center justify-between">
-          <div>
-            <div className="text-xs text-white/45">Personal API Keys</div>
-            <div className="text-sm font-medium text-white mt-0.5">
-              {apiKeys.length} active key{apiKeys.length === 1 ? '' : 's'}
+        <div className="glassmorphism rounded-xl p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-white/[0.07] transition-colors">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 flex items-center justify-center flex-shrink-0">
+              <ApiKeyTokenIcon className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs text-white/55 truncate">{t('security.personalApiKeysTitle')}</div>
+              <div className="text-sm sm:text-base font-semibold text-white mt-0.5 truncate">
+                {t('security.activeKeysCount', { count: apiKeys.length })}
+              </div>
             </div>
           </div>
-          <span className="text-xs px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/60 font-mono">
+          <span className="text-xs px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-white/75 font-mono flex-shrink-0">
             {apiKeys.length}
           </span>
         </div>
       </div>
 
-      {/* Clean Underline Tabs */}
-      <div className="flex items-center gap-6 border-b border-white/10 text-sm overflow-x-auto no-scrollbar">
-        {[
-          { id: 'audit', label: 'Security Audit Log', count: auditLogs.length, icon: FaHistory },
-          { id: '2fa', label: 'Two-Factor Auth (2FA)', icon: FaShieldAlt },
-          { id: 'ip', label: 'IP Whitelist', count: whitelist.length, icon: FaNetworkWired },
-          { id: 'apikeys', label: 'API Keys', count: apiKeys.length, icon: FaKey },
-        ].map((tab) => {
+      {/* Lynx Segmented Pill Tabs */}
+      <div className="glassmorphism rounded-xl p-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        {tabs.map((tab) => {
           const active = activeTab === tab.id;
+          const IconComponent = tab.Icon;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`pb-3 -mb-px flex items-center gap-2 border-b-2 font-medium whitespace-nowrap transition-colors ${active
-                  ? 'border-brand-500 text-white'
-                  : 'border-transparent text-white/55 hover:text-white/85'
-                }`}
+              className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all ${
+                active
+                  ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/25'
+                  : 'text-white/65 hover:text-white hover:bg-white/10'
+              }`}
             >
-              <tab.icon className={`text-xs ${active ? 'text-brand-400' : 'text-white/40'}`} />
+              <IconComponent className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-brand-400/80'}`} />
               <span>{tab.label}</span>
               {tab.count !== undefined && (
-                <span className="text-xs px-1.5 py-0.2 rounded bg-white/5 text-white/60 font-mono">
+                <span
+                  className={`text-[11px] px-1.5 py-0.5 rounded-md font-mono ${
+                    active ? 'bg-white/20 text-white' : 'bg-white/5 text-white/65'
+                  }`}
+                >
                   {tab.count}
                 </span>
               )}
@@ -383,15 +446,15 @@ export default function SecurityPage() {
       {/* TAB 1: SECURITY AUDIT LOG */}
       {activeTab === 'audit' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
-              <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35 text-xs" />
+          <div className="glassmorphism rounded-xl p-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <FaSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 text-xs" />
               <input
                 type="text"
                 value={auditSearch}
                 onChange={(e) => setAuditSearch(e.target.value)}
-                placeholder="Search user, action, resource, or IP…"
-                className="w-full pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/10 rounded-lg text-xs text-white placeholder-white/35 focus:outline-none focus:border-brand-500"
+                placeholder={t('security.searchAuditPlaceholder')}
+                className="w-full pl-9 pr-3 py-2 bg-black/25 border border-white/10 rounded-lg text-xs text-white placeholder-white/40 focus:outline-none focus:border-brand-500 transition-colors"
               />
             </div>
 
@@ -399,9 +462,9 @@ export default function SecurityPage() {
               <select
                 value={selectedAction}
                 onChange={(e) => setSelectedAction(e.target.value)}
-                className="px-2.5 py-1.5 bg-[#141824] border border-white/10 rounded-lg text-xs text-white"
+                className="px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-brand-500"
               >
-                <option value="">All Actions ({auditLogs.length})</option>
+                <option value="">{t('security.allActions', { count: auditLogs.length })}</option>
                 {auditActions.map((act) => (
                   <option key={act} value={act}>
                     {act}
@@ -411,42 +474,42 @@ export default function SecurityPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+          <div className="glassmorphism rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/45 bg-white/[0.02]">
-                    <th className="py-2.5 px-4 font-medium">Timestamp</th>
-                    <th className="py-2.5 px-4 font-medium">User</th>
-                    <th className="py-2.5 px-4 font-medium">Action</th>
-                    <th className="py-2.5 px-4 font-medium">Target Resource</th>
-                    <th className="py-2.5 px-4 font-medium">IP Address</th>
-                    <th className="py-2.5 px-4 font-medium">Details</th>
+                  <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/50 bg-white/[0.03]">
+                    <th className="py-3 px-4 font-semibold">{t('security.colTimestamp')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colUser')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colAction')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colResource')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colIp')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colDetails')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10 text-xs">
                   {filteredAuditLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-white/[0.02]">
-                      <td className="py-2.5 px-4 text-white/55 whitespace-nowrap font-mono">
-                        {log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}
+                    <tr key={log.id} className="hover:bg-white/[0.04] transition-colors">
+                      <td className="py-3 px-4 text-white/60 whitespace-nowrap font-mono">
+                        {log.timestamp ? new Date(log.timestamp).toLocaleString(locale) : '—'}
                       </td>
-                      <td className="py-2.5 px-4 text-white font-medium">
-                        {log.user || log.username || 'System'}
+                      <td className="py-3 px-4 text-white font-medium">
+                        {log.user || log.username || t('usersPage.systemUser')}
                       </td>
-                      <td className="py-2.5 px-4">
-                        <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-brand-300">
+                      <td className="py-3 px-4">
+                        <span className="px-2.5 py-0.5 rounded-md bg-brand-500/10 border border-brand-500/20 font-mono text-brand-300">
                           {log.action}
                         </span>
                       </td>
-                      <td className="py-2.5 px-4 text-white/60 font-mono">
+                      <td className="py-3 px-4 text-white/65 font-mono">
                         {log.resource_type
                           ? `${log.resource_type}${log.resource_id ? `/${log.resource_id}` : ''}`
                           : '—'}
                       </td>
-                      <td className="py-2.5 px-4 text-white/45 font-mono">
+                      <td className="py-3 px-4 text-white/50 font-mono">
                         {log.ip_address || '—'}
                       </td>
-                      <td className="py-2.5 px-4 text-white/45 font-mono max-w-xs truncate">
+                      <td className="py-3 px-4 text-white/50 font-mono max-w-xs truncate">
                         {log.details && Object.keys(log.details).length > 0
                           ? JSON.stringify(log.details)
                           : '—'}
@@ -455,8 +518,8 @@ export default function SecurityPage() {
                   ))}
                   {filteredAuditLogs.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-white/40">
-                        No audit log entries match your filter.
+                      <td colSpan={6} className="py-10 text-center text-white/45">
+                        {t('security.noAuditMatch')}
                       </td>
                     </tr>
                   )}
@@ -469,23 +532,29 @@ export default function SecurityPage() {
 
       {/* TAB 2: TWO-FACTOR AUTHENTICATION */}
       {activeTab === '2fa' && (
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 max-w-2xl space-y-4">
+        <div className="glassmorphism rounded-xl p-6 max-w-2xl space-y-5">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-semibold text-white">
-                Authenticator App (TOTP)
-              </h3>
-              <p className="text-xs text-white/50 mt-1">
-                Protect your account with a time-based 6-digit verification code from Google Authenticator, Authy, 1Password, or Bitwarden.
-              </p>
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-brand-500/15 border border-brand-500/25 text-brand-400 flex items-center justify-center flex-shrink-0">
+                <ShieldLockIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-white">
+                  {t('security.authAppTitle')}
+                </h3>
+                <p className="text-xs text-white/55 mt-1 leading-relaxed">
+                  {t('security.authAppDesc')}
+                </p>
+              </div>
             </div>
             <span
-              className={`text-xs px-2.5 py-1 rounded border font-medium ${twoFAStatus.enabled
+              className={`text-xs px-2.5 py-1 rounded-lg border font-medium flex-shrink-0 ${
+                twoFAStatus.enabled
                   ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                  : 'bg-white/5 text-white/50 border-white/10'
-                }`}
+                  : 'bg-white/5 text-white/55 border-white/10'
+              }`}
             >
-              {twoFAStatus.enabled ? 'Enabled' : 'Disabled'}
+              {twoFAStatus.enabled ? t('security.enabledBadge') : t('security.disabledBadge')}
             </span>
           </div>
 
@@ -493,18 +562,19 @@ export default function SecurityPage() {
             <div className="pt-2">
               <button
                 onClick={start2FASetup}
-                className="px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-400 text-xs font-medium text-white inline-flex items-center gap-2 transition-colors"
+                className="px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-xs font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-lg shadow-brand-500/20"
               >
-                <FaShieldAlt /> Set Up Two-Factor Authentication
+                <FaShieldAlt />
+                <span>{t('security.setup2faBtn')}</span>
               </button>
             </div>
           )}
 
           {setupData && (
-            <div className="space-y-4 pt-3 border-t border-white/10">
+            <div className="space-y-4 pt-4 border-t border-white/10">
               <div className="flex flex-col sm:flex-row gap-5 items-start">
                 {setupData.qr_code_url && (
-                  <div className="bg-white p-2.5 rounded-lg flex-shrink-0">
+                  <div className="bg-white p-2.5 rounded-xl flex-shrink-0 shadow-md">
                     <img
                       src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
                         setupData.qr_code_url
@@ -514,19 +584,20 @@ export default function SecurityPage() {
                     />
                   </div>
                 )}
-                <div className="space-y-2 text-xs">
-                  <div className="text-white font-medium">1. Scan QR Code or Enter Secret Key</div>
-                  <p className="text-white/50">
-                    Scan the QR code with your authenticator app, or manually enter this secret key:
+                <div className="space-y-2.5 text-xs">
+                  <div className="text-white font-semibold">{t('security.step1Title')}</div>
+                  <p className="text-white/55">
+                    {t('security.step1Desc')}
                   </p>
                   <div className="flex items-center gap-2">
-                    <code className="px-2.5 py-1.5 rounded bg-black/40 border border-white/10 text-brand-300 font-mono select-all">
+                    <code className="px-3 py-1.5 rounded-lg bg-black/40 border border-white/10 text-brand-300 font-mono select-all">
                       {setupData.secret}
                     </code>
                     <button
                       type="button"
                       onClick={() => navigator.clipboard.writeText(setupData.secret)}
-                      className="px-2.5 py-1.5 rounded bg-white/5 hover:bg-white/10 text-white/70"
+                      className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/75 transition-colors"
+                      title={t('security.copyBtn')}
                     >
                       <FaCopy />
                     </button>
@@ -534,10 +605,10 @@ export default function SecurityPage() {
 
                   {Array.isArray(setupData.backup_codes) && setupData.backup_codes.length > 0 && (
                     <div className="pt-2">
-                      <div className="text-white/70 font-medium mb-1">
-                        Save your recovery backup codes:
+                      <div className="text-white/75 font-medium mb-1.5">
+                        {t('security.recoveryCodesTitle')}
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5 p-2.5 rounded bg-black/30 border border-white/10 font-mono text-[11px] text-white/75">
+                      <div className="grid grid-cols-2 gap-1.5 p-3 rounded-xl bg-black/30 border border-white/10 font-mono text-[11px] text-white/80">
                         {setupData.backup_codes.map((c) => (
                           <span key={c}>{c}</span>
                         ))}
@@ -547,10 +618,10 @@ export default function SecurityPage() {
                 </div>
               </div>
 
-              <form onSubmit={confirm2FASetup} className="flex items-end gap-3 pt-2">
+              <form onSubmit={confirm2FASetup} className="flex flex-wrap items-end gap-3 pt-2">
                 <div>
-                  <label className="block text-xs text-white/60 mb-1">
-                    2. Enter 6-digit code from app
+                  <label className="block text-xs text-white/60 mb-1.5">
+                    {t('security.step2Label')}
                   </label>
                   <input
                     type="text"
@@ -559,45 +630,46 @@ export default function SecurityPage() {
                     placeholder="123456"
                     value={verifyCode}
                     onChange={(e) => setVerifyCode(e.target.value)}
-                    className="w-40 px-3 py-2 bg-black/30 border border-white/10 rounded-lg text-sm text-white font-mono tracking-widest"
+                    className="w-40 px-3 py-2 bg-black/30 border border-white/10 rounded-lg text-sm text-white font-mono tracking-widest focus:outline-none focus:border-brand-500"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-400 text-xs font-medium text-white inline-flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-colors"
                 >
-                  <FaCheck /> Verify & Activate
+                  <FaCheck />
+                  <span>{t('security.verifyActivateBtn')}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSetupData(null)}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white/60"
+                  className="px-3.5 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 transition-colors"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
               </form>
             </div>
           )}
 
           {twoFAStatus.enabled && (
-            <form onSubmit={handleDisable2FA} className="pt-3 border-t border-white/10 space-y-3">
+            <form onSubmit={handleDisable2FA} className="pt-4 border-t border-white/10 space-y-3">
               <div className="text-xs text-white/60">
-                Enter your account password to disable Two-Factor Authentication:
+                {t('security.disable2faPrompt')}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <input
                   type="password"
                   required
-                  placeholder="Current password"
+                  placeholder={t('security.currentPasswordPlaceholder')}
                   value={disablePassword}
                   onChange={(e) => setDisablePassword(e.target.value)}
-                  className="px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-xs text-white"
+                  className="px-3 py-2 bg-black/30 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-brand-500"
                 />
                 <button
                   type="submit"
-                  className="px-3.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/25 text-xs text-red-300 font-medium"
+                  className="px-4 py-2 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-xs text-red-300 font-semibold transition-colors"
                 >
-                  Disable 2FA
+                  {t('security.disable2faBtn')}
                 </button>
               </div>
             </form>
@@ -610,29 +682,29 @@ export default function SecurityPage() {
         <div className="space-y-4">
           <form
             onSubmit={handleAddIp}
-            className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex flex-wrap items-end gap-3"
+            className="glassmorphism rounded-xl p-4 sm:p-5 flex flex-wrap items-end gap-3"
           >
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-xs text-white/55 mb-1">
-                IP Address or CIDR Range
+              <label className="block text-xs text-white/60 mb-1.5">
+                {t('security.ipCidrLabel')}
               </label>
               <input
                 type="text"
                 required
-                placeholder="e.g. 192.168.2.100 or 192.168.2.0/24"
+                placeholder={t('security.ipCidrPlaceholder')}
                 value={newIp}
                 onChange={(e) => setNewIp(e.target.value)}
-                className="w-full px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-xs text-white font-mono"
+                className="w-full px-3 py-2 bg-black/25 border border-white/10 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-brand-500"
               />
             </div>
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-xs text-white/55 mb-1">Description</label>
+              <label className="block text-xs text-white/60 mb-1.5">{t('security.ipDescLabel')}</label>
               <input
                 type="text"
-                placeholder="e.g. Home LAN / Admin Workstation"
+                placeholder={t('security.ipDescPlaceholder')}
                 value={newIpDesc}
                 onChange={(e) => setNewIpDesc(e.target.value)}
-                className="w-full px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-xs text-white"
+                className="w-full px-3 py-2 bg-black/25 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-brand-500"
               />
             </div>
             {overview?.current_ip && (
@@ -640,61 +712,64 @@ export default function SecurityPage() {
                 type="button"
                 onClick={() => {
                   setNewIp(overview.current_ip);
-                  setNewIpDesc('Current session IP');
+                  setNewIpDesc(t('security.currentSessionIp'));
                 }}
-                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/75"
+                className="px-3.5 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/80 transition-colors"
               >
-                Use My IP ({overview.current_ip})
+                {t('security.useMyIpBtn', { ip: overview.current_ip })}
               </button>
             )}
             <button
               type="submit"
-              className="px-3.5 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-400 text-xs font-medium text-white inline-flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-colors shadow-sm shadow-brand-500/20"
             >
-              <FaPlus className="text-[10px]" /> Add IP
+              <FaPlus className="text-[10px]" />
+              <span>{t('security.addIpBtn')}</span>
             </button>
           </form>
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/45 bg-white/[0.02]">
-                  <th className="py-2.5 px-4 font-medium">IP Address / CIDR</th>
-                  <th className="py-2.5 px-4 font-medium">Description</th>
-                  <th className="py-2.5 px-4 font-medium">Added</th>
-                  <th className="py-2.5 px-4 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10 text-xs">
-                {whitelist.map((item) => (
-                  <tr key={item.ip_address} className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-4 font-mono text-white font-medium">
-                      {item.ip_address}
-                    </td>
-                    <td className="py-3 px-4 text-white/65">{item.description || '—'}</td>
-                    <td className="py-3 px-4 text-white/45">
-                      {item.added_at ? new Date(item.added_at).toLocaleString() : '—'}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={() => handleRemoveIp(item.ip_address)}
-                        className="p-1.5 rounded hover:bg-red-500/15 text-red-400 hover:text-red-300"
-                        title="Remove IP"
-                      >
-                        <FaTrash />
-                      </button>
-                    </td>
+          <div className="glassmorphism rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/50 bg-white/[0.03]">
+                    <th className="py-3 px-4 font-semibold">{t('security.colIpCidr')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colDescription')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colAdded')}</th>
+                    <th className="py-3 px-4 font-semibold text-right">{t('common.actions')}</th>
                   </tr>
-                ))}
-                {whitelist.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-8 text-center text-white/40">
-                      No IP restrictions configured — connections from all IP addresses are currently allowed.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-white/10 text-xs">
+                  {whitelist.map((item) => (
+                    <tr key={item.ip_address} className="hover:bg-white/[0.04] transition-colors">
+                      <td className="py-3 px-4 font-mono text-white font-medium">
+                        {item.ip_address}
+                      </td>
+                      <td className="py-3 px-4 text-white/65">{item.description || '—'}</td>
+                      <td className="py-3 px-4 text-white/50 font-mono">
+                        {item.added_at ? new Date(item.added_at).toLocaleString(locale) : '—'}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => setConfirmState({ open: true, type: 'removeIp', payload: item.ip_address, busy: false })}
+                          className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 transition-colors"
+                          title={t('security.removeIpTitle')}
+                        >
+                          <FaTrash />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {whitelist.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-10 text-center text-white/45">
+                        {t('security.noIpRules')}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -704,97 +779,123 @@ export default function SecurityPage() {
         <div className="space-y-4">
           <form
             onSubmit={handleCreateApiKey}
-            className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex flex-wrap items-end gap-3"
+            className="glassmorphism rounded-xl p-4 sm:p-5 flex flex-wrap items-end gap-3"
           >
             <div className="flex-1 min-w-[240px]">
-              <label className="block text-xs text-white/55 mb-1">Key Name / Label</label>
+              <label className="block text-xs text-white/60 mb-1.5">{t('security.keyNameLabel')}</label>
               <input
                 type="text"
                 required
-                placeholder="e.g. CI Deployment Script, Discord Bot"
+                placeholder={t('security.keyNamePlaceholder')}
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
-                className="w-full px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-xs text-white"
+                className="w-full px-3 py-2 bg-black/25 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-brand-500"
               />
             </div>
             <button
               type="submit"
-              className="px-3.5 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-400 text-xs font-medium text-white inline-flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-colors shadow-sm shadow-brand-500/20"
             >
-              <FaPlus className="text-[10px]" /> Generate API Key
+              <FaPlus className="text-[10px]" />
+              <span>{t('security.generateKeyBtn')}</span>
             </button>
           </form>
 
           {createdKeySecret && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2 text-xs">
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2.5 text-xs">
               <div className="font-semibold text-amber-300">
-                Copy your new API key now — it will not be shown again:
+                {t('security.copyKeyWarning')}
               </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 px-3 py-2 rounded bg-black/50 border border-white/10 text-white font-mono select-all">
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="flex-1 min-w-[220px] px-3 py-2 rounded-lg bg-black/50 border border-white/10 text-white font-mono select-all">
                   {createdKeySecret}
                 </code>
                 <button
-                  onClick={() => navigator.clipboard.writeText(createdKeySecret)}
-                  className="px-3 py-2 rounded bg-white/10 hover:bg-white/20 text-white inline-flex items-center gap-1.5"
+                  onClick={() => {
+                    navigator.clipboard.writeText(createdKeySecret);
+                    setCopiedSecret(true);
+                  }}
+                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white inline-flex items-center gap-1.5 transition-colors"
                 >
-                  <FaCopy /> Copy
+                  <FaCopy />
+                  <span>{copiedSecret ? t('security.copiedBtn') : t('security.copyBtn')}</span>
                 </button>
                 <button
                   onClick={() => setCreatedKeySecret('')}
-                  className="px-3 py-2 rounded bg-white/5 hover:bg-white/10 text-white/60"
+                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/65 transition-colors"
                 >
-                  Dismiss
+                  {t('security.dismissBtn')}
                 </button>
               </div>
             </div>
           )}
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/45 bg-white/[0.02]">
-                  <th className="py-2.5 px-4 font-medium">Name</th>
-                  <th className="py-2.5 px-4 font-medium">Prefix</th>
-                  <th className="py-2.5 px-4 font-medium">Created</th>
-                  <th className="py-2.5 px-4 font-medium">Last Used</th>
-                  <th className="py-2.5 px-4 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10 text-xs">
-                {apiKeys.map((k) => (
-                  <tr key={k.id} className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-4 text-white font-medium">{k.name}</td>
-                    <td className="py-3 px-4 font-mono text-white/60">{k.key_prefix}…</td>
-                    <td className="py-3 px-4 text-white/45">
-                      {k.created_at ? new Date(k.created_at).toLocaleDateString() : '—'}
-                    </td>
-                    <td className="py-3 px-4 text-white/45">
-                      {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'Never'}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={() => handleRevokeApiKey(k.id)}
-                        className="p-1.5 rounded hover:bg-red-500/15 text-red-400 hover:text-red-300"
-                        title="Revoke API key"
-                      >
-                        <FaTrash />
-                      </button>
-                    </td>
+          <div className="glassmorphism rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/50 bg-white/[0.03]">
+                    <th className="py-3 px-4 font-semibold">{t('security.colKeyName')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colPrefix')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colCreated')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('security.colLastUsed')}</th>
+                    <th className="py-3 px-4 font-semibold text-right">{t('common.actions')}</th>
                   </tr>
-                ))}
-                {apiKeys.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-white/40">
-                      No personal API keys created yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-white/10 text-xs">
+                  {apiKeys.map((k) => (
+                    <tr key={k.id} className="hover:bg-white/[0.04] transition-colors">
+                      <td className="py-3 px-4 text-white font-medium">{k.name}</td>
+                      <td className="py-3 px-4 font-mono text-white/65">{k.key_prefix}…</td>
+                      <td className="py-3 px-4 text-white/50 font-mono">
+                        {k.created_at ? new Date(k.created_at).toLocaleDateString(locale) : '—'}
+                      </td>
+                      <td className="py-3 px-4 text-white/50 font-mono">
+                        {k.last_used_at ? new Date(k.last_used_at).toLocaleString(locale) : t('security.never')}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => setConfirmState({ open: true, type: 'revokeKey', payload: k.id, busy: false })}
+                          className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 transition-colors"
+                          title={t('security.revokeKeyTitle')}
+                        >
+                          <FaTrash />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {apiKeys.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-10 text-center text-white/45">
+                        {t('security.noApiKeys')}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmState.open}
+        title={confirmState.type === 'removeIp' ? t('security.removeIpTitle') : t('security.revokeKeyTitle')}
+        message={
+          confirmState.type === 'removeIp'
+            ? t('security.confirmRemoveIp', { ip: confirmState.payload || '' })
+            : t('security.confirmRevokeKey')
+        }
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        isLoading={confirmState.busy}
+        onCancel={() => setConfirmState({ open: false, type: null, payload: null, busy: false })}
+        onConfirm={() => {
+          if (confirmState.type === 'removeIp') executeRemoveIp(confirmState.payload);
+          else if (confirmState.type === 'revokeKey') executeRevokeApiKey(confirmState.payload);
+        }}
+      />
     </div>
   );
 }

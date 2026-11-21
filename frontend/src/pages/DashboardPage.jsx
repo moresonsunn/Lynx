@@ -6,6 +6,7 @@ import { API, authHeaders } from '../context/AppContext';
 import { normalizeRamInput } from '../utils/ram';
 import {
   FaChevronRight,
+  FaDownload,
   FaPlay,
   FaStop,
 } from 'react-icons/fa';
@@ -55,7 +56,7 @@ export default function DashboardPage() {
   const [installWorking, setInstallWorking] = useState(false);
   const [serverName, setServerName] = useState('mp-' + Math.random().toString(36).slice(2, 6));
   const [hostPort, setHostPort] = useState('');
-  const [minRam, setMinRam] = useState('2048M');
+  const [minRam, setMinRam] = useState('1G');
   const [maxRam, setMaxRam] = useState('4096M');
 
 
@@ -331,7 +332,16 @@ export default function DashboardPage() {
                     {p.icon_url ? <img src={p.icon_url} alt="" className="w-8 h-8 rounded" loading="lazy" /> : <div className="w-8 h-8 bg-white/10 rounded" />}
                     <div className="min-w-0 flex-1">
                       <div className="text-white font-medium truncate" title={p.name}>{p.name}</div>
-                      <div className="text-xs text-white/60">{p.provider || 'Modrinth'} • {typeof p.downloads === 'number' ? `⬇ ${Intl.NumberFormat().format(p.downloads)}` : ''}</div>
+                      <div className="text-xs text-white/60 flex items-center gap-1">
+                        <span>{p.provider || 'Modrinth'}</span>
+                        {typeof p.downloads === 'number' && (
+                          <>
+                            <span>·</span>
+                            <FaDownload className="w-2.5 h-2.5 text-white/50" />
+                            <span>{Intl.NumberFormat().format(p.downloads)}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="text-sm text-white/60 line-clamp-2 min-h-[38px]">{p.description}</div>
